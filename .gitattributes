@@ -1,0 +1,16 @@
+# Every checkout of this repository must be byte-identical, whichever platform it is made on.
+#
+# The deploy gate (node _deploy.mjs, via _zip.py) compares the members of dashboard-site.zip
+# against the files on disk by CRC-32. That comparison only means anything if the checkout
+# itself is stable, and by default it is not: with core.autocrlf=true (the setting on
+# Windows here) git rewrites text files to CRLF on checkout, while a Linux runner checks the
+# same files out as LF. A committed zip can then match at most one of them - it failed on
+# index.html in CI, and a fresh Windows clone would have failed on manifest.webmanifest and
+# _headers.
+#
+# Normalising text to LF on checkout removes the platform from the equation: the bundle and
+# the files it is compared against are the same bytes on Windows, on Linux and in CI.
+#
+# `text=auto` leaves binaries alone - git detects the PNGs and dashboard-site.zip itself as
+# binary, so they are never rewritten.
+* text=auto eol=lf

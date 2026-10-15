@@ -18,9 +18,10 @@ wrangler whoami        # state the resolved account out loud before publishing
 ```
 
 - **Ask the user which account is intended.** Never infer it, never default silently.
-- `wrangler.toml` pins the account for the **Worker** deploy, but a **Pages deploy carries no
-  account binding at all** — the credential alone decides where the page lands. That asymmetry
-  is the whole reason for this step.
+- Neither deploy pins an account in config: `wrangler.toml` fixes the Worker, its bindings and
+  the compatibility date, but the credential — or an explicit `CLOUDFLARE_ACCOUNT_ID` — selects
+  the account, for a **Worker** deploy exactly as for a **Pages** deploy, which carries no
+  account binding at all. That is the whole reason for this step.
 - If `whoami` reports the wrong account, stop. Copy the right credential into place
   (`~/.wrangler/credential-backups/README.md` explains how) and re-check.
 
