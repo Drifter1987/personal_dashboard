@@ -1,0 +1,78 @@
+# The deploy gate, on every push and every pull request.
+#
+# `node _deploy.mjs` is exactly what a local release goes through: it runs the harness
+# (node _check.mjs - the shipped Worker and page, against the real sources) and then proves
+# the release bundle is the thing that was just tested (deploy/index.html identical to
+# index.html, every deploy/ file present in dashboard-site.zip with the same CRC-32).
+#
+# A failing check fails this job, and the `bundle` job that produces the upload never runs,
+# so a red push cannot be published. CI deliberately does not pass --sync: it fails on a
+# stale bundle instead of quietly rewriting it.
+#
+# Note: the harness talks to live third parties (ECB, Yahoo, CoinGecko, the news feeds), so a
+# red run is worth a glance at which check failed before you re-run the job.
+#
+# PUBLISHING TARGET: Drifter_87@live.com (8660293d…) — the main hosting
+# account. A Worker deploy is pinned by wrangler.toml, but a Pages deploy carries no account
+# binding in config at all, so in CI the API token *is* the account selector and must be scoped
+# to that account.
+#
+# Publishing is not wired into this workflow yet. To make it automatic, add a `publish` job that
+# runs only on pushes to `main`, after `gate` succeeds, using repository secrets
+# CLOUDFLARE_API_TOKEN (scoped to the account above) and CLOUDFLARE_ACCOUNT_ID:
+#
+#   - run: npx wrangler deploy
+#   - run: npx wrangler pages deploy deploy/ --project-name home-dashboard
+#
+# GitHub only reads .github/workflows at the repository ROOT. While this project sits inside a
+# larger folder, this file never runs - it needs the project to be its own repository.
+#
+# The release runbook (gate, publish, verify, rollback) is DEPLOY.md.
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: deploy gate (harness + bundle)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        # python3 on the runner; a machine with only `python` (Windows) runs the same block.
+        run: |
+          node --check worker.js
+          node --check _check.mjs
+          node --check _deploy.mjs
+          PY=$(command -v python3 || command -v python)
+          "$PY" -c "import py_compile; py_compile.compile('_zip.py', cfile='_zip.pyc', doraise=True)"
+      - name: Deploy gate
+        run: node _deploy.mjs
+
+  bundle:
+    name: release bundle (gate green)
+    needs: gate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-site
+          path: dashboard-site.zip
+          if-no-files-found: error
+          retention-days: 14

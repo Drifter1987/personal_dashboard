@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-accent="orange" data-digits="western">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Home Dashboard v2.4.0</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dashboard">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: https://home-dashboard-5ma.pages.dev; font-src 'none'; object-src 'none'; base-uri 'self'">
+<style>
+:root{--r:16px}
+[data-theme="dark"]{--bg:#232327;--bg2:#2A2A2E;--card:#313136;--card2:#3A3A40;--text:#E6E6EA;--text2:#FFFFFF;--muted:#9B9BA3;--line:#45454C;--ok:#34C759;--bad:#FF6B6B;--shadow:0 8px 28px rgba(0,0,0,.45)}
+[data-theme="midnight"]{--bg:#0B1020;--bg2:#101731;--card:#16204A;--card2:#1D2A5E;--text:#C9D6FF;--text2:#FFFFFF;--muted:#8291C4;--line:#2A3872;--ok:#34C759;--bad:#FF6B6B;--shadow:0 10px 32px rgba(3,6,20,.55)}
+[data-theme="forest"]{--bg:#0F1A14;--bg2:#14231B;--card:#1B2E23;--card2:#23392C;--text:#C9E8D3;--text2:#FFFFFF;--muted:#87A891;--line:#2C4A38;--ok:#4ADE80;--bad:#FF6B6B;--shadow:0 8px 28px rgba(0,0,0,.4)}
+[data-theme="light"]{--bg:#F6EDDD;--bg2:#FFF8EC;--card:#FFFDF6;--card2:#F9EEDC;--text:#6B4226;--text2:#8A5A33;--muted:#9C7B54;--line:#E4D3B8;--ok:#1E8E3E;--bad:#C0392B;--shadow:0 8px 24px rgba(120,85,40,.15)}
+[data-accent="orange"]{--ac:#FF8C42}[data-accent="amber"]{--ac:#E8A100}[data-accent="coral"]{--ac:#FF6B6B}[data-accent="teal"]{--ac:#1FA89B}[data-accent="violet"]{--ac:#8B5CF6}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,Arial,sans-serif;min-height:100vh;min-height:100dvh;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+a{color:var(--ac)}
+.bgfx{position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(900px 480px at 90% -5%,rgba(255,140,66,.13),transparent 60%),radial-gradient(700px 520px at -10% 35%,rgba(255,140,66,.07),transparent 60%)}
+[data-bg="none"] .bgfx{background:var(--bg)}
+[data-bg="grid"] .bgfx{background:linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 34px,linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/34px 100%;opacity:.35}
+[data-bg="dots"] .bgfx{background:radial-gradient(var(--line) 1.5px,transparent 1.5px) 0 0/26px 26px;opacity:.5}
+[data-bg="waves"] .bgfx{background:repeating-radial-gradient(circle at 50% 120%,transparent 0 46px,var(--line) 46px 47px);opacity:.3}
+[data-bg="aurora"] .bgfx{background:radial-gradient(700px 420px at 20% -5%,rgba(31,168,155,.22),transparent 60%),radial-gradient(800px 500px at 85% 15%,rgba(139,92,246,.18),transparent 65%),radial-gradient(900px 520px at 45% 110%,rgba(52,199,89,.12),transparent 60%)}
+button,input,select,textarea{font:inherit;color:inherit}
+.topbar{position:sticky;top:0;z-index:30;background:var(--bg2);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-top));padding-top:10px}
+.toprow{display:flex;gap:8px;align-items:center}
+.brand{font-weight:800;white-space:nowrap}
+.ver{font-size:11px;border:1px solid var(--line);border-radius:20px;padding:2px 8px;color:var(--muted)}
+.searchwrap{position:relative;flex:1}
+#search{width:100%;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:10px 14px;color:var(--text)}
+#searchResults{position:absolute;top:46px;left:0;right:0;background:var(--card);border:1px solid var(--line);border-radius:12px;max-height:300px;overflow:auto;display:none;z-index:40;box-shadow:var(--shadow)}
+#searchResults button{display:block;width:100%;text-align:start;background:transparent;border:0;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--text)}
+#searchResults button:last-child{border-bottom:0}
+.iconbtn{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 10px;cursor:pointer;color:var(--text)}
+#editBtn.on{background:var(--ac);color:#fff;border-color:transparent}
+.dots{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line);border:0;padding:0}
+.dot.on{background:var(--ac);width:22px;border-radius:6px}
+.pagelabel{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}
+.tabbar{display:none}
+@media(max-width:899px){
+ .tabbar{display:flex;gap:5px;justify-content:center;margin:10px auto 0;padding:4px;background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:560px;width:max-content}
+ .tabbar button{background:transparent;border:0;border-radius:10px;padding:7px 12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;font-size:13px}
+ .tabbar button.on{background:var(--ac);color:#fff}
+ .dots{display:none}
+}
+@media(min-width:900px){
+ .dots{display:none}
+}
+#pages{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;height:calc(100vh - 150px);height:calc(100dvh - 150px)}
+.page{min-width:100%;scroll-snap-align:start;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
+.page-inner{display:grid;gap:12px;grid-template-columns:1fr;max-width:1100px;margin:0 auto}
+.pagehead{display:none}
+@media(min-width:900px){
+ .page-inner{grid-template-columns:repeat(2,1fr)}
+ #pages{display:block;overflow:visible;height:auto;scroll-snap-type:none}
+ .page{display:none;min-width:0;overflow:visible;border-top:0;padding:20px 16px 8px}
+ .page.active{display:block}
+ .dots,.pagelabel,.pagehead{display:none}
+ .tabbar{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px auto 0;padding:5px;background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:1100px}
+ .tabbar button{background:transparent;border:0;border-radius:10px;padding:8px 14px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;font-size:14px}
+ .tabbar button.on{background:var(--ac);color:#fff}
+}
+@media(min-width:1300px){.page-inner{grid-template-columns:repeat(3,1fr)}}
+.card{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 40%),var(--card);border:1px solid var(--line);border-radius:20px;padding:14px;box-shadow:var(--shadow);scroll-margin-top:96px;transition:transform .15s ease,box-shadow .15s ease}
+[data-theme="light"] .card{background:linear-gradient(180deg,rgba(255,255,255,.65),rgba(255,255,255,0) 45%),var(--card)}
+@media(hover:hover){.card:hover{transform:translateY(-2px)}}
+.card.flash{outline:3px solid var(--ac)}
+.card h2{margin:0 0 8px;font-size:16px;display:flex;align-items:center;gap:8px}
+.card h2 .sp{flex:1}
+.mini{background:transparent;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer;color:var(--text2)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:13px}
+.big{font-size:34px;font-weight:800;letter-spacing:.5px}
+.list{margin:8px 0 0;padding:0;list-style:none}
+.list li{padding:10px 4px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:flex-start}
+.pill{font-size:11px;border-radius:20px;padding:2px 8px;border:1px solid var(--line);color:var(--muted)}
+.why{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0 0 2px}
+.why span{font-size:10.5px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+/* The AI card's free-allowance column: each row is a two-column grid, so every figure
+   lines up on one edge, and tabular numerals keep the digits in step down the column. */
+.list li.qrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start}
+.qta{font-size:11.5px;font-variant-numeric:tabular-nums;text-align:end;white-space:nowrap;border:1px solid var(--line);border-radius:10px;padding:3px 8px;background:var(--bg2);color:var(--text2);min-width:66px}
+.qta.none{color:var(--muted);border-style:dashed;background:transparent}
+.qta.once{color:var(--muted)}
+.up{color:var(--ok)}.down{color:var(--bad)}
+input[type=text],input[type=date],input[type=time],input[type=number],select,textarea{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;width:100%;color:var(--text)}
+textarea{min-height:70px;resize:vertical}
+.btn{background:var(--ac);border:0;color:#1d1d1f;border-radius:14px;padding:10px 14px;font-weight:700;cursor:pointer;box-shadow:0 6px 16px -8px var(--ac)}
+[data-theme="dark"] .btn{color:#221503}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text);font-weight:600}
+.btn.danger{background:transparent;border:1px solid var(--bad);color:var(--bad)}
+.circle{width:28px;height:28px;border-radius:50%;border:2px solid var(--muted);background:transparent;flex:none;cursor:pointer;font-size:16px;line-height:1;color:transparent}
+.circle.done{background:var(--ok);border-color:var(--ok);color:#fff}
+.strike{text-decoration:line-through;opacity:.65}
+canvas{width:100%;height:180px;background:var(--bg2);border:1px solid var(--line);border-radius:12px}
+.modalback{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;z-index:60}
+.modalback.open{display:flex}
+.modal{background:var(--bg2);color:var(--text);border:1px solid var(--line);border-radius:18px 18px 0 0;width:100%;max-width:640px;max-height:88vh;max-height:88dvh;overflow:auto;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+@media(min-width:700px){.modalback{align-items:center}.modal{border-radius:18px}}
+.modal h3{margin:0 0 10px}
+.field{margin:10px 0}
+.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.checkline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));background:var(--text);color:var(--bg);padding:10px 16px;border-radius:20px;display:none;z-index:80;font-weight:700;max-width:92vw}
+html[dir="rtl"] .page-inner{direction:rtl}
+@media(max-width:899px){
+ #pages{height:auto;padding-bottom:12px}
+ .page{min-width:100%}
+ .swipe-spacer{height:calc(100dvh - 190px);pointer-events:none}
+}
+@media(min-width:900px){.swipe-spacer{display:none}}
+#pagelabel{display:none}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:14px}
+.setrow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line)}
+.switch{width:52px;height:30px;border-radius:20px;border:1px solid var(--line);background:var(--card2);position:relative;cursor:pointer;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--muted)}
+.switch[aria-checked="true"]{background:var(--ac)}
+.switch[aria-checked="true"]::after{left:25px;background:#fff}
+html[dir="rtl"] .switch::after{left:auto;right:3px}
+html[dir="rtl"] .switch[aria-checked="true"]::after{right:25px;left:auto}
+.wicon{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,var(--ac),rgba(0,0,0,.28));color:#fff;font-size:16px;flex:none;box-shadow:0 4px 10px -4px var(--ac)}
+.wctl{display:none}
+body.editing .wctl{display:inline-block}
+.drag-handle{display:none;align-items:center;justify-content:center;width:30px;height:30px;border-radius:10px;border:1px dashed var(--line);color:var(--muted);cursor:grab;touch-action:none;flex:none;user-select:none;-webkit-user-select:none}
+body.editing .drag-handle{display:inline-flex}
+body.editing .page{user-select:none;-webkit-user-select:none}
+body.editing .card{-webkit-touch-callout:none}
+.card.dragging{animation:none;opacity:.94;box-shadow:0 18px 44px rgba(0,0,0,.45);z-index:70}
+.drop-ph{border:2px dashed var(--ac);border-radius:20px;background:rgba(127,127,127,.10)}
+@keyframes jiggle{0%,100%{transform:rotate(-1.1deg)}50%{transform:rotate(1.1deg)}}
+body.editing .card{animation:jiggle .4s ease-in-out infinite}
+body.editing .card:nth-child(2n){animation-delay:.1s}
+body.editing .card:nth-child(3n){animation-delay:.2s}
+@media(prefers-reduced-motion:reduce){body.editing .card{animation:none}}
+.two{display:grid;grid-template-columns:1fr 1fr;column-gap:14px}
+.two .kv,.two .crows>li{border-top:1px solid var(--line)}
+.two>:first-child{column-rule:0}
+.two>div:first-child,.two>ul:first-child{border-right:1px solid var(--line);padding-right:12px}
+html[dir="rtl"] .two>div:first-child,html[dir="rtl"] .two>ul:first-child{border-right:0;border-left:1px solid var(--line);padding-right:0;padding-left:12px}
+@media(max-width:560px){.two{column-gap:10px}}
+.crows{margin:6px 0 0;padding:0;list-style:none}
+.crows li{padding:7px 0;display:flex;gap:8px;align-items:center}
+.crows .cname{font-weight:700;flex:1;min-width:0}
+.crows .cpx{font-variant-numeric:tabular-nums}
+.dotline{stroke-dasharray:2 6;stroke-linecap:round}
+.xhair{position:absolute;top:0;bottom:0;width:1px;pointer-events:none}
+.xhair::before{content:"";position:absolute;top:0;bottom:0;left:0;border-left:2px dotted var(--muted)}
+.xhair .xdot{position:absolute;left:-5px;width:10px;height:10px;border-radius:50%;background:var(--ac);border:2px solid var(--bg2);box-sizing:content-box}
+.xhair .xlab{position:absolute;left:8px;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:2px 6px;font-size:11px;color:var(--text);white-space:nowrap}
+.qrbox{background:#fff;border-radius:12px;padding:14px;display:inline-block;width:min(78vw,320px)}
+.qrbox canvas{background:#fff;border:0;width:100%;height:auto;display:block}
+.qrinline{width:100%;max-width:360px;display:block;margin-top:8px}
+.ctl{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="bgfx" aria-hidden="true"></div>
+<div class="topbar">
+  <div class="toprow">
+    <span class="brand" id="brand">Dashboard</span>
+    <span class="ver" id="verPill">v1.5.0</span>
+    <div class="searchwrap">
+      <input id="search" type="text" autocomplete="off" placeholder="Search — crypto, ETH, prayer, tasks…">
+      <div id="searchResults"></div>
+    </div>
+    <button class="iconbtn" id="langBtn" title="Language">ع</button>
+    <button class="iconbtn" id="themeBtn" title="Theme">◐</button>
+  <button class="iconbtn" id="installBtn" title="Install">⤓</button>
+  <button class="iconbtn" id="qrBtn" title="QR">▣</button>
+    <button class="iconbtn" id="editBtn" title="Edit layout">✎</button>
+  </div>
+  <div class="dots" id="dots" aria-label="Pages"></div>
+  <div class="pagelabel" id="pageLabel"></div>
+  <nav class="tabbar" id="tabbar" role="tablist" aria-label="Sections"></nav>
+</div>
+<main id="pages">
+  <section class="page" data-page="0"><div class="page-inner" id="page0"></div></section>
+  <section class="page" data-page="1"><div class="page-inner" id="page1"></div></section>
+  <section class="page" data-page="2"><div class="page-inner" id="page2"></div></section>
+  <section class="page" data-page="3"><div class="page-inner" id="page3"></div></section>
+  <section class="page" data-page="4"><div class="page-inner" id="page4"></div></section>
+</main>
+<div class="modalback" id="modalBack"><div class="modal" id="modalBox"></div></div>
+<div class="modalback" id="readerBack"><div class="modal" id="readerBox"></div></div>
+<div id="toast"></div>
+<script>
+"use strict";
+/* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
+const CONFIG = {
+  VERSION: "2.4.0",
+  /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
+  METALS_PROVIDERS: [
+    {id:"fastforex", label:"FastForex.io"},
+    {id:"metals.dev", label:"Metals.dev"},
+    {id:"metalpriceapi", label:"MetalpriceAPI.com"},
+    {id:"metals-api", label:"Metals-API (apilayer)"},
+    {id:"goldapi-io", label:"GoldAPI.io"},
+    {id:"goldapi-net", label:"GoldAPI.net"},
+    {id:"twelvedata", label:"Twelve Data"},
+    {id:"tradermade", label:"TraderMade"},
+    {id:"alphavantage", label:"Alpha Vantage"},
+    {id:"api-ninjas", label:"API Ninjas"},
+    {id:"gold-api", label:"Gold-API.com (no key needed)"}
+  ],
+  WORKER_URL: "https://home-dashboard-api.drifter-87.workers.dev",   // Worker API origin (no trailing slash)
+  APP_URL: "https://home-dashboard-5ma.pages.dev",                    // deploy URL for QR + install guide
+  METALS_API_KEY: "",    // placeholder — DO NOT hardcode. Set METALS_API_KEY as Worker secret instead.
+  NEWS_API_KEY: "",      // placeholder — not needed when using Worker /api/news
+  GOOGLE_CLIENT_ID: "",  // placeholder — not used in v1 (local .ics only)
+  DEFAULT_BASE: "USD",
+  NEWS_CACHE_HOURS: 1,
+  NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
+  NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
+};const CHANGELOG = [
+{v:"2.4.0", d:"2026-10-14", en:"No new card this time — this release is the page and the Worker doing less work for the same result. The clock rebuilt its whole card every second (five elements created and thrown away, plus a fresh date formatter each tick, ~75us of it measured in the browser); it now builds once and writes only the digits that changed, through one cached formatter per language. Every figure in the coin, currency and metals tables went through Number.toLocaleString, which builds a formatter on every call: memoised, the same output costs ~1.1us against ~36us per row, and eastern digits are mapped by code point — 3.4x faster than the string replace, and no allocation. On the API side the Worker hands the edge-cache write to ctx.waitUntil instead of holding the response for it, and serves a cached payload as a stream instead of decoding the JSON to a string and re-encoding it, so neither the write nor a re-encode sits between the request and its bytes.", ar:"لا بطاقة جديدة هذه المرة — هذا الإصدار هو الصفحة والوركر وهما يفعلان عملاً أقل بالنتيجة نفسها. كانت الساعة تعيد بناء بطاقتها كاملة كل ثانية (خمسة عناصر تُنشأ وتُهمل، ومنسّق تاريخ جديد في كل نبضة، نحو ٧٥ ميكروثانية قيست في المتصفح)؛ صارت الآن تُبنى مرة واحدة وتكتب ما تغيّر من الأرقام فقط، عبر منسّق واحد مخزّن لكل لغة. وكل رقم في جداول العملات الرقمية والعملات والمعادن كان يمرّ بـ Number.toLocaleString التي تبني منسّقاً في كل نداء: بعد تخزينه صار المخرج نفسه يكلّف نحو ١٫١ ميكروثانية مقابل نحو ٣٦ لكل سطر، والأرقام الشرقية تُحوَّل بترميز الحرف — أسرع ٣٫٤ مرة من الاستبدال النصي وبلا أي تخصيص ذاكرة. وفي واجهة الوركر يُسلَّم كتابة المخزّن الوسيط إلى ctx.waitUntil بدل تعليق الاستجابة لها، وتُقدَّم الحمولة المخزّنة كتدفق بدل فك ترميز JSON إلى نص وإعادة ترميزه، فلا الكتابة ولا إعادة الترميز تقع بين الطلب وبايتاته."},
+{v:"2.3.0", d:"2026-10-14", en:"Coins price in any currency now, not just the dollar: the Time-travel chart's currency list serves both views, so LBP or EUR against BTC is two picks like any pair, and the Worker crosses a coin through its currency's USD leg - the caption says so, and the browser fallback crosses it too when the ECB can. The Currencies card gains LBP, a currency the ECB never publishes, read from the Worker's new /api/rates on the same USD legs; it works as the base of the table as well as a quoted row, rates smaller than a hundredth stay readable instead of rounding to 0, and the rows that come from outside the ECB's table are named under it. In Arabic mode everything the app words itself is Arabic: the quote of the day has its own edition and keeps the same daily quote in either language, metal and prayer names, weather codes, the hijri month, AM/PM, the calendar's weekday initials, the countdown and theme labels and the chart's own notes all follow the language - and the topbar button rebuilds the page, so nothing is left behind in the language it was drawn in.", ar:"العملات الرقمية تُسعَّر الآن بأي عملة لا بالدولار وحده: قائمة عملات مخطط السفر عبر الزمن تخدم العرضين، فاختيار LBP أو EUR مقابل BTC اختياران كأي زوج، ويتقاطع الووركر العملة الرقمية عبر ساق عملتها بالدولار — ويقول التعليق ذلك، ويتقاطعها أيضاً بديل المتصفح حين يستطيع عبر المركزي الأوروبي. وبطاقة العملات تكسب LBP، وهي عملة لا ينشرها المركزي الأوروبي أبداً، مقروءة من /api/rates الجديد في الوركر على ساقَي الدولار نفسيهما؛ وتعمل أساساً للجدول وسطراً معروضاً في الوقت نفسه، والأسعار الأصغر من جزء من المئة تبقى مقروءة بدل أن تُقرَّب إلى صفر، والصفوف الآتية من خارج جدول المركزي الأوروبي يُسمّى مصدرها تحته. وفي الوضع العربي صار كل ما تصوغه اللوحة نفسها عربياً: اقتباس اليوم له نسخته العربية ويبقى الاقتباس نفسه في اللغتين، وتمشي مع اللغة أسماء المعادن والصلوات وأكواد الطقس والشهر الهجري وصباحاً/مساءً وأحرف أيام التقويم ووسوم العدّادات والمظهر وتعليقات المخطط — وزر اللغة في الشريط يعيد بناء الصفحة، فلا يبقى شيء بلغة رُسم بها."},
+  {v:"2.2.0", d:"2026-10-14", en:"The Time-travel chart now plots any currency against any other, not only against the base currency in Settings: the FX view carries a base picker of its own beside the symbol picker, so EUR/SAR or AED/PKR is two choices instead of a settings change. When no source names a pair directly, the Worker crosses it through USD — each leg read from the source that actually publishes it, the ECB daily rates or the weekly Yahoo pair — the caption says crossed through USD, and the dates follow the coarser leg so a weekly rate is never restamped onto daily ones.", ar:"مخطط السفر عبر الزمن يرسم الآن أي عملة مقابل أي أخرى، لا مقابل العملة الأساسية في الإعدادات فحسب: أضفنا إلى عرض العملات حقل أساس خاصّ به إلى جانب حقل الرمز، فصارت EUR/SAR أو AED/PKR خيارَين مباشرين لا تغييراً في الإعدادات. وإذا لم يسمّ أي مصدر الزوج مباشرة يتقاطعه الووركر عبر الدولار — يقرأ كل ساق من المصدر الذي ينشرها فعلاً: أسعار البنك المركزي الأوروبي اليومية أو زوج ياهو الأسبوعي — ويقول التعليق متقاطعاً عبر الدولار، وتتبع التواريخ الساق الأبطأ حتى لا تُعاد قيم أسبوعية على تواريخ يومية."},
+  {v:"2.1.0", d:"2026-10-14", en:"Free image & video tools: thirteen generators, each showing the free allowance its own vendor states — the number, the unit it counts in (credits, fast tokens, stamina, images) and how often it resets, so \"30 credits a week\" and \"10 images every 3 hours\" stop looking like the same deal. The figures carry the date they were checked and every row opens the vendor's own page. The search box finds them too: it matches word by word instead of demanding the exact phrase, so \"free image tools\" or \"daily limit\" returns each matching tool with its allowance — and any AI headline that states a quota. Also repairs a stray comma that had broken the page script.", ar:"أدوات الصور والفيديو المجانية: ثلاثة عشر مولّداً، لكل منها الحصة المجانية التي يعلنها مزوّدها — الرقم، والوحدة التي يُعدّ بها (أرصدة، توكنات، طاقة، صور)، ودورة تجدّدها، فلا تعود «٣٠ رصيداً أسبوعياً» و«١٠ صور كل ٣ ساعات» يبدوان صفراً واحداً. الأرقام تحمل تاريخ مراجعتها وكل سطر يفتح صفحة المزوّد. وصندوق البحث يعثر عليها أيضاً: صار يطابق كلمة كلمة بدل أن يشترط العبارة كاملة، فـ\"free image tools\" أو \"daily limit\" تُرجع كل أداة مطابقة بحصتها — وأي عنوان يذكر حصته. ويُصلَّح أيضاً فاصلة زائدة كانت أوقفت سكربت الصفحة."},
+  {v:"2.0.0", d:"2026-10-12", en:"The Time-travel chart now covers the whole market, not a sample of it: every metal the IMF prices monthly (15 series \u2014 the precious five plus aluminium, nickel, zinc, lead, tin, iron ore, molybdenum, manganese, cobalt and uranium), every currency the ECB publishes (29, plus the regional currencies it never quotes \u2014 SAR, AED, QAR, KWD, OMR, BHD, JOD, EGP, PKR and their neighbours \u2014 served from the weekly Yahoo pair), and any of the 100 largest coins by market cap, each drawn from its own first print. Where a series starts later than 1992 the caption says when: molybdenum from 2010, a Gulf currency from 2003, a coin from its launch day. Copper and cobalt are quoted per pound like the Metals card, everything else in the unit the source states.", ar:"مخطط السفر عبر الزمن يغطي الآن السوق كاملاً وليس عيّنة منه: كل معدن يسعّره صندوق النقد شهرياً (١٥ سلسلة \u2014 المعادن النفيسة الخمسة إضافة إلى الألومنيوم والنيكل والزنك والرصاص والقصدير وخام الحديد والموليبدينوم والمنجنيز والكوبالت واليورانيوم)، وكل عملة ينشرها البنك المركزي الأوروبي (٢٩، مع العملات الخليجية والعربية التي لا ينشرها \u2014 الريال السعودي والدرهم والقطري والدينار الكويتي والعُماني والبحريني والأردني والجنيه المصري والروبية الباكستانية وجيرانها \u2014 من زوج ياهو الأسبوعي)، وأي من أكبر ١٠٠ عملة رقمية من حيث القيمة السوقية، كل واحدة مرسومة من أول تداول لها. وإذا بدأت السلسلة بعد ١٩٩٢ يذكر التعليق متى: الموليبدينوم من ٢٠١٠، وعملة خليجية من ٢٠٠٣، وعملة رقمية من يوم إطلاقها. والنحاس والكوبالت يُعرضان لكل رطل كما في بطاقة المعادن، والباقي بالوحدة التي يذكرها المصدر."},
+  {v:"1.9.0", d:"2026-10-12", en:"The Time-travel chart now shows the whole history instead of one year: every currency, metal and coin is drawn from the first date free data exists — metals from 1992 (IMF monthly), currencies from the euro's first day in 1999 (ECB), each coin from its own first print (BTC 2014, ETH/XRP 2017, SOL 2020) — with the source, the exact date range and the number of points printed under the chart. Copper is quoted per pound like the Metals card, a log-scale toggle keeps a 200x run readable, and if the Worker is unreachable the card falls back to the last year of ECB and CoinGecko data and labels that run so a short series is never mistaken for the real one. The caption is explicit when the canvas cannot hold every print: a currency series with 7,140 daily rates says so and reports the 1,400 drawn, and the currency count beside the picker counts only the ones you can choose.", ar:"مخطط السفر عبر الزمن يعرض الآن التاريخ كاملاً بدل سنة واحدة: كل عملة ومعدن وعملة رقمية تُرسم من أول تاريخ تتوفر فيه بيانات مجانية — المعادن من ١٩٩٢ (شهري من صندوق النقد)، العملات من أول يوم لليورو عام ١٩٩٩ (البنك المركزي الأوروبي)، وكل عملة رقمية من أول تداول لها (بتكوين ٢٠١٤، إيثيريوم/ريبيل ٢٠١٧، سولانا ٢٠٢٠) — مع ذكر المصدر والمدى الزمني الدقيق وعدد النقاط أسفل المخطط. والنحاس يُعرض لكل رطل كما في بطاقة المعادن، وزر المقياس اللوغاريتمي يحافظ على وضوح مدى يتغير ٢٠٠ ضعف، وإذا تعذّر الوصول إلى الووركر تعود البطاقة إلى آخر سنة من بيانات المركزي الأوروبي وCoinGecko وتُوسم بذلك حتى لا تُخلط بسلسلة كاملة. ويذكر التعليق بصراحة عندما لا تتسع اللوحة لكل النقاط: سلسلة بعملة تحمل ٧١٤٠ سعراً يومياً تقول ذلك وتذكر ١٤٠٠ مرسومة، وعدد العملات بجانب القائمة يعدّ ما يمكن اختياره فقط."},
+  {v:"1.8.0", d:"2026-10-11", en:"The AI card now shows what each free item actually gives you, in one column you can read down: a single parser turns \"50 images per day\", \"600 requests/month\" and \"20 free credits\" into the same shape, so a daily and a monthly allowance sit on one scale — the stated amount, its unit, and the equivalent per-day figure (600 a month reads 20/day). One-off grants stay marked as such instead of pretending to be a daily rate, the exact phrase each figure came from is in the tooltip, and an item that states no allowance shows a dash rather than a guess.", ar:"بطاقة الذكاء الاصطناعي تعرض الآن ما تمنحه كل أداة مجانية فعلاً، في عمود واحد يمكن قراءته من أعلى إلى أسفل: محلّل واحد يحوّل «٥٠ صورة يومياً» و«٦٠٠ طلب شهرياً» و«٢٠ رصيداً مجانياً» إلى الشكل نفسه، فيقف الحد اليومي والشهري على مقياس واحد — الكمية والوحدة ومعادلها اليومي (٦٠٠ شهرياً تُقرأ ٢٠/يوم). والمنح لمرة واحدة تبقى موسومة كذلك بدل أن تُعرض كحد يومي، والصيغة الأصلية لكل رقم في التلميح، والعنصر الذي لا يذكر حصة يظهر بشرطة بدل التخمين."},
+  {v:"1.7.0", d:"2026-10-11", en:"The AI card now says why each item is on it: every headline carries small labels naming the ranking rules that matched it — open weights, runs locally, free daily limit, free, just released, image/video — so the order is explained rather than implied. Tap a headline to see the same reasons in the reader. Also fixes the news cache: the four News cards share one stored record, and a card that finished its refresh last could overwrite another card's fresh data, which silently re-enabled refetching on every load.", ar:"بطاقة الذكاء الاصطناعي توضح الآن سبب وجود كل خبر: كل عنوان يحمل وسوماً صغيرة بأسماء قواعد الترتيب التي انطبقت عليه — أوزان مفتوحة، يعمل محلياً، حد يومي مجاني، مجاني، صدر حديثاً، صور/فيديو — فيصبح الترتيب مفسَّراً لا مُخمَّناً. اضغط على العنوان لترى الأسباب نفسها في نافذة القراءة. وأُصلح أيضاً خلل في التخزين المؤقت: البطاقات الأربع تتشارك سجلاً واحداً، وكانت البطاقة التي تنتهي أخيراً تكتب فوق بيانات بطاقة أخرى — وهو ما كان يعطّل التخزين المؤقت بصمت ويعيد جلب الأخبار في كل تحميل."},
+  {v:"1.6.3", d:"2026-10-11", en:"If the Worker is unreachable, the AI card no longer falls back to general AI commentary: it reads releases straight from the browser instead — trending open-weight models from Hugging Face and freshly launched free tools from Show HN — and caches them like the other cards.", ar:"إذا تعذر الوصول إلى الووركر، فإن بطاقة الذكاء الاصطناعي لن تعود إلى أخبار عامة، بل تقرأ الإصدارات مباشرة من المتصفح: أحدث النماذج المفتوحة من Hugging Face وأدوات مجانية جديدة من Show HN، وتخزنها مثل باقي البطاقات."},
+  {v:"1.6.2", d:"2026-10-11", en:"The AI card is now a releases feed: trending open-weight models from Hugging Face plus Qwen, Ollama, ComfyUI, Replicate, Google AI and a llama.cpp release channel — ranked so new models, free tools and things you can run locally come first, with business and opinion pieces pushed down.", ar:"بطاقة الذكاء الاصطناعي أصبحت قائمة إصدارات: أحدث النماذج المفتوحة من Hugging Face مع Qwen وOllama وComfyUI وReplicate وجوجل وقناة إصدارات llama.cpp — مرتّبة بحيث تأتي النماذج الجديدة والأدوات المجانية وما يمكن تشغيله محلياً أولاً، مع تراجع أخبار الأعمال والآراء."},
+  {v:"1.6.1", d:"2026-10-11", en:"Quote of the day now turns over exactly once every 24 hours — by itself, at your local midnight — and no longer depends on when the page was loaded or refreshed. The Worker URL field is now an optional override of the built-in API address instead of a saved copy of it.", ar:"اقتباس اليوم يتغيّر مرة واحدة كل ٢٤ ساعة تلقائياً عند منتصف ليلك المحلي، ولم يعد مرتبطاً بوقت تحميل الصفحة أو تحديثها. وحقل رابط الـWorker أصبح تجاوزاً اختيارياً للعنوان المدمج بدل نسخة محفوظة منه."},
+  {v:"1.6.0", d:"2026-10-11", en:"All four News cards fixed: the automotive feeds were dead and the feed parser was dropping CDATA titles, so Automotive, AI, Finance and GitHub now show real headlines — GitHub read straight from api.github.com — on a 1-hour cache with a per-card refresh that really refetches.", ar:"تم إصلاح بطاقات الأخبار الأربع: روابط أخبار السيارات كانت معطلة وكان المحلّل يُسقط عناوين CDATA، والآن تعرض بطاقات السيارات والذكاء الاصطناعي والمال وجيت‌هَب عناوين حقيقية — وجيت‌هَب يُقرأ مباشرة من api.github.com — مع تخزين مؤقت ساعة وتحديث حقيقي لكل بطاقة."},
+  {v:"1.5.0", d:"2026-10-11", en:"Dark Grey reworked as the default theme plus two new looks (Midnight, Forest), a selectable background (glow, plain, grid, dots, waves, aurora), and a QR & Share card in Tools: the code fills its frame, and you can save it as an image or share the app via WhatsApp, Instagram, Snapchat, email, copy-link or the native share sheet.", ar:"إعادة تصميم الثيم الرمادي الداكن الافتراضي مع مظهرين جديدين (منتصف الليل، الغابة)، خلفية قابلة للاختيار (توهج، سادة، شبكة، نقاط، موجات، شفق)، وبطاقة رمز QR ومشاركة في الأدوات: الرمز يملأ إطاره، ويمكن حفظه كصورة أو مشاركة التطبيق عبر واتساب وإنستغرام وسناب شات والبريد ونسخ الرابط."},
+  {v:"1.4.0", d:"2026-10-11", en:"Dedicated tappable tabs on every screen (swipe still works on iOS), Install-on-Home-Screen + QR code, top-5 metals in two columns (adds Copper), top-8 currencies table, two-column crypto, per-card refresh, moving crosshair on the chart, city remembered until you change it.", ar:"تبويبات قابلة للنقر على جميع الشاشات (السحب يعمل في iOS)، تثبيت على الشاشة الرئيسية + رمز QR، المعادن الخمسة في عمودين (مع النحاس)، جدول أفضل ٨ عملات، العملات الرقمية في عمودين، زر تحديث لكل قسم، مؤشر متحرك على المخطط، المدينة محفوظة حتى تغييرها."},
+  {v:"1.3.0", d:"2026-10-11", en:"Metals now take your own API key (BYOK): pick one of 10 price providers and paste a key in Settings — the key stays in this browser only.", ar:"المعادن الآن تدعم مفتاحك الخاص (BYOK): اختر أحد ١٠ مزوّدي أسعار وألصق المفتاح في الإعدادات — يبقى المفتاح في هذا المتصفح فقط."},
+  {v:"1.2.0", d:"2026-10-11", en:"Desktop gets a dedicated tab bar: one section at a time instead of one long scrolling page. Mobile keeps swipeable pages with dots.", ar:"إضافة شريط تبويبات مخصص لسطح المكتب: قسم واحد في كل مرة بدلاً من التمرير الطويل. الجوال يبقى بتنقل قابل للسحب."},
+  {v:"1.1.0", d:"2026-10-11", en:"Stylish refresh (glassy cards, icons, glow) + iPhone-style jiggle and drag to reorder via long-press or pencil button.", ar:"تحديث جمالي (بطاقات زجاجية وأيقونات) + اهتزاز وسحب لإعادة الترتيب مثل الآيفون عبر الضغطة المطولة أو زر القلم."},
+  {v:"1.0.0", d:"2026-10-10", en:"First release: 5 pages, live weather/crypto/FX/metals*, 8 headlines, prayer times, countdowns, tasks, local calendar, search, EN/AR, export/import. *Metals needs Worker URL + secret.", ar:"الإصدار الأول: ٥ صفحات، طقس وأسعار حية، ٨ عناوين، مواقيت صلاة، عدّادات، مهام، تقويم محلي، بحث، عربي/إنجليزي، تصدير/استيراد. *المعادن تحتاج Worker."}
+];
+/* ============ i18n hand-curated (no machine translation for UI) ============ */
+const I18N = {
+en:{brand:"Dashboard",searchPh:"Search — crypto, ETH, prayer, tasks, free image tools…",home:"Home",markets:"Markets",news:"News",planner:"Planner",tools:"Tools & Settings",install:"Install on Home Screen",qr:"App QR code",copied:"Copied ✓",refresh:"Refresh",qrShare:"QR & Share",saveQr:"Save QR image",shareApp:"Share app",wa:"WhatsApp",ig:"Instagram",snap:"Snapchat",copyLink:"Copy link",mail:"Email",scanHint:"Scan with a phone camera to open the app.",noShare:"Your browser opened the app link so you can share it from there.",thGrey:"Dark Grey",thMid:"Midnight",thFor:"Forest",bgPick:"Background",bgDefault:"Default glow",bgNone:"Plain",bgGrid:"Grid",bgDots:"Dots",bgWaves:"Waves",bgAurora:"Aurora",crosshair:"Move the slider or drag on the chart",clock:"Clock",weather:"Weather",prayer:"Prayer times",quote:"Quote of the day",nextCd:"Next countdown",todayTasks:"Today's tasks",crypto:"Crypto — top 8",fx:"Currencies — top 8",metals:"Metals",chart:"Time-travel chart",auto:"Automotive",ai:"AI models & tools",gh:"Top GitHub repo (week)",fin:"Finance",cal:"Calendar",tasks:"Tasks",cds:"Countdowns",data:"Export / Import",settings:"Settings",useLoc:"Use my location",cityPh:"Search city, town or country…",units:"Units",c:"°C",f:"°F",h12:"12h",h24:"24h",secs:"Show seconds",method:"Calculation method",hijri:"Hijri",nextPrayer:"Next prayer",addTask:"Add task",taskPh:"New task…",due:"Due date",edit:"Edit",del:"Delete",save:"Save",cancel:"Cancel",close:"Close",add:"Add",addEvent:"Add event",evTitle:"Title",evDate:"Date",evTime:"Time",addToCal:"Add to Calendar",gCal:"Google Calendar",month:"Month",agenda:"Agenda",plusCd:"Add countdown",until:"Until",since:"Since",recurring:"Yearly recurring",unitsShow:"Units to show",years:"Years",months:"Months",days:"Days",hours:"Hours",minutes:"Minutes",seconds:"Seconds",export:"Export JSON",import:"Import JSON",replace:"Replace",merge:"Merge",csv:"Export tasks CSV",copy:"Copy JSON",wipe:"Wipe all data",wipeSure:"Delete ALL local data? This cannot be undone.",yesDel:"Yes, delete",no:"Keep",lang:"Language",theme:"Theme",accent:"Accent (5 palettes)",digits:"Digits",west:"123",east:"١٢٣",light:"Light",dark:"Dark",autoT:"Auto",workerUrl:"Worker URL",workerHint:"Leave empty to use the built-in API:",baseC:"Base currency",openOrig:"Open original",needWorker:"Add your Worker URL in Settings to enable metals + auto news.",noData:"Unavailable — try later.",cached:"Cached",hide:"Hide",show:"Show",up:"↑",down:"↓",today:"Today",overdue:"Overdue",done:"Done",calc:"Calculator",amount:"Amount",value:"Value",vol24:"Vol 24h",priceOn:"Price on",pickDate:"Pick a date",presets:"Presets",xmas:"Christmas",newyr:"New Year",ramadan:"Ramadan start",eidF:"Eid al-Fitr",eidA:"Eid al-Adha",custom:"Custom…",inapp:"Tap a headline to read inside the app.",version:"Version",changelog:"Changelog",widget:"Widgets (hide = no network)",reorder:"Reorder with ↑ ↓",ok:"OK",metalsSrc:"Metals source (BYOK)",byokKey:"Your own API key",byokPh:"Paste your provider key (optional)",byokHint:"Pick a provider, then paste the key from that provider's dashboard. It is stored in this browser only — never in the Worker or in your export file.",via:"via",yourKey:"your key",fallback:"fallback",srcDefault:"Worker default",srcNone:"no key",wOpen:"open weights",wLocal:"runs locally",wDaily:"free daily limit",wTrend:"trending model",wFree:"free",wNew:"just released",wModel:"model",wMedia:"image/video",wApi:"API access",quPerDay:"/day",quTotal:"total",quOnce:"once",quUnlimited:"unlimited",quNone:"no free allowance stated",quImages:"images",quVideos:"videos",quGenerations:"generations",quPrompts:"prompts",quRequests:"requests",quTokens:"tokens",quWords:"words",quCharacters:"chars",quMessages:"messages",quHours:"hours",quMinutes:"min",quSeconds:"sec",quCredits:"credits",quJobs:"jobs",quGB:"GB",gen:"Free image & video tools",genHint:"Tap a tool to open the vendor's own page — the figures are dated, not live.",genChecked:"figures checked",genImage:"image",genVideo:"video",genSpanWeek:"a week",genSpan3h:"every 3h",genPerWeek:"/week",genPer3h:"/3h",genUCreations:"creations",genUFast:"fast tokens",genUUnits:"units",genUStamina:"stamina",genNBing:"15 boosted creations a day — the boost, not the image, is what runs out.",genNLeonardo:"150 fast tokens a day; tokens are the vendor's own unit, not images.",genNKrea:"100 compute units a day; units are the vendor's own unit, not images.",genNNight:"5 credits a day from the daily login bonus.",genNSea:"150 stamina a day; stamina is the vendor's own unit, not images.",genNPlay:"10 images every 3 hours — the only row whose unit really is images.",genNRecraft:"30 generations a day on the free plan.",genNIdeo:"30 credits a week — weekly, not daily, so plan around it.",genNFlow:"50 credits a day; a clip costs several credits.",genNPix:"30 credits a day.",genNDream:"120 credits a day.",genNRunway:"125 credits for new accounts — a one-off grant, not a daily rate.",genNLtx:"800 credits on signup — a one-off grant, not a daily rate.",kindCrypto:"Crypto",kindFx:"Currencies",kindMetal:"Metals",am:"AM",pm:"PM",pFajr:"Fajr",pSunrise:"Sunrise",pDhuhr:"Dhuhr",pAsr:"Asr",pMaghrib:"Maghrib",pIsha:"Isha",mUmmAlQura:"Umm al-Qura",mMWL:"Muslim World League",mISNA:"ISNA",mGulf:"Gulf",wxClear:"Clear",wxMostly:"Mostly clear",wxPartly:"Partly cloudy",wxOvercast:"Overcast",wxFog:"Fog",wxDrizzle:"Drizzle",wxRain:"Rain",wxSnow:"Snow",wxShowers:"Showers",wxStorm:"Storm",acOrange:"Orange",acAmber:"Amber",acCoral:"Coral",acTeal:"Teal",acViolet:"Violet",mode:"Mode",cdDefault:"Countdown",editLayout:"Edit layout",fxNonEcb:"Outside the ECB's table:",fxNeedWorker:"needs the Worker URL (add it in Settings)",gpsNA:"This device has no location",gpsDenied:"Location permission denied",nCross:"crossed through USD",nEcbFrom:"ECB data begins",nYahooFrom:"outside the ECB's set — Yahoo data begins",nImfFrom:"IMF series begins",nCgOnly:"Yahoo has no pair for this coin: showing CoinGecko's last 365 days",nNoOverlap:"the USD legs for {x} do not overlap",nNoLeg:"no USD series for {x} — the pair cannot be crossed",nNoCoin:"no USD series for {x} — the coin cannot be priced in it",srcIMF:"IMF PCPS",srcECB:"ECB",srcYahoo:"Yahoo",srcCG:"CoinGecko",srcCross:"USD cross",chartLog:"log scale",chartVs:"against",chartPts:"points",chartPlotted:"plotted",chartMonthPts:"monthly points",chartWeekPts:"weekly points",chartDayPts:"daily points",chartNoSeries:"no data for this selection — it needs the Worker",chartMonth:"monthly",chartWeek:"weekly",chartDay:"daily",chartLocal:"browser fallback",chartNeedWorker:"needs the Worker URL for metals history",chartAllCur:"all currencies",chartAllCoins:"all coins"},
+ar:{brand:"لوحة المتابعة",searchPh:"بحث — عملات رقمية، ETH، صلاة، مهام، أدوات مجانية…",home:"الرئيسية",markets:"الأسواق",news:"الأخبار",planner:"المخطط",tools:"الإعدادات والملفات",install:"تثبيت على الشاشة الرئيسية",qr:"رمز QR للتطبيق",copied:"تم النسخ ✓",refresh:"تحديث",qrShare:"رمز QR ومشاركة",saveQr:"حفظ صورة الرمز",shareApp:"مشاركة التطبيق",wa:"واتساب",ig:"إنستغرام",snap:"سناب شات",copyLink:"نسخ الرابط",mail:"بريد",scanHint:"وجّه كاميرا الهاتف على الرمز لفتح التطبيق.",noShare:"فتح المتصفح رابط التطبيق لتشاركه من هناك.",thGrey:"رمادي داكن",thMid:"منتصف الليل",thFor:"الغابة",bgPick:"الخلفية",bgDefault:"توهج افتراضي",bgNone:"سادة",bgGrid:"شبكة",bgDots:"نقاط",bgWaves:"موجات",bgAurora:"شفق",crosshair:"حرّك الشريط أو اسحب على المخطط",clock:"الساعة",weather:"الطقس",prayer:"مواقيت الصلاة",quote:"اقتباس اليوم",nextCd:"أقرب عدّاد",todayTasks:"مهام اليوم",crypto:"العملات الرقمية — أفضل ٨",fx:"العملات — أفضل ٨",metals:"المعادن",chart:"مخطط السفر عبر الزمن",auto:"السيارات",ai:"نماذج وأدوات الذكاء الاصطناعي",gh:"أعلى مستودع على جيت هب (أسبوع)",fin:"المال",cal:"التقويم",tasks:"المهام",cds:"العدّادات",data:"تصدير / استيراد",settings:"الإعدادات",useLoc:"استخدم موقعي",cityPh:"ابحث عن مدينة أو بلد…",units:"الوحدات",c:"°م",f:"°ف",h12:"١٢ س",h24:"٢٤ س",secs:"إظهار الثواني",method:"طريقة الحساب",hijri:"هجري",nextPrayer:"الصلاة القادمة",addTask:"إضافة مهمة",taskPh:"مهمة جديدة…",due:"تاريخ الاستحقاق",edit:"تعديل",del:"حذف",save:"حفظ",cancel:"إلغاء",close:"إغلاق",add:"إضافة",addEvent:"إضافة حدث",evTitle:"العنوان",evDate:"التاريخ",evTime:"الوقت",addToCal:"إضافة إلى التقويم",gCal:"تقويم جوجل",month:"شهر",agenda:"أجندة",plusCd:"إضافة عدّاد",until:"متبقٍ حتى",since:"مضى منذ",recurring:"يتكرر سنوياً",unitsShow:"الوحدات المعروضة",years:"سنوات",months:"شهور",days:"أيام",hours:"ساعات",minutes:"دقائق",seconds:"ثوانٍ",export:"تصدير JSON",import:"استيراد JSON",replace:"استبدال",merge:"دمج",csv:"تصدير المهام CSV",copy:"نسخ JSON",wipe:"مسح كل البيانات",wipeSure:"حذف كل البيانات المحلية؟ لا يمكن التراجع.",yesDel:"نعم، احذف",no:"إبقاء",lang:"اللغة",theme:"المظهر",accent:"اللون (٥ خيارات)",digits:"الأرقام",west:"123",east:"١٢٣",light:"فاتح",dark:"داكن",autoT:"تلقائي",workerUrl:"رابط الوركر",workerHint:"اتركه فارغاً لاستخدام الواجهة الافتراضية:",baseC:"العملة الأساسية",openOrig:"فتح الأصل",needWorker:"أضف رابط الوركر في الإعدادات لتفعيل المعادن والأخبار.",noData:"غير متوفر — حاول لاحقاً.",cached:"مخزّن",hide:"إخفاء",show:"إظهار",up:"↑",down:"↓",today:"اليوم",overdue:"متأخر",done:"تم",calc:"حاسبة",amount:"الكمية",value:"القيمة",vol24:"حجم ٢٤ ساعة",priceOn:"السعر بتاريخ",pickDate:"اختر تاريخاً",presets:"مناسبات",xmas:"الكريسماس",newyr:"رأس السنة",ramadan:"بداية رمضان",eidF:"عيد الفطر",eidA:"عيد الأضحى",custom:"مخصص…",inapp:"اضغط على عنوان لقراءته داخل التطبيق.",version:"الإصدار",changelog:"سجل التغييرات",widget:"الودجات (إخفاء = بلا شبكة)",reorder:"أعد الترتيب بـ ↑ ↓",ok:"حسناً",metalsSrc:"مصدر المعادن (مفتاحك الخاص)",byokKey:"مفتاحك الخاص",byokPh:"ألصق مفتاح المزوّد (اختياري)",byokHint:"اختر المزوّد ثم ألصق المفتاح من لوحة المزوّد. يُخزَّن في هذا المتصفح فقط — لا في الوركر ولا في ملف التصدير.",via:"عبر",yourKey:"مفتاحك",fallback:"بديل",srcDefault:"افتراضي الوركر",srcNone:"بلا مفتاح",wOpen:"أوزان مفتوحة",wLocal:"يعمل محلياً",wDaily:"حد يومي مجاني",wTrend:"نموذج رائج",wFree:"مجاني",wNew:"صدر حديثاً",wModel:"نموذج",wMedia:"صور/فيديو",wApi:"واجهة برمجية",quPerDay:"/يوم",quTotal:"إجمالي",quOnce:"لمرة",quUnlimited:"بلا حد",quNone:"لا حصة مجانية معلنة",quImages:"صور",quVideos:"فيديو",quGenerations:"عمليات توليد",quPrompts:"أوامر",quRequests:"طلبات",quTokens:"توكن",quWords:"كلمات",quCharacters:"أحرف",quMessages:"رسائل",quHours:"ساعات",quMinutes:"دقيقة",quSeconds:"ثانية",quCredits:"أرصدة",quJobs:"مهام",quGB:"جيجابايت",gen:"أدوات الصور والفيديو المجانية",genHint:"اضغط على الأداة لفتح صفحة المزوّد — الأرقام مؤرَّخة وليست لحظية.",genChecked:"الأرقام مراجَعة بتاريخ",genImage:"صورة",genVideo:"فيديو",genSpanWeek:"أسبوعياً",genSpan3h:"كل ٣ ساعات",genPerWeek:"/أسبوع",genPer3h:"/٣س",genUCreations:"عمليات إنشاء",genUFast:"توكن سريع",genUUnits:"وحدات",genUStamina:"طاقة",genNBing:"١٥ عملية إنشاء مسرَّعة يومياً — ما ينفد هو التسريع لا الصورة.",genNLeonardo:"١٥٠ توكن سريع يومياً؛ التوكن وحدة المزوّد وليست صورة.",genNKrea:"١٠٠ وحدة حوسبة يومياً؛ الوحدة وحدة المزوّد وليست صورة.",genNNight:"٥ أرصدة يومياً من مكافأة الدخول اليومي.",genNSea:"١٥٠ وحدة طاقة يومياً؛ الطاقة وحدة المزوّد وليست صورة.",genNPlay:"١٠ صور كل ٣ ساعات — السطر الوحيد الذي وحدته صور فعلاً.",genNRecraft:"٣٠ عملية توليد يومياً في الخطة المجانية.",genNIdeo:"٣٠ رصيداً أسبوعياً — أسبوعي وليس يومي، فخطّط لذلك.",genNFlow:"٥٠ رصيداً يومياً؛ المقطع الواحد يكلّف عدة أرصدة.",genNPix:"٣٠ رصيداً يومياً.",genNDream:"١٢٠ رصيداً يومياً.",genNRunway:"١٢٥ رصيداً لحسابات جديدة — منحة لمرة واحدة وليست حدّاً يومياً.",genNLtx:"٨٠٠ رصيد عند التسجيل — منحة لمرة واحدة وليست حدّاً يومياً.",kindCrypto:"عملات رقمية",kindFx:"عملات",kindMetal:"معادن",am:"ص",pm:"م",pFajr:"الفجر",pSunrise:"الشروق",pDhuhr:"الظهر",pAsr:"العصر",pMaghrib:"المغرب",pIsha:"العشاء",mUmmAlQura:"أم القرى",mMWL:"رابطة العالم الإسلامي",mISNA:"الجمعية الإسلامية لأمريكا الشمالية",mGulf:"دول الخليج",wxClear:"صافٍ",wxMostly:"صافٍ غالباً",wxPartly:"غائم جزئياً",wxOvercast:"غائم",wxFog:"ضباب",wxDrizzle:"رذاذ",wxRain:"مطر",wxSnow:"ثلج",wxShowers:"زخات مطر",wxStorm:"عاصفة",acOrange:"برتقالي",acAmber:"عنبري",acCoral:"مرجاني",acTeal:"أزرق مخضر",acViolet:"بنفسجي",mode:"النمط",cdDefault:"عدّاد",editLayout:"تعديل الترتيب",fxNonEcb:"من خارج جدول المركزي الأوروبي:",fxNeedWorker:"يحتاج رابط الوركر (أضفه في الإعدادات)",gpsNA:"لا يتوفر تحديد موقع على هذا الجهاز",gpsDenied:"تم رفض إذن الموقع",nCross:"متقاطع عبر الدولار",nEcbFrom:"تبدأ بيانات المركزي الأوروبي",nYahooFrom:"خارج مجموعة المركزي الأوروبي — تبدأ بيانات ياهو",nImfFrom:"تبدأ سلسلة صندوق النقد",nCgOnly:"لا يجد ياهو زوجاً لهذه العملة الرقمية: نعرض آخر ٣٦٥ يوماً من CoinGecko",nNoOverlap:"ساقا الدولار لـ {x} لا تتقاطعان",nNoLeg:"لا سلسلة دولار لـ {x} — لا يمكن تقاطع الزوج",nNoCoin:"لا سلسلة دولار لـ {x} — لا يمكن تسعير العملة الرقمية بها",srcIMF:"صندوق النقد الدولي",srcECB:"البنك المركزي الأوروبي",srcYahoo:"ياهو",srcCG:"كوين جيكو",srcCross:"تقاطع الدولار",chartLog:"مقياس لوغاريتمي",chartVs:"مقابل",chartPts:"نقطة",chartPlotted:"مرسومة",chartMonthPts:"نقطة شهرياً",chartWeekPts:"نقطة أسبوعياً",chartDayPts:"نقطة يومياً",chartNoSeries:"لا توجد بيانات لهذا الاختيار — يحتاج الووركر",chartMonth:"شهري",chartWeek:"أسبوعي",chartDay:"يومي",chartLocal:"من المتصفح",chartNeedWorker:"يحتاج رابط الوركر لتاريخ المعادن",chartAllCur:"كل العملات",chartAllCoins:"كل العملات الرقمية"}
+};
+const QUOTES=[
+["The impediment to action advances action. What stands in the way becomes the way.","Marcus Aurelius"],["We suffer more often in imagination than in reality.","Seneca"],["How we spend our days is how we spend our lives.","Annie Dillard"],["Simplicity is the ultimate sophistication.","Leonardo da Vinci"],["What gets measured gets managed.","Peter Drucker"],["The best time to plant a tree was 20 years ago. The second best time is now.","Proverb"],["Stay hungry, stay foolish.","Stewart Brand"],["Action is the foundational key to all success.","Pablo Picasso"],["It always seems impossible until it is done.","Nelson Mandela"],["Discipline equals freedom.","Jocko Willink"],["Whether you think you can or you think you can't, you're right.","Henry Ford"],["The soul becomes dyed with the color of its thoughts.","Marcus Aurelius"],["He who has a why to live can bear almost any how.","Nietzsche"],["Don't count the days, make the days count.","Muhammad Ali"],["Everything should be made as simple as possible, but not simpler.","Einstein"],["Quality is not an act, it is a habit.","Aristotle"],["The man who moves a mountain begins by carrying away small stones.","Confucius"],["Well begun is half done.","Aristotle"],["Knowing yourself is the beginning of all wisdom.","Aristotle"],["Waste no more time arguing what a good man should be. Be one.","Marcus Aurelius"],["Difficulties strengthen the mind, as labor does the body.","Seneca"],["Luck is what happens when preparation meets opportunity.","Seneca"],["If you want to be happy, be.","Tolstoy"],["The only way to do great work is to love what you do.","Steve Jobs"],["Innovation distinguishes between a leader and a follower.","Steve Jobs"],["Stay committed to your decisions, but stay flexible in your approach.","Tony Robbins"],["The future depends on what you do today.","Gandhi"],["Be the change you wish to see in the world.","Gandhi"],["An ounce of action is worth a ton of theory.","Emerson"],["Do not wait to strike till the iron is hot; make it hot by striking.","W.B. Yeats"],["Great things are done by a series of small things brought together.","Van Gogh"],["Our greatest glory is not in never falling, but in rising every time we fall.","Confucius"],["Choose a job you love, and you will never have to work a day.","Confucius"],["The journey of a thousand miles begins with a single step.","Lao Tzu"],["Nature does not hurry, yet everything is accomplished.","Lao Tzu"],["He who knows others is wise; he who knows himself is enlightened.","Lao Tzu"],["Simplicity, patience, compassion. These three are your greatest treasures.","Lao Tzu"],["The best fighter is never angry.","Lao Tzu"],["Knowledge is a treasure, but practice is the key to it.","Lao Tzu"],["Do the hard jobs first. The easy jobs will take care of themselves.","Dale Carnegie"],["Success is getting what you want. Happiness is wanting what you get.","Dale Carnegie"],["Inaction breeds doubt and fear. Action breeds confidence and courage.","Dale Carnegie"],["Nothing in life is to be feared, it is only to be understood.","Marie Curie"],["I was taught that the way of progress was neither swift nor easy.","Marie Curie"],["Strive not to be a success, but rather to be of value.","Einstein"],["Imagination is more important than knowledge.","Einstein"],["Life is like riding a bicycle. To keep your balance you must keep moving.","Einstein"],["The important thing is not to stop questioning.","Einstein"],["If you can't explain it simply, you don't understand it well enough.","Einstein"],["A champion is someone who gets up when he cannot.","Jack Dempsey"],["Hardships often prepare ordinary people for an extraordinary destiny.","C.S. Lewis"],["You are never too old to set another goal or to dream a new dream.","C.S. Lewis"],["What you do today can improve all your tomorrows.","Ralph Marston"],["Excellence is doing ordinary things extraordinarily well.","John W. Gardner"],["The expert in anything was once a beginner.","Helen Hayes"],["Don't watch the clock; do what it does. Keep going.","Sam Levenson"],["The secret of getting ahead is getting started.","Mark Twain"],["Continuous improvement is better than delayed perfection.","Mark Twain"],["Courage is resistance to fear, mastery of fear, not absence of fear.","Mark Twain"],["The best way out is always through.","Robert Frost"],["In three words I can sum up everything I've learned about life: it goes on.","Robert Frost"],["Freedom lies in being bold.","Robert Frost"],["A year from now you may wish you had started today.","Karen Lamb"],["Light tomorrow with today.","Elizabeth Barrett Browning"],["It does not matter how slowly you go as long as you do not stop.","Confucius"],["Our greatest weakness lies in giving up.","Edison"],["Genius is one percent inspiration and ninety-nine percent perspiration.","Edison"],["Opportunity is missed by most people because it is dressed in overalls and looks like work.","Edison"],["If we did all the things we are capable of, we would literally astound ourselves.","Edison"],["The value of an idea lies in the using of it.","Edison"],["Be faithful in small things because it is in them that your strength lies.","Mother Teresa"],["Spread love everywhere you go.","Mother Teresa"],["Not all of us can do great things. But we can do small things with great love.","Mother Teresa"],["If you judge people, you have no time to love them.","Mother Teresa"],["Do not dwell in the past, do not dream of the future, concentrate the mind on the present moment.","Buddha"],["Three things cannot be long hidden: the sun, the moon, and the truth.","Buddha"],["Better than a thousand hollow words, is one word that brings peace.","Buddha"],["Peace comes from within. Do not seek it without.","Buddha"],["The mind is everything. What you think you become.","Buddha"],["Happiness will never come to those who fail to appreciate what they already have.","Buddha"],["You only live once, but if you do it right, once is enough.","Mae West"],["Get busy living or get busy dying.","Stephen King"],["The purpose of our lives is to be happy.","Dalai Lama"],["Happiness is not something ready made. It comes from your own actions.","Dalai Lama"],["Remember that not getting what you want is sometimes a wonderful stroke of luck.","Dalai Lama"],["Where there is love there is life.","Gandhi"],["The weak can never forgive. Forgiveness is the attribute of the strong.","Gandhi"],["Live as if you were to die tomorrow. Learn as if you were to live forever.","Gandhi"],["First they ignore you, then they laugh at you, then they fight you, then you win.","Gandhi"],["A man is but the product of his thoughts. What he thinks, he becomes.","Gandhi"],["You must be the change you wish to see.","Gandhi"],["The future belongs to those who believe in the beauty of their dreams.","Eleanor Roosevelt"],["No one can make you feel inferior without your consent.","Eleanor Roosevelt"],["Do what you feel in your heart to be right — for you'll be criticized anyway.","Eleanor Roosevelt"],["It takes as much energy to wish as it does to plan.","Eleanor Roosevelt"],["Believe you can and you're halfway there.","Theodore Roosevelt"],["Do what you can, with what you have, where you are.","Theodore Roosevelt"],["Keep your eyes on the stars, and your feet on the ground.","Theodore Roosevelt"],["Far and away the best prize that life offers is the chance to work hard at work worth doing.","Theodore Roosevelt"],["Knowing is not enough; we must apply. Willing is not enough; we must do.","Goethe"],["Whatever you can do, or dream you can, begin it. Boldness has genius in it.","Goethe"],["Correction does much, but encouragement does more.","Goethe"],["Dreams are necessary to life.","Anaïs Nin"],["Life shrinks or expands in proportion to one's courage.","Anaïs Nin"],["The best way out is always through.","Frost"],["Done is better than perfect.","Sheryl Sandberg"]
+];
+/* The same 106 quotes in Arabic, entry for entry, so the day's pinned index picks the
+   same thought in either language and a language switch never changes which quote it is.
+   The authors are Arabic too - a reader in AR mode should not meet a Latin name. */
+const QUOTES_AR=[
+["العقبة أمام العمل تدفعه إلى الأمام؛ وما يعترض الطريق يصبح هو الطريق.","ماركوس أوريليوس"],
+["نتألم في الخيال أكثر مما نتألم في الواقع.","سينيكا"],
+["كما نقضي أيامنا نقضي حياتنا.","آني ديلارد"],
+["البساطة هي الرقيّ الأقصى.","ليوناردو دافنشي"],
+["ما يُقاس يُدار.","بيتر دراكر"],
+["أفضل وقت لزراعة شجرة كان قبل عشرين عاماً، وثاني أفضل وقت هو الآن.","مثل"],
+["ابقَ متعطشاً، ابقَ مجنوناً.","ستيوارت براند"],
+["العمل هو المفتاح الأساسي لكل نجاح.","بابلو بيكاسو"],
+["يبدو دائماً مستحيلاً حتى يُنجَز.","نيلسون مانديلا"],
+["الانضباط يساوي الحرية.","جوكو ويلينك"],
+["إن ظننت أنك تستطيع أو ظننت أنك لا تستطيع، فأنت محق في الحالتين.","هنري فورد"],
+["تُصبغ النفس بلون أفكارها.","ماركوس أوريليوس"],
+["من له سبب للعيش يتحمّل أي طريقة للعيش.","نيتشه"],
+["لا تعُدّ الأيام، بل اجعل الأيام تُحتسب.","محمد علي"],
+["ينبغي أن يكون كل شيء بسيطاً قدر الإمكان، لا أبسط من ذلك.","أينشتاين"],
+["الجودة ليست فعلاً، بل عادة.","أرسطو"],
+["من ينقل جبلاً يبدأ بحمل أحجار صغيرة.","كونفوشيوس"],
+["البداية الجيدة نصف الإنجاز.","أرسطو"],
+["معرفة النفس بداية كل حكمة.","أرسطو"],
+["لا تُضِع وقتاً في الجدل حول ما ينبغي أن يكون عليه الرجل الصالح، بل كن واحداً منهم.","ماركوس أوريليوس"],
+["المصاعب تقوّي العقل كما يقوّي العمل الجسد.","سينيكا"],
+["الحظ ما يحدث عندما يلتقي الإعداد بالفرصة.","سينيكا"],
+["إن أردت أن تكون سعيداً، فكن.","تولستوي"],
+["الطريق الوحيد لعمل عظيم هو أن تحب ما تفعله.","ستيف جوبز"],
+["الابتكار يفرّق بين القائد والتابع.","ستيف جوبز"],
+["ابقَ ملتزماً بقراراتك، لكن مرناً في أسلوبك.","توني روبنز"],
+["المستقبل يعتمد على ما تفعله اليوم.","غاندي"],
+["كن التغيير الذي تريد أن تراه في العالم.","غاندي"],
+["أونصة من العمل تساوي طناً من التنظير.","إمرسون"],
+["لا تنتظر أن يلين الحديد، بل اطرقه حتى يلين.","و. ب. ييتس"],
+["تُصنع الأعمال العظيمة من سلسلة أشياء صغيرة مجموعة معاً.","فان جوخ"],
+["مجدنا الأعظم ليس في ألّا نسقط أبداً، بل في أن ننهض كل مرة نسقط فيها.","كونفوشيوس"],
+["اختر عملاً تحبه، فلن تعمل يوماً في حياتك.","كونفوشيوس"],
+["رحلة الألف ميل تبدأ بخطوة واحدة.","لاو تسو"],
+["الطبيعة لا تستعجل، ومع ذلك يتم كل شيء.","لاو تسو"],
+["من يعرف الآخرين حكيم، ومن يعرف نفسه مستنير.","لاو تسو"],
+["البساطة والصبر والرحمة؛ هذه ثلاثة هي كنوزك العظمى.","لاو تسو"],
+["أفضل المقاتلين لا يغضب أبداً.","لاو تسو"],
+["المعرفة كنز، والعمل مفتاحه.","لاو تسو"],
+["ابدأ بالأعمال الصعبة، فالأعمال السهلة تُنجز من تلقاء نفسها.","ديل كارنيجي"],
+["النجاح أن تحصل على ما تريد، والسعادة أن تريد ما حصلت عليه.","ديل كارنيجي"],
+["التقاعس يولّد الشك والخوف، والعمل يولّد الثقة والشجاعة.","ديل كارنيجي"],
+["لا شيء في الحياة يستحق الخوف، بل يستحق الفهم فقط.","ماري كوري"],
+["تعلّمت أن طريق التقدم ليس سريعاً ولا سهلاً.","ماري كوري"],
+["اسعَ لا أن تكون ناجحاً، بل أن تكون ذا قيمة.","أينشتاين"],
+["الخيال أهم من المعرفة.","أينشتاين"],
+["الحياة كقيادة دراجة: لتحفظ توازنك عليك أن تستمر في التقدم.","أينشتاين"],
+["المهم ألّا تتوقف عن التساؤل.","أينشتاين"],
+["إن لم تستطع شرحه ببساطة فأنت لا تفهمه جيداً.","أينشتاين"],
+["البطل من ينهض حين لا يقدر على النهوض.","جاك ديمبسي"],
+["غالباً ما تهيّئ المشقات الناس العاديين لمصير استثنائي.","سي. إس. لويس"],
+["لن تكون كبيراً في السن على أن تضع هدفاً آخر أو تحلم حلماً جديداً.","سي. إس. لويس"],
+["ما تفعله اليوم يمكن أن يحسّن كل أيام غدك.","رالف مارستون"],
+["التميّز أن تفعل الأشياء العادية على نحو استثنائي.","جون و. غاردنر"],
+["الخبير في أي مجال كان يوماً مبتدئاً.","هيلين هايز"],
+["لا تراقب الساعة، بل افعل ما تفعله: استمر في التقدم.","سام ليفنسون"],
+["سر التقدم هو أن تبدأ.","مارك توين"],
+["التحسين المستمر خير من كمال متأخر.","مارك توين"],
+["الشجاعة مقاومة الخوف والتمكن منه، لا غياب الخوف.","مارك توين"],
+["أفضل طريق للخروج هو المرور من الوسط.","روبرت فروست"],
+["بثلاث كلمات ألخّص كل ما تعلمته عن الحياة: إنها تمضي.","روبرت فروست"],
+["الحرية في الجرأة.","روبرت فروست"],
+["بعد عام قد تتمنى أنك بدأت اليوم.","كارين لام"],
+["أضِئ الغد باليوم.","إليزابيث باريت براوننغ"],
+["لا يهم كم تسير ببطء ما دمت لا تتوقف.","كونفوشيوس"],
+["أكبر ضعف فينا هو الاستسلام.","إديسون"],
+["العبقرية واحد بالمئة إلهام وتسعة وتسعون بالمئة عرق.","إديسون"],
+["تفوت الفرصة معظم الناس لأنها ترتدي ثياب العمل وتبدو كأنها عمل.","إديسون"],
+["لو فعلنا كل ما نقدر عليه لأدهشنا أنفسنا حقاً.","إديسون"],
+["قيمة الفكرة في استخدامها.","إديسون"],
+["كن أميناً في الأمور الصغيرة، ففيها تكمن قوتك.","الأم تريزا"],
+["انشر الحب أينما ذهبت.","الأم تريزا"],
+["ليس كلنا نستطيع فعل أشياء عظيمة، لكننا نستطيع فعل أشياء صغيرة بحب عظيم.","الأم تريزا"],
+["إن حكمت على الناس فلن يبقى لك وقت لتحبهم.","الأم تريزا"],
+["لا تسكن الماضي ولا تحلم بالمستقبل، وركّز ذهنك على اللحظة الحاضرة.","بوذا"],
+["ثلاثة لا يمكن أن تبقى مخفية طويلاً: الشمس والقمر والحق.","بوذا"],
+["كلمة واحدة تجلب السلام خير من ألف كلمة جوفاء.","بوذا"],
+["السلام يأتي من الداخل، فلا تبحث عنه في الخارج.","بوذا"],
+["العقل هو كل شيء، وما تفكر فيه تصبحه.","بوذا"],
+["لن تأتي السعادة لمن لا يقدّر ما لديه.","بوذا"],
+["تعيش مرة واحدة، وإن أحسنت العيش كفتك مرة.","مي وست"],
+["إما أن تنشغل بالحياة أو تنشغل بالموت.","ستيفن كينغ"],
+["الغاية من حياتنا أن نكون سعداء.","الدالاي لاما"],
+["السعادة ليست شيئاً جاهزاً، إنها تأتي من أفعالك.","الدالاي لاما"],
+["تذكّر أن عدم حصولك على ما تريد قد يكون أحياناً حظاً عظيماً.","الدالاي لاما"],
+["حيث يوجد الحب توجد الحياة.","غاندي"],
+["لا يستطيع الضعيف أن يسامح؛ فالمسامحة صفة الأقوياء.","غاندي"],
+["عِش كأنك تموت غداً، وتعلّم كأنك ستعيش إلى الأبد.","غاندي"],
+["أولاً يتجاهلونك، ثم يسخرون منك، ثم يقاتلونك، ثم تنتصر.","غاندي"],
+["الإنسان نتاج أفكاره؛ وما يفكر فيه يصبحه.","غاندي"],
+["كن أنت التغيير الذي تريد رؤيته.","غاندي"],
+["المستقبل لمن يؤمن بجمال أحلامه.","إليانور روزفلت"],
+["لا يمكن لأحد أن يشعرك بالدونية دون موافقتك.","إليانور روزفلت"],
+["افعل ما تراه في قلبك صواباً، فستُنتقد على أي حال.","إليانور روزفلت"],
+["يستغرق الأمنيات من الجهد مثل ما يستغرقه التخطيط.","إليانور روزفلت"],
+["آمن بأنك تستطيع، فقد قطعت نصف الطريق.","ثيودور روزفلت"],
+["افعل ما تستطيع بما تملك وأنت حيث أنت.","ثيودور روزفلت"],
+["اجعل عينيك على النجوم وقدميك على الأرض.","ثيودور روزفلت"],
+["أفضل جائزة تمنحها الحياة بلا منافس هي فرصة العمل الجاد في عمل يستحق.","ثيودور روزفلت"],
+["لا يكفي أن تعرف، بل يجب أن تُطبّق؛ ولا يكفي أن تريد، بل يجب أن تفعل.","غوته"],
+["مهما كان ما تستطيع فعله أو تحلم به، فابدأه؛ ففي الجرأة عبقرية.","غوته"],
+["التصحيح يفعل الكثير، لكن التشجيع يفعل أكثر.","غوته"],
+["الأحلام ضرورة للحياة.","أناييس نين"],
+["تتقلص الحياة أو تتسع بمقدار شجاعة المرء.","أناييس نين"],
+["أفضل طريق للخروج هو المرور من الوسط.","فروست"],
+["الإنجاز خير من الكمال.","شيريل ساندبرغ"],
+];
+/* ============ store ============ */
+const $=s=>document.querySelector(s);
+const store={
+ get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
+ set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+let settings=Object.assign({lang:"en",themeMode:"dark",accent:"orange",digits:"western",units:"c",h12:false,secs:true,base:"USD",method:4,workerUrl:"",metalsProvider:"",bg:"default",widgets:{},order:{}},store.get("pd_settings",{}));
+let tasks=store.get("pd_tasks",[]);
+let events=store.get("pd_events",[]);
+let countdowns=store.get("pd_countdowns",[]);
+let location_=store.get("pd_location",null);
+/* CONFIG.WORKER_URL is the built-in API address and stays the source of truth: an old
+   build copied it into settings, which let a saved override shadow a changed default.
+   Drop such a copy; an explicit different override is still honoured. */
+if(settings.workerUrl===CONFIG.WORKER_URL)settings.workerUrl="";
+function saveSettings(){store.set("pd_settings",settings)}
+/* BYOK key lives outside `settings` on purpose: it must never land in an exported JSON file. */
+function byokKey(){try{return localStorage.getItem("pd_metals_key")||""}catch(e){return""}}
+function setByokKey(v){try{v?localStorage.setItem("pd_metals_key",v):localStorage.removeItem("pd_metals_key")}catch(e){}}
+function t(k){const L=I18N[settings.lang]||I18N.en;return L[k]||I18N.en[k]||k}
+/* Eastern numerals are mapped by code point ('0' 0x30 -> '٠' 0x660), so the western path
+   returns the string untouched and the eastern path allocates neither a lookup table nor a
+   callback per call — this runs on every figure the page prints, and once a second for the
+   clock. */
+const EASTERN_CC=1584;
+function digits(s){s=String(s);if(settings.digits!=="eastern")return s;let out="",hit=false;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);if(c>=48&&c<=57){out+=String.fromCharCode(c+EASTERN_CC);hit=true}else out+=s[i]}return hit?out:s}
+function esc(s){return String(s==null?"":s)}
+function toast(msg){const el=$("#toast");el.textContent=msg;el.style.display="block";clearTimeout(el._h);el._h=setTimeout(()=>el.style.display="none",2200)}
+/* One Intl.NumberFormat per fraction-digit budget. Number#toLocaleString builds a formatter
+   on every call, and this runs once per row in the coin, FX and metals tables: measured at
+   ~36us against ~1.1us for the memoised formatter, with identical output. */
+const NF={};
+function num(n,d){if(n==null||isNaN(n))return"—";const k=d==null?2:d;const f=NF[k]||(NF[k]=new Intl.NumberFormat("en-US",{maximumFractionDigits:k,minimumFractionDigits:0,useGrouping:true}));return digits(f.format(Number(n)))}
+/* ============ modal (no alert/confirm/prompt) ============ */
+function openModal(html){const b=$("#modalBack"),x=$("#modalBox");x.innerHTML="";const d=document.createElement("div");d.innerHTML=html;x.appendChild(d);b.classList.add("open");const f=x.querySelector("input,select,textarea,button");if(f)f.focus()}
+function closeModal(){$("#modalBack").classList.remove("open")}
+$("#modalBack").addEventListener("click",e=>{if(e.target.id==="modalBack")closeModal()});
+function confirmModal(title,body,okLabel){return new Promise(res=>{openModal("<h3></h3><p class='muted'></p><div class='row' style='justify-content:flex-end;margin-top:12px'><button class='btn ghost' id='mNo'></button><button class='btn danger' id='mYes'></button></div>");const bx=$("#modalBox");bx.querySelector("h3").textContent=title;bx.querySelector("p").textContent=body;bx.querySelector("#mNo").textContent=t("no");bx.querySelector("#mYes").textContent=okLabel||t("yesDel");bx.querySelector("#mNo").onclick=()=>{closeModal();res(false)};bx.querySelector("#mYes").onclick=()=>{closeModal();res(true)}})}
+function openReader(title,meta,body,url){const b=$("#readerBack"),x=$("#readerBox");x.innerHTML="";const h=document.createElement("h3");h.textContent=title;x.appendChild(h);const m=document.createElement("p");m.className="muted";m.textContent=meta;x.appendChild(m);const p=document.createElement("p");p.style.whiteSpace="pre-wrap";p.textContent=body||"";x.appendChild(p);const r=document.createElement("div");r.className="row";r.style.justifyContent="flex-end";r.style.marginTop="12px";const c=document.createElement("button");c.className="btn ghost";c.textContent=t("close");c.onclick=()=>b.classList.remove("open");r.appendChild(c);if(url){const a=document.createElement("a");a.className="btn";a.textContent=t("openOrig");a.href=url;a.target="_blank";a.rel="noopener noreferrer";r.appendChild(a)}x.appendChild(r);b.classList.add("open")}
+$("#readerBack").addEventListener("click",e=>{if(e.target.id==="readerBack")$("#readerBack").classList.remove("open")});
+/* ============ theme/lang/layout mode ============ */
+function isDesktop(){return window.matchMedia&&matchMedia("(min-width: 900px)").matches}
+/* tablets fold down to mobile sizing: recompute layout mode + spacers on breakpoint change */
+let __lastWide=null;try{matchMedia("(min-width: 900px)").addEventListener("change",()=>{applyLayoutMode();renderDots();renderTabs();sizeSwipeSpacer();window.scrollTo(0,0)})}catch(e){}
+let curPage=0;
+function applyPrefs(){document.documentElement.lang=settings.lang;document.documentElement.dir=settings.lang==="ar"?"rtl":"ltr";document.documentElement.dataset.accent=settings.accent;document.documentElement.dataset.digits=settings.digits;document.documentElement.dataset.bg=settings.bg||"default";let mode=settings.themeMode;if(mode==="auto"){mode=(window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark"}document.documentElement.dataset.theme=mode;$("#verPill").textContent="v"+CONFIG.VERSION;$("#brand").textContent=t("brand");$("#search").placeholder=t("searchPh");$("#langBtn").textContent=settings.lang==="ar"?"EN":"ع";renderDots();renderTabs();renderAllLabels();try{renderPageHeads()}catch(e){}
+  /* The shell is UI too: the topbar buttons' tooltips, the install name and the tab title
+     all come from t(), or AR mode still shows English on hover and in the tab. */
+  [["#langBtn","lang"],["#themeBtn","theme"],["#installBtn","install"],["#qrBtn","qr"],["#editBtn","editLayout"]].forEach(([sel,key])=>{const n=$(sel);if(n)n.title=t(key)});
+  const mt=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(mt)mt.content=t("brand");
+  document.title=t("brand")+" v"+CONFIG.VERSION}
+$("#langBtn").onclick=()=>{settings.lang=settings.lang==="ar"?"en":"ar";saveSettings();applyPrefs();buildPages()};
+/* A language switch is a rebuild, not a repaint: the card titles, the row buttons, the
+   pickers and the reason labels are all built from t(), so every one of them has to be
+   rebuilt or half the dashboard stays in the language it was born in. buildPages() does
+   exactly that and re-paints the lists from cache, which costs no request. */
+$("#themeBtn").onclick=()=>{settings.themeMode=settings.themeMode==="dark"?"light":settings.themeMode==="light"?"auto":"dark";saveSettings();applyPrefs();toast(t({dark:"thGrey",midnight:"thMid",forest:"thFor",light:"light",auto:"autoT"}[settings.themeMode]||settings.themeMode))};
+$("#editBtn").onclick=()=>setEditing(!editing);
+document.addEventListener("keydown",e=>{if(e.key==="Escape")setEditing(false)});
+/* ============ layout: tabs (desktop) + swipe pages (mobile) ============ */
+const PAGES=[["clock","weather","prayer","quote","nextCd","todayTasks"],["crypto","fx","metals","chart"],["auto","ai","gh","fin","gen"],["cal","tasks","cds"],["data","qrshare","settings"]];
+const WIDGET_META={qrshare:{p:4,k:"qr share link whatsapp instagram snapchat mail install invite رمز مشاركة رابط"},clock:{p:0,k:"clock crypto prayer tasks"},weather:{p:0,k:"weather forecast temperature طقس"},prayer:{p:0,k:"prayer salah fajr hijri صلاة"},quote:{p:0,k:"quote اقتباس"},nextCd:{p:0,k:"countdown timer عدّاد"},todayTasks:{p:0,k:"tasks today مهام"},crypto:{p:1,k:"crypto btc eth sol bitcoin trading عملات رقمية"},fx:{p:1,k:"currencies forex usd eur dollar euro عملات"},metals:{p:1,k:"metals gold silver platinum palladium ذهب فضة"},chart:{p:1,k:"chart history time travel مخطط"},auto:{p:2,k:"news automotive cars سيارات"},ai:{p:2,k:"news ai models apps tools free daily limit quota allowance مجاني حد يومي ذكاء"},gh:{p:2,k:"news github stars repo"},gen:{p:2,k:"news image video generators free image tools daily limit allowance quota per day إنشاء مجاني"},fin:{p:2,k:"news finance money stocks مال"},cal:{p:3,k:"calendar events month agenda تقويم"},tasks:{p:3,k:"tasks todo notes مهام"},cds:{p:3,k:"countdowns birthday anniversary عدّادات"},data:{p:4,k:"export import backup data نسخ"},settings:{p:4,k:"settings language theme accent widgets إعدادات"}};
+function isHidden(id){return settings.widgets[id]===false}
+function pageOrder(p){const ids=PAGES[p].filter(id=>!isHidden(id));const o=settings.order&&settings.order[p];if(!o)return ids;const kept=o.filter(id=>ids.includes(id));ids.forEach(id=>{if(!kept.includes(id))kept.push(id)});return kept}
+function pageNames(){return [t("home"),t("markets"),t("news"),t("planner"),t("tools")]}function renderDots(){const d=$("#dots");d.innerHTML="";const names=pageNames();names.forEach((n,i)=>{const b=document.createElement("button");b.className="dot"+(i===curPage?" on":"");b.setAttribute("aria-label",n);b.onclick=()=>goPage(i);d.appendChild(b)});$("#pageLabel").textContent=(curPage+1)+" / 5 · "+names[curPage]}
+function renderTabs(){const bar=$("#tabbar");if(!bar)return;bar.innerHTML="";const names=pageNames();names.forEach((n,i)=>{const b=document.createElement("button");b.type="button";b.setAttribute("role","tab");b.setAttribute("aria-selected",i===curPage?"true":"false");b.textContent=(i+1)+". "+n;if(i===curPage)b.classList.add("on");b.onclick=()=>goPage(i);bar.appendChild(b)})}
+function showPageView(i){document.querySelectorAll(".page").forEach((pg,idx)=>{pg.classList.toggle("active",idx===i)})}
+function applyLayoutMode(){if(isDesktop())showPageView(curPage);else document.querySelectorAll(".page").forEach(pg=>pg.classList.remove("active"))}
+function goPage(i){curPage=i;const p=document.querySelector('.page[data-page="'+i+'"]');if(p){if(isDesktop()){showPageView(i);window.scrollTo({top:0,behavior:"smooth"})}else{$("#pages").scrollTo({left:p.offsetLeft,behavior:"smooth"})}}sizeSwipeSpacer();renderDots();renderTabs()}
+$("#pages").addEventListener("scroll",()=>{if(isDesktop())return;const el=$("#pages");const i=Math.round(el.scrollLeft/el.clientWidth);if(i!==curPage&&i>=0&&i<5){curPage=i;renderDots();renderTabs()}},{passive:true});
+window.addEventListener("resize",()=>{applyLayoutMode();renderDots();renderTabs();sizeSwipeSpacer()});
+/* fixed swipe viewport: replace fragile subtract-a-number layout with a real spacer */
+function sizeSwipeSpacer(){document.querySelectorAll(".swipe-spacer").forEach(n=>n.remove());if(isDesktop())return;const names=function(){return null}();const pages=document.querySelectorAll("#pages > .page");pages.forEach((pg,i)=>{const sp=document.createElement("div");sp.className="swipe-spacer";sp.style.height=Math.max(220,(innerHeight-((pg.getBoundingClientRect().top||0))-(110)))+"px";if(i===curPage)pg.appendChild(sp)})}
+document.addEventListener("keydown",e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;if(e.key==="ArrowRight")goPage(Math.min(4,curPage+1));if(e.key==="ArrowLeft")goPage(Math.max(0,curPage-1))});
+const WIDGET_ICONS={qrshare:"∎",clock:"🕒",weather:"🌤️",prayer:"🕌",quote:"💬",nextCd:"⏳",todayTasks:"✅",crypto:"₿",fx:"💱",metals:"🥇",chart:"📈",auto:"🚗",ai:"🤖",gh:"⭐",fin:"💹",gen:"🎞️",cal:"📅",tasks:"📝",cds:"⏲️",data:"💾",settings:"⚙️"};
+let editing=false;
+function setEditing(v){editing=!!v;document.body.classList.toggle("editing",editing);const b=document.getElementById("editBtn");if(b){b.textContent=editing?"✓":"✎";if(editing){b.classList.add("on")}else{b.classList.remove("on")}}}
+function bindLongPress(h){let lpT=null,sx=0,sy=0;h.addEventListener("pointerdown",e=>{if(editing)return;sx=e.clientX;sy=e.clientY;lpT=setTimeout(()=>{setEditing(true);if(navigator.vibrate){try{navigator.vibrate(10)}catch(_){}}},550)},{passive:true});h.addEventListener("pointermove",e=>{if(lpT&&Math.hypot(e.clientX-sx,e.clientY-sy)>10){clearTimeout(lpT);lpT=null}},{passive:true});["pointerup","pointercancel"].forEach(ev=>h.addEventListener(ev,()=>{clearTimeout(lpT);lpT=null},{passive:true}))}
+function bindDrag(handle,card){handle.addEventListener("pointerdown",e=>{e.preventDefault();if(!editing)setEditing(true);const inner=card.parentElement;const ph=document.createElement("div");ph.className="drop-ph";ph.style.height=card.offsetHeight+"px";const r=card.getBoundingClientRect();const offX=e.clientX-r.left,offY=e.clientY-r.top;inner.insertBefore(ph,card);card.classList.add("dragging");card.style.width=r.width+"px";card.style.position="fixed";card.style.left=r.left+"px";card.style.top=r.top+"px";card.style.margin="0";card.style.pointerEvents="none";document.body.appendChild(card);const scroller=inner.parentElement;const move=ev=>{card.style.left=(ev.clientX-offX)+"px";card.style.top=(ev.clientY-offY)+"px";if(ev.clientY<110)scroller.scrollTop-=10;else if(ev.clientY>window.innerHeight-110)scroller.scrollTop+=10;const kids=Array.prototype.filter.call(inner.children,k=>k!==ph);let placed=false;for(const k of kids){const kr=k.getBoundingClientRect();if(ev.clientY<kr.top+kr.height/2){inner.insertBefore(ph,k);placed=true;break}}if(!placed)inner.appendChild(ph)};const up=()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);window.removeEventListener("pointercancel",up);card.classList.remove("dragging");card.removeAttribute("style");inner.insertBefore(card,ph);ph.remove();const pg=inner.parentElement;const p=+pg.dataset.page;const o=Array.prototype.map.call(inner.querySelectorAll("[data-widget]"),n=>n.dataset.widget);settings.order=settings.order||{};settings.order[p]=o;saveSettings()};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);window.addEventListener("pointercancel",up);try{handle.setPointerCapture(e.pointerId)}catch(_){}})}
+function widgetShell(id,title){const s=document.createElement("section");s.className="card";s.id="w_"+id;s.dataset.widget=id;const h=document.createElement("h2");const ic=document.createElement("span");ic.className="wicon";ic.textContent=WIDGET_ICONS[id]||"•";h.appendChild(ic);const tt=document.createElement("span");tt.textContent=title;h.appendChild(tt);const sp=document.createElement("span");sp.className="sp";h.appendChild(sp);
+const rfr=document.createElement("button");rfr.className="mini";rfr.textContent="⟳";rfr.title=t("refresh");rfr.setAttribute("aria-label",t("refresh")+": "+title);rfr.onclick=()=>refreshCard(id,s);h.appendChild(rfr);
+[["up",t("up")],["down",t("down")],["hide",t("hide")]].forEach(([a,l])=>{const b=document.createElement("button");b.className="mini wctl";b.textContent=l;b.onclick=()=>widgetAction(id,a);h.appendChild(b)});const dh=document.createElement("span");dh.className="drag-handle";dh.textContent="⋮⋮";dh.title=t("reorder");h.appendChild(dh);s.appendChild(h);const body=document.createElement("div");body.id="wb_"+id;s.appendChild(body);bindLongPress(h);bindDrag(dh,s);return s}
+const REFRESHABLE={clock:()=>renderClock(),weather:()=>{loadWeather(o,true)},prayer:()=>{loadPrayer(document.getElementById("w_prayer"))},quote:()=>renderQuote(),nextCd:()=>renderNext(),todayTasks:()=>renderTasks(false),crypto:()=>{coinCache=null;store.set("pd_crypto_cache",null);const el=$("#wb_crypto");if(el)renderCrypto()},fx:()=>{store.set("pd_fx_v2_"+settings.base,null);const el=$("#wb_fx");if(el)renderFx()},metals:()=>renderMetals(),chart:()=>renderChart(true),auto:()=>{const ul=$("#wb_auto .list");if(ul)loadNews("auto",ul,true)},ai:()=>{const ul=$("#wb_ai .list");if(ul)loadNews("ai",ul,true)},gh:()=>{const ul=$("#wb_gh .list");if(ul)loadNews("gh",ul,true)},gen:()=>{const ul=$("#wb_gen .list");if(ul)renderGen(ul,true)},fin:()=>{const ul=$("#wb_fin .list");if(ul)loadNews("fin",ul,true)},cal:()=>renderCal(),tasks:()=>renderTasks(true),cds:()=>{renderCds();renderNext()},data:()=>renderData(),settings:()=>renderSettings(),qrshare:()=>renderQrShare()};
+function drawQrOn(cv,url){const M=(typeof QR_M_JSON==="string")?JSON.parse(QR_M_JSON):QR_M_JSON;const n=M.length,sc=Math.ceil(600/(n+8)),pad=2;cv.width=(n+pad*2)*sc;cv.height=cv.width;const ctx=cv.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#1e1e22";M.forEach((row,y)=>row.forEach((v,x)=>{if(v)ctx.fillRect((x+pad)*sc,(y+pad)*sc,sc,sc)}));cv.style.width="100%";cv.style.height="auto"}
+function renderQrShare(){const el=$("#wb_qrshare");if(!el)return;el.innerHTML="";const url=CONFIG.APP_URL||location.origin;const hint=document.createElement("div");hint.className="muted";hint.textContent=t("scanHint");el.appendChild(hint);const hold=document.createElement("div");hold.className="qrbox qrinline";el.appendChild(hold);const cv=document.createElement("canvas");hold.appendChild(cv);drawQrOn(cv,url);const row=document.createElement("div");row.className="row";row.style.marginTop="10px";const mk=(label,fn,cls)=>{const b=document.createElement("button");b.className=cls||"btn ghost";b.textContent=label;b.onclick=fn;row.appendChild(b)};mk(t("saveQr"),()=>{cv.toBlob(bl=>{const a=document.createElement("a");a.href=URL.createObjectURL(bl);a.download="dashboard-qr.png";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)},"image/png")},"btn");el.appendChild(row);const row2=document.createElement("div");row2.className="row";const mk2=(label,fn)=>{const b=document.createElement("button");b.className="btn ghost";b.textContent=label;b.onclick=fn;row2.appendChild(b)};const L=shareLinks(url);mk2(t("wa"),()=>window.open(L.whatsapp,"_blank","noopener"));mk2(t("ig"),()=>window.open(L.instagram,"_blank","noopener"));mk2(t("snap"),()=>window.open(L.snapchat,"_blank","noopener"));el.appendChild(row2);const row3=document.createElement("div");row3.className="row";mk2(t("copyLink"),async()=>{try{await navigator.clipboard.writeText(url);toast(t("copied"))}catch(e){toast("✕")}});mk2(t("mail"),()=>{location.href=L.mail});el.appendChild(row3);if(navigator.share){const ns=document.createElement("button");ns.className="btn";ns.style.marginTop="8px";ns.textContent=t("shareApp");ns.onclick=()=>navigator.share({title:L.native.title,text:L.native.text,url}).catch(()=>{});el.appendChild(ns)}}
+function refreshCard(id,s){const f=REFRESHABLE[id];if(!f){toast(t("refresh"));return}if(s){s.style.transition="opacity .25s";s.style.opacity=".55";setTimeout(()=>s.style.opacity="",450)}f();toast((WIDGET_ICONS[id]||"")+" "+t("refresh")+" · "+titleFor(id))}
+function widgetAction(id,a){const p=WIDGET_META[id].p;let o=pageOrder(p);if(a==="hide"){settings.widgets[id]=false;saveSettings();buildPages();return}const i=o.indexOf(id);if(a==="up"&&i>0){const tmp=o[i-1];o[i-1]=o[i];o[i]=tmp}if(a==="down"&&i<o.length-1){const tmp=o[i+1];o[i+1]=o[i];o[i]=tmp}settings.order=settings.order||{};settings.order[p]=o;saveSettings();buildPages();goPage(p)}
+function buildPages(){for(let p=0;p<5;p++){const host=$("#page"+p);host.innerHTML="";pageOrder(p).forEach(id=>{host.appendChild(widgetShell(id,titleFor(id)))})}renderTabs();applyLayoutMode();renderAll()}
+function titleFor(id){const m={qrshare:t("qrShare"),clock:t("clock"),weather:t("weather"),prayer:t("prayer"),quote:t("quote"),nextCd:t("nextCd"),todayTasks:t("todayTasks"),crypto:t("crypto"),fx:t("fx"),metals:t("metals"),chart:t("chart"),auto:t("auto"),ai:t("ai"),gh:t("gh"),gen:t("gen"),fin:t("fin"),cal:t("cal"),tasks:t("tasks"),cds:t("cds"),data:t("data"),settings:t("settings")};return m[id]||id}
+function renderAllLabels(){}
+function renderPageHeads(){const names=pageNames();for(let p=0;p<5;p++){const host=document.querySelector('.page[data-page="'+p+'"]');if(host&&!host.querySelector(".pagehead")){const h=document.createElement("div");h.className="pagehead";host.insertBefore(h,host.firstChild)}}document.querySelectorAll(".page").forEach((pg,i)=>{const h=pg.querySelector(".pagehead");if(h&&names[i])h.textContent=(i+1)+" · "+names[i]})}
+/* ============ clock ============ */
+function renderClock(){const el=$("#wb_clock");if(!el)return;el.innerHTML="";const big=document.createElement("div");big.className="big";el.appendChild(big);const dt=document.createElement("div");dt.className="muted";dt.id="clockDate";el.appendChild(dt);const r=document.createElement("div");r.className="row";r.style.marginTop="8px";[["h12",settings.h12?t("h12"):t("h24")],["secs",t("secs")+": "+(settings.secs?"✓":"✕")]].forEach(([k,l])=>{const b=document.createElement("button");b.className="mini";b.textContent=l;b.onclick=()=>{if(k==="h12")settings.h12=!settings.h12;else settings.secs=!settings.secs;saveSettings();renderClock()};r.appendChild(b)});el.appendChild(r);tickClock()}
+/* The clock is the one card that ticks, which is where a rebuild-per-tick shows up: building it
+   from scratch each second also built a fresh Intl.DateTimeFormat (~75us, measured in-page) and
+   created and discarded five elements, every second, for as long as the tab stayed open. The card
+   is built once per render; the tick writes only the text that changed, through one cached
+   formatter per language, and the date line is rewritten only when the day actually turns. */
+const DATE_FMT={};
+function dateFmt(){const l=settings.lang==="ar"?"ar-EG":"en-US";if(DATE_FMT[l]!==undefined)return DATE_FMT[l];try{return DATE_FMT[l]=new Intl.DateTimeFormat(l,{weekday:"long",year:"numeric",month:"long",day:"numeric"})}catch(e){return DATE_FMT[l]=null}}
+function clockNow(){const d=new Date();let h=d.getHours(),ap="";if(settings.h12){ap=" "+(h>=12?t("pm"):t("am"));h=h%12||12}const mm=String(d.getMinutes()).padStart(2,"0"),ss=String(d.getSeconds()).padStart(2,"0");return{d:d,time:digits(h+":"+mm+(settings.secs?":"+ss:""))+(settings.h12?ap:"")}}
+function tickClock(){const el=$("#wb_clock");if(!el)return;const big=el.querySelector(".big");if(!big)return renderClock();const x=clockNow();let tn=big.firstChild;if(!tn||tn.nodeType!==3)tn=big.appendChild(document.createTextNode(""));if(tn.nodeValue!==x.time)tn.nodeValue=x.time;const dt=el.querySelector("#clockDate");if(dt){const day=x.d.toDateString(),stamp=day+"|"+settings.lang;if(dt.dataset.day!==stamp){const f=dateFmt();dt.textContent=f?f.format(x.d):day;dt.dataset.day=stamp}}}
+setInterval(()=>{tickClock();tickCountdowns()},1000);
+/* ============ weather + prayer share location ============ */
+function renderWeather(){const el=$("#wb_weather");if(!el)return;el.innerHTML="";const info=document.createElement("div");info.className="muted";info.textContent=(location_?location_.name+" · "+location_.lat.toFixed(2)+","+location_.lon.toFixed(2):t("noData"));el.appendChild(info);const r=document.createElement("div");r.className="row";r.style.margin="8px 0";const b1=document.createElement("button");b1.className="btn ghost";b1.textContent=t("useLoc");b1.onclick=useGeo;r.appendChild(b1);const u=document.createElement("button");u.className="mini";u.textContent=t("units")+": "+(settings.units==="c"?"°C":"°F");u.onclick=()=>{settings.units=settings.units==="c"?"f":"c";saveSettings();renderWeather()};r.appendChild(u);el.appendChild(r);const s=document.createElement("div");s.className="row";const inp=document.createElement("input");inp.type="text";inp.placeholder=t("cityPh");inp.style.flex="1";const go=document.createElement("button");go.className="btn";go.textContent=t("add");go.onclick=()=>citySearch(inp.value);inp.onkeydown=e=>{if(e.key==="Enter")citySearch(inp.value)};s.appendChild(inp);s.appendChild(go);el.appendChild(s);const out=document.createElement("div");out.id="wxOut";el.appendChild(out);loadWeather(out)}
+function useGeo(){if(!navigator.geolocation){toast(t("gpsNA"));return}navigator.geolocation.getCurrentPosition(p=>{location_={name:digits(p.coords.latitude.toFixed(2)+","+p.coords.longitude.toFixed(2)),lat:p.coords.latitude,lon:p.coords.longitude};store.set("pd_location",location_);buildPages()},()=>toast(t("gpsDenied")),{timeout:8000})}
+async function citySearch(q){q=(q||"").trim();if(!q)return;try{const r=await fetch("https://geocoding-api.open-meteo.com/v1/search?name="+encodeURIComponent(q)+"&count=5&language="+(settings.lang==="ar"?"ar":"en"));const j=await r.json();const arr=j.results||[];if(!arr.length){toast(t("noData"));return}openModal("<h3></h3><div id='cL'></div>");$("#modalBox").querySelector("h3").textContent=q;const L=$("#modalBox").querySelector("#cL");arr.forEach(c=>{const b=document.createElement("button");b.className="btn ghost";b.style.width="100%";b.style.marginTop="8px";b.textContent=c.name+(c.country?" — "+c.country:"");b.onclick=()=>{location_={name:c.name+(c.country?", "+c.country:""),lat:c.latitude,lon:c.longitude};store.set("pd_location",location_);closeModal();buildPages()};L.appendChild(b)})}catch(e){toast(t("noData"))}}
+function wcode(c){const m={0:"wxClear",1:"wxMostly",2:"wxPartly",3:"wxOvercast",45:"wxFog",48:"wxFog",51:"wxDrizzle",61:"wxRain",71:"wxSnow",80:"wxShowers",95:"wxStorm"};return m[c]?t(m[c]):"—"}
+async function loadWeather(out){if(!location_){out.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=t("cityPh");out.appendChild(p);return}const key="pd_wx_"+location_.lat.toFixed(2)+"_"+location_.lon.toFixed(2)+"_"+settings.units;const c=store.get(key,null);if(c&&Date.now()-c.ts<30*60*1000){paintWx(out,c.data,true);return}try{const u="https://api.open-meteo.com/v1/forecast?latitude="+location_.lat+"&longitude="+location_.lon+"&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&temperature_unit="+(settings.units==="f"?"fahrenheit":"celsius");const r=await fetch(u);const j=await r.json();store.set(key,{ts:Date.now(),data:j});paintWx(out,j,false)}catch(e){if(c)paintWx(out,c.data,true);else{out.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=t("noData");out.appendChild(p)}}}
+function paintWx(out,j,cached){out.innerHTML="";const cur=j.current||{};const b=document.createElement("div");b.className="big";b.textContent=digits(Math.round(cur.temperature_2m||0))+"° "+esc(wcode(cur.weather_code));out.appendChild(b);const m=document.createElement("div");m.className="muted";m.textContent=(cached?t("cached")+" · ":"")+t("weather");out.appendChild(m);const ul=document.createElement("div");(j.daily&&j.daily.time||[]).slice(0,5).forEach((d,i)=>{const kv=document.createElement("div");kv.className="kv";const a=document.createElement("span");a.textContent=esc(d);const bb=document.createElement("span");bb.textContent=digits(Math.round(j.daily.temperature_2m_min[i])+" / "+Math.round(j.daily.temperature_2m_max[i]))+"° "+esc(wcode(j.daily.weather_code[i]));kv.appendChild(a);kv.appendChild(bb);ul.appendChild(kv)});out.appendChild(ul)}
+function renderPrayer(){const el=$("#wb_prayer");if(!el)return;el.innerHTML="";const info=document.createElement("div");info.className="muted";info.textContent=(location_?location_.name:t("noData"))+" · "+t("method");el.appendChild(info);const sel=document.createElement("select");sel.style.marginTop="8px";[[4,t("mUmmAlQura")],[3,t("mMWL")],[2,t("mISNA")],[5,t("mGulf")]].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;if(settings.method==v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{settings.method=+sel.value;saveSettings();loadPrayer(el)};el.appendChild(sel);const out=document.createElement("div");out.id="prOut";el.appendChild(out);loadPrayer(el)}
+async function loadPrayer(host){const out=host.querySelector("#prOut");if(!out)return;out.innerHTML="";if(!location_){const p=document.createElement("p");p.className="muted";p.textContent=t("cityPh");out.appendChild(p);return}try{const d=new Date();const s=String(d.getDate()).padStart(2,"0")+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+d.getFullYear();const u="https://api.aladhan.com/v1/timings/"+s+"?latitude="+location_.lat+"&longitude="+location_.lon+"&method="+settings.method;const r=await fetch(u);const j=await r.json();const tm=j.data.timings,H=j.data.date.hijri;const order=[["Fajr","pFajr"],["Sunrise","pSunrise"],["Dhuhr","pDhuhr"],["Asr","pAsr"],["Maghrib","pMaghrib"],["Isha","pIsha"]];const h=document.createElement("div");h.className="muted";h.textContent=t("hijri")+": "+esc(digits(H.day)+" "+(settings.lang==="ar"?(H.month.ar||H.month.en):H.month.en)+" "+digits(H.year));out.appendChild(h);const now=new Date();let next=null;order.forEach(([k,kl])=>{const kv=document.createElement("div");kv.className="kv";const a=document.createElement("span");a.textContent=t(kl);const b2=document.createElement("span");let v=(tm[k]||"").slice(0,5);b2.textContent=digits(v);kv.appendChild(a);kv.appendChild(b2);out.appendChild(kv);const parts=v.split(":");if(parts.length===2&&!next){const dt=new Date();dt.setHours(+parts[0],+parts[1],0,0);if(dt>now)next={k,dt}}})}catch(e){const p=document.createElement("p");p.className="muted";p.textContent=t("noData");out.appendChild(p)}}
+/* ============ quote ============ */
+/* ============ quote of the day ============ */
+/* One quote per LOCAL day. It is pinned in pd_quote for the whole day and swapped by a
+   timer just after local midnight, so reloading, extra tabs and the card's ⟳ button never
+   change it mid-day. The index is derived from the calendar date itself, so every device
+   on the same local day shows the same quote. */
+function qDay(d){return d.getFullYear()*372+d.getMonth()*31+d.getDate()}
+function qPinned(){const day=qDay(new Date());const cur=store.get("pd_quote",null);if(!cur||cur.day!==day||typeof cur.i!=="number"){const q={day:day,i:((day%QUOTES.length)+QUOTES.length)%QUOTES.length,ts:Date.now()};store.set("pd_quote",q);return q}return cur}
+function renderQuote(){const el=$("#wb_quote");if(!el)return;el.innerHTML="";const src=(settings.lang==="ar"&&QUOTES_AR.length)?QUOTES_AR:QUOTES;const q=src[((qPinned().i%src.length)+src.length)%src.length];const b=document.createElement("blockquote");b.style.margin="0";const p=document.createElement("p");p.textContent="“"+q[0]+"”";b.appendChild(p);const f=document.createElement("footer");f.className="muted";f.textContent="— "+q[1];b.appendChild(f);el.appendChild(b);armQuoteTimer()}
+/* fires a few seconds after local midnight, then re-arms itself for the following day */
+function armQuoteTimer(){clearTimeout(armQuoteTimer._t);const now=new Date();const next=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,5);armQuoteTimer._t=setTimeout(renderQuote,Math.max(5000,next-now))}
+/* ============ crypto / fx / metals / chart ============ */
+const COIN_IDS=["bitcoin","ethereum","solana","binancecoin","ripple","dogecoin","cardano","avalanche-2"];
+const QR_M_JSON=[[false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false], [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false], [false, false, true, true, true, true, true, true, true, false, false, true, false, false, true, false, true, true, true, false, true, false, true, false, true, true, true, true, true, true, true, false, false], [false, false, true, false, false, false, false, false, true, false, true, false, false, true, true, true, true, false, false, false, false, false, false, false, true, false, false, false, false, false, true, false, false], [false, false, true, false, true, true, true, false, true, false, true, true, true, true, false, true, false, false, true, false, false, false, true, false, true, false, true, true, true, false, true, false, false], [false, false, true, false, true, true, true, false, true, false, true, true, false, false, false, false, false, false, false, true, true, false, true, false, true, false, true, true, true, false, true, false, false], [false, false, true, false, true, true, true, false, true, false, false, true, false, false, false, false, false, false, true, false, false, true, true, false, true, false, true, true, true, false, true, false, false], [false, false, true, false, false, false, false, false, true, false, false, false, false, true, false, false, false, false, true, false, false, false, false, false, true, false, false, false, false, false, true, false, false], [false, false, true, true, true, true, true, true, true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, true, true, true, true, true, true, false, false], [false, false, false, false, false, false, false, false, false, false, true, false, true, true, true, false, true, false, true, false, false, true, false, false, false, false, false, false, false, false, false, false, false], [false, false, true, false, false, false, false, false, true, false, true, true, false, true, true, false, false, true, false, true, false, false, true, true, true, false, false, true, true, true, false, false, false], [false, false, false, true, false, true, false, true, false, false, true, false, true, true, true, true, false, true, false, true, true, true, false, false, false, false, true, false, true, true, false, false, false], [false, false, true, true, false, false, true, true, true, false, false, false, true, true, false, true, true, true, false, false, false, false, true, false, true, true, true, false, false, false, false, false, false], [false, false, true, true, true, true, true, true, false, false, false, true, false, true, false, true, false, false, true, false, false, false, false, true, false, true, true, true, false, false, false, false, false], [false, false, false, true, false, true, true, true, true, true, true, false, false, false, false, true, false, true, true, false, false, true, true, false, true, true, false, false, false, false, true, false, false], [false, false, true, false, false, true, false, false, false, true, false, true, true, false, false, false, false, true, true, false, true, true, true, false, true, true, true, false, false, true, true, false, false], [false, false, false, true, true, false, false, true, true, true, true, false, true, true, false, false, false, true, false, false, true, false, true, false, false, true, true, true, true, false, false, false, false], [false, false, false, false, true, true, false, false, false, false, false, false, false, true, true, false, false, true, false, false, false, true, false, false, true, true, false, false, true, false, true, false, false], [false, false, true, true, true, true, false, false, true, true, false, true, true, false, false, false, false, false, false, true, true, true, false, false, false, false, false, true, true, false, false, false, false], [false, false, true, false, true, true, true, false, false, false, false, true, true, true, false, true, true, true, false, true, true, true, true, false, true, true, true, false, true, true, true, false, false], [false, false, true, true, false, false, false, true, true, true, false, false, true, true, false, false, false, true, false, false, false, true, true, true, true, false, false, true, false, false, true, false, false], [false, false, true, false, true, true, true, true, false, true, true, true, true, false, false, true, false, true, false, false, true, true, false, true, false, true, false, false, false, false, false, false, false], [false, false, true, false, true, false, false, false, true, false, true, false, true, true, true, false, true, true, true, true, false, false, true, true, true, true, true, false, true, true, true, false, false], [false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, false, true, true, false, false, false, false, true, false, false, false, true, true, false, false, false, false, false], [false, false, true, true, true, true, true, true, true, false, false, true, false, true, false, false, false, true, true, false, true, true, true, false, true, false, true, true, true, false, false, false, false], [false, false, true, false, false, false, false, false, true, false, false, false, false, false, true, false, true, false, true, false, true, true, true, false, false, false, true, false, false, false, false, false, false], [false, false, true, false, true, true, true, false, true, false, false, false, false, true, false, true, true, true, true, false, false, true, true, true, true, true, true, true, false, false, true, false, false], [false, false, true, false, true, true, true, false, true, false, false, true, false, true, false, true, true, true, true, false, true, false, false, true, false, false, false, true, true, false, true, false, false], [false, false, true, false, true, true, true, false, true, false, false, true, true, true, true, false, false, true, true, false, true, false, true, false, true, true, true, true, true, true, false, false, false], [false, false, true, false, false, false, false, false, true, false, false, true, true, false, false, true, true, true, false, false, false, false, false, false, true, false, true, true, true, false, true, false, false], [false, false, true, true, true, true, true, true, true, false, true, false, true, false, false, true, true, true, false, true, false, true, false, false, true, false, false, false, true, false, false, false, false], [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false], [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]];
+let coinCache=store.get("pd_crypto_cache",null);
+let hgCache=store.get("pd_hg_cache",null); /* keyless copper */
+function renderCrypto(){const el=$("#wb_crypto");if(!el)return;el.innerHTML="";const ul=document.createElement("ul");ul.className="list";el.appendChild(ul);const calc=document.createElement("div");calc.style.marginTop="10px";const lab=document.createElement("div");lab.className="muted";lab.textContent=t("calc");calc.appendChild(lab);const r=document.createElement("div");r.className="row";const amt=document.createElement("input");amt.type="number";amt.value="0.5";amt.style.maxWidth="110px";const sym=document.createElement("select");sym.style.maxWidth="130px";const out=document.createElement("div");out.className="pill";r.appendChild(amt);r.appendChild(sym);r.appendChild(out);calc.appendChild(r);el.appendChild(calc);paintCoins(ul,sym,amt,out);loadCoins(ul,sym,amt,out)}
+function paintCoins(ul,sym,amt,out){ul.innerHTML="";ul.className="crows two";const arr=(coinCache&&coinCache.data)||[];arr.forEach(c=>{const li=document.createElement("li");const nm=document.createElement("span");nm.className="cname";nm.textContent=esc((c.symbol||"").toUpperCase())+" · "+esc(c.name);li.appendChild(nm);const px=document.createElement("span");px.className="cpx";px.textContent="$"+num(c.current_price);li.appendChild(px);const ch=document.createElement("span");ch.className=(c.price_change_percentage_24h||0)>=0?"up":"down";ch.style.fontVariantNumeric="tabular-nums";ch.textContent=digits((c.price_change_percentage_24h||0).toFixed(2)+"%");li.appendChild(ch);ul.appendChild(li)});if(sym){sym.innerHTML="";arr.forEach(c=>{const o=document.createElement("option");o.value=c.id;o.textContent=c.symbol.toUpperCase();sym.appendChild(o)});const upd=()=>{const id=sym.value;const c=arr.find(x=>x.id===id);out.textContent=c?"≈ $"+num((+amt.value||0)*c.current_price):"—"};sym.onchange=upd;amt.oninput=upd;upd()}}
+async function loadCoins(ul,sym,amt,out){try{if(coinCache&&Date.now()-coinCache.ts<5*60*1000)return;const u="https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids="+encodeURIComponent(COIN_IDS.join(","))+"&price_change_percentage=24h";const r=await fetch(u);if(!r.ok)throw 0;const j=await r.json();coinCache={ts:Date.now(),data:j};store.set("pd_crypto_cache",coinCache);paintCoins(ul,sym,amt,out)}catch(e){if(!coinCache){ul.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p)}}}
+function renderFx(){const el=$("#wb_fx");if(!el)return;el.innerHTML="";const r=document.createElement("div");r.className="row";const lab=document.createElement("span");lab.className="muted";lab.textContent=t("baseC");const sel=document.createElement("select");sel.style.maxWidth="120px";FX_BASES().forEach(c=>{const o=document.createElement("option");o.textContent=c;if(settings.base===c)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{settings.base=sel.value;saveSettings();loadFx(el)};r.appendChild(lab);r.appendChild(sel);el.appendChild(r);const out=document.createElement("div");el.appendChild(out);loadFx(el)}
+async function loadFx(host){
+  const out=host.querySelector("div:last-child")||host;
+  const base=settings.base;
+  const key="pd_fx_v2_"+base;
+  const c=store.get(key,null);
+  if(c&&c.data&&Date.now()-c.ts<30*60*1000){paintFx(out,base,c.data,c.src||{},true);return}
+  let rates=null,src={};
+  /* The ECB's own table first: it needs no Worker, and it carries the majors the card leads
+     with, so the card still works with the Worker unreachable. */
+  if(ECB_BASES.indexOf(base)>=0){try{const r=await fetch("https://api.frankfurter.dev/v1/latest?from="+base);const j=await r.json();rates=j.rates||{}}catch(e){}}
+  /* Then whatever is still missing - LBP always, and every row when the base itself sits
+     outside the ECB's set - from the Worker, on the same USD legs the chart crosses. */
+  const want=FX_BASES().concat(TOP8).filter((x,i,a)=>x!==base&&a.indexOf(x)===i&&!(rates&&rates[x]!=null));
+  const wu=(settings.workerUrl||CONFIG.WORKER_URL).replace(/\/$/,"");
+  if(wu&&want.length){try{const r=await fetch(wu+"/api/rates?base="+encodeURIComponent(base)+"&to="+want.join(","));const j=await r.json();
+    rates=rates||{};Object.keys(j.rates||{}).forEach(k=>{if(j.rates[k]!=null&&rates[k]==null)rates[k]=j.rates[k]});
+    Object.keys(j.sources||{}).forEach(k=>{if(src[k]==null)src[k]=j.sources[k]})}catch(e){}}
+  if(rates&&Object.keys(rates).length){store.set(key,{ts:Date.now(),data:rates,src:src});paintFx(out,base,rates,src,false)}
+  else if(c)paintFx(out,base,c.data,c.src||{},true);
+  else{out.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=t("noData");out.appendChild(p)}
+}
+const TOP8=["EUR","GBP","JPY","CHF","AUD","CAD","CNY","HKD"]; /* Frankfurter/ECB majors; shown in two ranked columns */
+/* The base picker offers the ECB's currencies plus LBP: the ECB table has no LBP at all, so
+   it is read as a USD leg through the Worker's /api/rates, which crosses it the same way the
+   chart does. ECB_BASES is the part of that list the ECB itself publishes. */
+const ECB_BASES=["USD","EUR","GBP","JPY","CHF","AUD","CAD","CNY"];
+const FX_EXTRA=["LBP"];
+const FX_BASES=()=>ECB_BASES.concat(FX_EXTRA);
+/* Frankfurter publishes the ECB's currency list; kept for a day so the chart's select can
+   offer all of them without a request per paint. The list arrives asynchronously, so a cold
+   paint shows the majors and the callback restocks the select when the full list lands. */
+/* The crypto card tracks the top 8 by market cap; the chart can show any of the top 100, so
+   it asks CoinGecko for the wider list once a day and keeps the card's 8 as the fallback
+   when that call is rate-limited or the page is offline. */
+
+function coinList(cb){
+
+  const c=store.get("pd_coin_list",null);
+
+  const fresh=c&&c.ts&&Date.now()-c.ts<86400000&&c.list&&c.list.length;
+
+  if(!fresh)fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1").then(r=>r.ok?r.json():null).then(j=>{
+
+    if(!Array.isArray(j))return;
+
+    const list=j.filter(x=>x&&x.symbol&&x.id).map(x=>({s:String(x.symbol).toUpperCase(),id:x.id,n:x.name}));
+
+    if(!list.length)return;store.set("pd_coin_list",{ts:Date.now(),list:list});if(cb)cb(list)
+
+  }).catch(()=>{});
+
+  return fresh?c.list:null
+
+}
+
+function fxList(cb){
+  const c=store.get("pd_fx_list",null);
+  const fresh=c&&c.ts&&Date.now()-c.ts<86400000&&c.list&&c.list.length;
+  if(!fresh)fetch("https://api.frankfurter.dev/v1/currencies").then(r=>r.ok?r.json():null).then(j=>{
+    if(!j||typeof j!=="object")return;const list=Object.keys(j).sort();store.set("pd_fx_list",{ts:Date.now(),list:list});if(cb)cb(list)
+  }).catch(()=>{});
+  return fresh?c.list:TOP8}
+/* One fixed row list in the card's two ranked columns: the ECB majors it leads with, plus
+   LBP, which no ECB table can serve. A row without a rate shows a dash rather than a guess,
+   and the rows that came from outside the ECB's table are named under the grid, so a Yahoo
+   rate is never passed off as an ECB one. */
+function paintFx(out,base,rates,src,cached){
+  out.innerHTML="";
+  const rows=FX_EXTRA.concat(TOP8).filter((c,i,a)=>c!==base&&a.indexOf(c)===i);
+  const grid=document.createElement("div");grid.className="two";
+  const c1=document.createElement("div");const c2=document.createElement("div");
+  grid.appendChild(c1);grid.appendChild(c2);out.appendChild(grid);
+  const half=Math.ceil(rows.length/2);
+  rows.forEach((k,i)=>{const kv=document.createElement("div");kv.className="kv";const a=document.createElement("span");a.style.fontWeight="700";a.textContent=k;const b2=document.createElement("span");b2.style.fontVariantNumeric="tabular-nums";b2.textContent=rates&&rates[k]!=null?"1 "+base+" = "+num(rates[k],Math.abs(rates[k])>=0.01?4:8):"—";kv.appendChild(a);kv.appendChild(b2);(i<half?c1:c2).appendChild(kv)});
+  const outside=rows.filter(k=>src&&src[k]&&src[k]!=="ECB"&&src[k]!=="USD");
+  const marks=(src&&src[base]&&src[base]!=="ECB"&&src[base]!=="USD"?[base]:[]).concat(outside);
+  if(marks.length){const m=document.createElement("div");m.className="muted ctl";m.textContent=t("fxNonEcb")+" "+marks.join(" · ")+" · "+marks.map(k=>src[k]).filter((v,i,a)=>a.indexOf(v)===i).join(", ");out.appendChild(m)}
+  /* A row with no rate is a row the Worker was needed for: say so rather than leaving a
+     dash beside the ECB's figures. A total failure is the noData line below, not this. */
+  const blank=rows.filter(k=>!(rates&&rates[k]!=null));
+  if(blank.length&&rates&&Object.keys(rates).length){const m=document.createElement("div");m.className="muted ctl";m.textContent=blank.join(" · ")+" "+t("fxNeedWorker");out.appendChild(m)}
+  if(cached){const m=document.createElement("div");m.className="muted ctl";m.textContent=t("cached");out.appendChild(m)}
+  if(!rates||!Object.keys(rates).length){const p=document.createElement("p");p.className="muted";p.textContent=t("noData");out.appendChild(p)}
+}
+const METAL_LIST=[["XAU","Gold"],["XAG","Silver"],["XPT","Platinum"],["XPD","Palladium"],["HG","Copper"]];
+function renderMetals(){const el=$("#wb_metals");if(!el)return;el.innerHTML="";const grid=document.createElement("div");grid.className="two";const c1=document.createElement("div");const c2=document.createElement("div");grid.appendChild(c1);grid.appendChild(c2);el.appendChild(grid);METAL_LIST.forEach(([s],i)=>{const kv=document.createElement("div");kv.className="kv";const a=document.createElement("span");a.textContent=metalName(s);const b2=document.createElement("span");b2.id="mt_"+s;b2.style.fontWeight="700";b2.textContent="…";kv.appendChild(a);kv.appendChild(b2);(i<2?c1:c2).appendChild(kv)});const sr=document.createElement("div");sr.className="muted ctl";sr.id="mt_src";sr.textContent="…";el.appendChild(sr);loadMetals()}
+async function loadMetals(){const wu=(settings.workerUrl||CONFIG.WORKER_URL).replace(/\/$/,"");if(!wu)return;const H={};const bk=byokKey();if(settings.metalsProvider)H["X-Provider"]=settings.metalsProvider;if(bk)H["X-Api-Key"]=bk;const src=$("#mt_src");const put=(s,txt)=>{const n=$("#mt_"+s);if(n)n.textContent=txt};try{const r=await fetch(wu+"/api/metals",{headers:H});const j=await r.json();["XAU","XAG","XPT","XPD"].forEach(s=>{const raw=(j.rates&&j.rates[s]!=null)?j.rates[s]:j[s];const v=(typeof raw==="number"&&isFinite(raw))?raw:NaN;put(s,isFinite(v)?"$"+num(v):"—")});let hg=NaN;if(hgCache&&Date.now()-hgCache.ts<10*60*1000)hg=hgCache.v;else{try{const hg2=await fetch("https://api.gold-api.com/price/HG",{cache:"no-cache"});if(hg2.ok){const jj=await hg2.json();const v=typeof jj.price==="number"?jj.price:NaN;if(isFinite(v)&&v>0){hg=v;hgCache={ts:Date.now(),v}}}else{put("HG","—")}}catch(e){put("HG","—")}}put("HG",isFinite(hg)?"$"+num(hg):"—");if(src)src.textContent=[t("via")+" "+(j.label||j.provider||"?"),j.source==="byok"?t("yourKey"):(j.source==="none"?t("srcNone"):""),j.fallbackFrom?t("fallback")+": "+j.fallbackFrom:"",t("via")+" Gold-API (HG)",j.updated?new Date(j.updated).toLocaleTimeString(settings.lang==="ar"?"ar-EG":"en-US"):"",j.cached?t("cached"):""].filter(Boolean).join(" · ")}catch(e){METAL_LIST.forEach(([s])=>put(s,t("noData")));if(src)src.textContent=""}}
+let chartData={pts:[],label:""};
+/* ============ time-travel chart: the whole story, 1990 → now ============
+   The card asks the Worker for the deepest series keyless data allows — metals from 1992
+   (IMF), currencies from the euro's first day (ECB), each coin from its own first print
+   (Yahoo) — and draws all of it, with the slider as a cursor along the series. When the
+   Worker is unreachable it falls back to what a page can fetch itself and labels that run
+   "browser fallback", so a short series is never mistaken for the whole history. */
+/* Every metal the IMF prices monthly — the same 15 series the Worker charts, so the two
+   lists cannot drift apart unnoticed (the harness compares them against the shipped file).
+   Codes travel to the Worker; the names stay here, in both languages. */
+const CHART_METALS=["XAU","XAG","XPT","XPD","HG","ALU","NI","ZNC","PB","SN","FE","MO","MN","CO","URA"];
+const METAL_NAMES={en:{XAU:"Gold",XAG:"Silver",XPT:"Platinum",XPD:"Palladium",HG:"Copper",ALU:"Aluminium",NI:"Nickel",ZNC:"Zinc",PB:"Lead",SN:"Tin",FE:"Iron ore",MO:"Molybdenum",MN:"Manganese",CO:"Cobalt",URA:"Uranium"},ar:{XAU:"الذهب",XAG:"الفضة",XPT:"البلاتين",XPD:"البلاديوم",HG:"النحاس",ALU:"الألومنيوم",NI:"النيكل",ZNC:"الزنك",PB:"الرصاص",SN:"القصدير",FE:"خام الحديد",MO:"الموليبدينوم",MN:"المنجنيز",CO:"الكوبالت",URA:"اليورانيوم"}};
+function metalName(s){const m=(METAL_NAMES[settings.lang]||METAL_NAMES.en);return m[s]||METAL_NAMES.en[s]||s}
+/* Currencies the ECB never quotes. The Worker serves them from the weekly Yahoo pair, which
+   begins in 2002-2007 and says so in the caption, so the chart reaches the regional
+   currencies a USD-based dashboard actually gets asked about, not just the ECB majors. */
+const CHART_EXTRA_FX=["SAR","AED","QAR","KWD","OMR","BHD","JOD","EGP","PKR","NGN","KES","MAD","TND","DZD","LBP","IQD","YER","SDG","LYD","SYP","RUB"];
+const CHART_SRC={"IMF PCPS":"IMF PCPS","ECB reference rates":"ECB","Yahoo Finance":"Yahoo","CoinGecko":"CoinGecko","ECB":"ECB","USD cross":"USD cross"};
+/* The source is part of the caption, so it is a UI string: the Worker names its sources (and
+   names the legs a cross was built from), and each of those names has wording in the active
+   language. An unknown source is printed as it came, never blanked. */
+const CHART_SRC_KEY={"IMF PCPS":"srcIMF","ECB reference rates":"srcECB","Yahoo Finance":"srcYahoo","CoinGecko":"srcCG","ECB":"srcECB","USD cross":"srcCross"};
+function srcText(s){const k=CHART_SRC_KEY[s]||CHART_SRC_KEY[{Yahoo:"Yahoo Finance",ECB:"ECB",CoinGecko:"CoinGecko",USD:"USD"}[s]];return k?t(k):(CHART_SRC[s]||s||"")}
+/* The page's own USD leg for the fallback path: the ECB's daily rates for one currency
+   against the dollar over the same window, and a carry-forward lookup that applies each
+   daily rate to the coin points it actually covers. */
+async function ecbLegPts(code,fromDate,toDate){
+  if(!code||code==="USD")return [[0,1]];
+  const f=fromDate.toISOString().slice(0,10)+".."+toDate.toISOString().slice(0,10);
+  const r=await fetch("https://api.frankfurter.dev/v1/"+f+"?from=USD&to="+encodeURIComponent(code));
+  const j=await r.json();
+  return Object.keys(j.rates||{}).sort().map(dt=>[Date.parse(dt+"T00:00:00Z"),j.rates[dt][code]]).filter(p=>isFinite(p[1]));
+}
+function lastAt(pts,t){let v=NaN;for(let i=0;i<pts.length&&pts[i][0]<=t;i++)v=pts[i][1];return v}
+/* The Worker's notes are part of the caption, so they have to read in the active language:
+   each known shape is rebuilt from its parts instead of being pasted in English, and a note
+   this map does not know is passed through rather than mangled. */
+function noteText(note){
+  const s=String(note||"");
+  if(!s||settings.lang!=="ar")return s;
+  let m;
+  if((m=/^crossed through USD \((.+)\)$/.exec(s)))return t("nCross")+" ("+m[1].split(" + ").map(srcText).join(" + ")+")";
+  if((m=/^ECB data begins (.+)$/.exec(s)))return t("nEcbFrom")+" "+digits(m[1]);
+  if((m=/^outside the ECB's set — Yahoo data begins (.+)$/.exec(s)))return t("nYahooFrom")+" "+digits(m[1]);
+  if((m=/^IMF series begins (.+)$/.exec(s)))return t("nImfFrom")+" "+digits(m[1]);
+  if(/^Yahoo has no pair for this coin/.test(s))return t("nCgOnly");
+  if((m=/^the USD legs for (.+) do not overlap$/.exec(s)))return t("nNoOverlap").replace("{x}",m[1]);
+  if((m=/^no USD series for (.+) — the pair cannot be crossed$/.exec(s)))return t("nNoLeg").replace("{x}",m[1]);
+  if((m=/^no USD series for (.+) — the coin cannot be priced in it$/.exec(s)))return t("nNoCoin").replace("{x}",m[1]);
+  return s;
+}
+const ymdMs=ms=>new Date(ms).toISOString().slice(0,10);
+/* The noun and its cadence travel as one phrase: English wants "417 monthly points", Arabic wants
+   "٢٩١ نقطة شهرياً", so a bare "points" plus an adjective would read wrong in one of them. */
+function chartPtsLabel(c){return c==="monthly"?t("chartMonthPts"):c==="weekly"?t("chartWeekPts"):c==="daily"?t("chartDayPts"):t("chartPts")}
+function chartCaption(d){
+  const bits=[srcText(d.source)];
+  if(d.first)bits.push(digits(d.first)+" → "+digits(d.last||""));
+  /* Two numbers when they differ: how many points the source has, and how many are drawn.
+     A 7,100-day ECB run thinned to fit the canvas must not be passed off as "1,400 daily
+     points" — the caption states the cadence the source actually publishes at. */
+  const total=d.total||d.count;
+  if(total)bits.push(digits(total)+" "+chartPtsLabel(d.cadence));
+  if(d.total&&d.count&&d.count<d.total)bits.push(digits(d.count)+" "+t("chartPlotted"));
+  if(d.unit)bits.push(d.unit);
+  if(d.local)bits.push(t("chartLocal"));
+  /* The note is one of the bits, so a series with nothing but a reason to show reads as the
+     reason itself rather than starting with an empty separator. */
+  if(d.note)bits.push(noteText(d.note));
+  return bits.filter(Boolean).join(" · ")
+}
+function renderChart(bypass){
+  const el=$("#wb_chart");if(!el)return;el.innerHTML="";
+  const r=document.createElement("div");r.className="row";
+  const type=document.createElement("select");type.style.maxWidth="120px";
+  [["crypto",t("kindCrypto")],["fx",t("kindFx")],["metal",t("kindMetal")]].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;type.appendChild(o)});
+  const vsLab=document.createElement("span");vsLab.className="muted";vsLab.style.fontSize="12px";vsLab.textContent=t("chartVs");
+  const bSel=document.createElement("select");bSel.style.maxWidth="90px";bSel.title=t("baseC");
+  const sym=document.createElement("select");sym.style.maxWidth="150px";
+  r.appendChild(type);r.appendChild(vsLab);r.appendChild(bSel);r.appendChild(sym);
+  const lg=document.createElement("label");lg.className="muted";lg.style.display="inline-flex";lg.style.gap="5px";lg.style.alignItems="center";
+  const cb=document.createElement("input");cb.type="checkbox";cb.style.width="auto";cb.style.margin="0";
+  const lt=document.createElement("span");lt.textContent=t("chartLog");lg.appendChild(cb);lg.appendChild(lt);r.appendChild(lg);
+  const all=document.createElement("span");all.className="muted";all.style.fontSize="12px";r.appendChild(all);
+  el.appendChild(r);
+  const cv=document.createElement("canvas");cv.width=600;cv.height=220;el.appendChild(cv);
+  const sl=document.createElement("input");sl.type="range";sl.min="0";sl.max="100";sl.value="100";sl.style.width="100%";el.appendChild(sl);
+  const info=document.createElement("div");info.className="pill";el.appendChild(info);
+  const cap=document.createElement("div");cap.className="muted";cap.style.marginTop="6px";cap.style.fontSize="12px";el.appendChild(cap);
+  const xh=document.createElement("div");xh.className="xhair";xh.style.display="none";
+  const dot=document.createElement("div");dot.className="xdot";const lab=document.createElement("div");lab.className="xlab";
+  xh.appendChild(dot);xh.appendChild(lab);
+  const wrap=document.createElement("div");wrap.style.position="relative";wrap.style.width="100%";wrap.style.flex="1";
+  el.insertBefore(wrap,cv);wrap.appendChild(cv);wrap.appendChild(xh);
+  const symsFor=kind=>{
+    /* Coins and currencies both take a base, so the pair picker belongs to both; metals are
+       priced in USD alone and the picker stands aside for them. */
+    const hasBase=kind!=="metal";
+    vsLab.style.display=hasBase?"":"none";bSel.style.display=hasBase?"":"none";
+    sym.innerHTML="";all.textContent="";
+    const allCur=cur=>cur.concat(CHART_EXTRA_FX.filter(c=>cur.indexOf(c)<0));
+    /* One base list for both views - the ECB's currencies plus the ones it never quotes - so a
+       coin and a pair are priced against the same set and the choice carries between them. */
+    const fillBase=cur=>{if(type.value==="metal")return;
+      const keep=(bSel.options.length?bSel.value:(settings.chartBase||settings.base||"USD")).toUpperCase();
+      const list=allCur(cur.slice());if(list.indexOf(keep)<0)list.push(keep);
+      bSel.innerHTML="";list.forEach(c=>{const o=document.createElement("option");o.value=c;o.textContent=c;bSel.appendChild(o)});bSel.value=keep};
+    if(kind==="crypto"){
+      /* Top 100 by market cap when CoinGecko answers, the card's own 8 when it does not. */
+      const fillCoins=list=>{if(type.value!=="crypto")return;const keep=sym.value;sym.innerHTML="";
+        list.forEach(c=>{const o=document.createElement("option");o.value=c.s;o.dataset.cg=c.id;o.textContent=c.s+" · "+c.n;sym.appendChild(o)});
+        if(!sym.options.length){const o=document.createElement("option");o.value="BTC";o.dataset.cg="bitcoin";o.textContent="BTC";sym.appendChild(o)}
+        if(Array.prototype.some.call(sym.options,o=>o.value===keep))sym.value=keep;
+        all.textContent=t("chartAllCoins")+" ("+digits(sym.options.length)+")"};
+      /* A coin's own base: BTC against LBP is two choices here, and the Worker crosses it
+         through USD exactly as it crosses a currency pair. */
+      fillBase(fxList(fillBase));
+      const cardCoins=((coinCache&&coinCache.data)||[]).map(c=>({s:String(c.symbol).toUpperCase(),id:c.id,n:c.name}));
+      fillCoins(coinList(fillCoins)||cardCoins)}
+    else if(kind==="fx"){
+      /* The pair belongs to the card, not to Settings: the base picker stands beside the
+         symbol picker, so EUR/SAR or AED/PKR is a choice here, not a base-currency change. */
+      /* The ECB's list, plus the currencies it never quotes — the Worker serves those from
+         the weekly Yahoo pair, and the caption says where each series begins. */
+      const fillFx=cur=>{const keep=sym.value;sym.innerHTML="";
+        allCur(cur).filter(c=>c!==bSel.value)
+          .forEach(c=>{const o=document.createElement("option");o.value=c;o.textContent=c;sym.appendChild(o)});
+        if(Array.prototype.some.call(sym.options,o=>o.value===keep))sym.value=keep;
+        all.textContent=t("chartAllCur")+" ("+digits(sym.options.length)+")"};
+      const fillCur=cur=>{if(type.value!=="fx")return;fillBase(cur);fillFx(cur)};
+      fillCur(fxList(fillCur))
+    }
+    else{CHART_METALS.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s+" · "+metalName(s);sym.appendChild(o)})}
+  };
+  const draw=()=>{
+    const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
+    const pts=chartData.pts;
+    if(!pts.length){ctx.fillStyle="#888";ctx.font="20px sans-serif";ctx.fillText("—",20,40);xh.style.display="none";return}
+    const vs=pts.map(p=>p[1]);
+    let mn=Math.min.apply(null,vs),mx=Math.max.apply(null,vs);
+    const logOn=cb.checked&&mn>0;
+    const span=(pts.length-1)||1;   /* a one-point series (a source that just started) still draws */
+    const yOf=v=>{const t0=logOn?(Math.log(v)-Math.log(mn))/((Math.log(mx)-Math.log(mn))||1):(v-mn)/((mx-mn)||1);return cv.height-20-t0*(cv.height-50)};
+    ctx.beginPath();pts.forEach((p,i)=>{const x=10+i/span*(cv.width-20);const y=yOf(p[1]);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+    ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue("--ac")||"#f80";
+    ctx.lineWidth=3;ctx.stroke();
+    ctx.fillStyle="#888";ctx.font="11px sans-serif";ctx.textAlign="left";
+    ctx.fillText(num(mx),6,14);ctx.fillText(num(mn),6,cv.height-8);
+    if(logOn){ctx.textAlign="right";ctx.fillText(t("chartLog"),cv.width-6,14)}
+    ctx.textAlign="left";
+    const idx=Math.min(pts.length-1,Math.round(sl.value/100*(pts.length-1)));
+    const sel2=pts[idx];
+    const fx2=10+idx/span*(cv.width-20);const fy=yOf(sel2[1]);
+    xh.style.display="block";xh.style.left=(fx2/cv.width*100)+"%";dot.style.top=(fy/cv.height*100)+"%";
+    lab.textContent=digits(ymdMs(sel2[0]))+" · "+num(sel2[1]);
+    lab.style.left=(fx2/cv.width*100)+"%";lab.style.display=fx2>cv.width-120?"none":"block";
+    info.textContent=t("priceOn")+" "+digits(ymdMs(sel2[0]))+": "+num(sel2[1])+(chartData.unit?" "+chartData.unit:"");
+  };
+  let drag=false;
+  const pick=e=>{const r2=cv.getBoundingClientRect();const f=Math.min(1,Math.max(0,(e.clientX-r2.left)/r2.width));sl.value=Math.round(f*100);draw()};
+  cv.addEventListener("pointerdown",e=>{drag=true;pick(e)});
+  window.addEventListener("pointermove",e=>{if(drag)pick(e)});
+  window.addEventListener("pointerup",()=>drag=false);
+  sl.oninput=draw;cb.onchange=draw;
+  const load=async()=>{
+    chartData={pts:[],label:"",unit:"",source:"",cadence:"",first:"",last:"",count:0,total:0,note:"",local:false};
+    cap.textContent="…";info.textContent="…";draw();
+    const kind=type.value,s=sym.value;
+    /* The base travels from the picker for both kinds that have one: the chart answers a
+       coin in LBP or a currency pair, not just settings.base. Metals are USD-only. */
+    const b0=(type.value==="metal"?"USD":(bSel.value||settings.chartBase||settings.base||"USD"));
+    const sel=sym.selectedOptions&&sym.selectedOptions[0];
+    const cg=(sel&&sel.dataset&&sel.dataset.cg)||"";
+    const wu=(settings.workerUrl||CONFIG.WORKER_URL).replace(/\/$/,"");
+    let d=null;
+    if(wu){
+      try{
+        const q="/api/history?kind="+kind+"&symbol="+encodeURIComponent(s)+"&base="+encodeURIComponent(b0)+"&from=1990-01-01"+(cg?"&cg="+encodeURIComponent(cg):"")+(bypass?"&fresh=1":"");
+        const rr=await fetch(wu+q);
+        if(rr.ok)d=await rr.json();
+      }catch(e){}
+    }
+    if(!d||!d.points||!d.points.length){
+      /* what a page can still reach by itself: the ECB's last year, CoinGecko's last year */
+      try{
+        const e2=new Date(),s2=new Date();s2.setDate(s2.getDate()-365);
+        if(kind==="crypto"){
+          const rr=await fetch("https://api.coingecko.com/api/v3/coins/"+encodeURIComponent(cg||"bitcoin")+"/market_chart?vs_currency=usd&days=365");
+          const j=await rr.json();
+          if(j&&j.prices&&j.prices.length){
+            /* CoinGecko quotes no national currency but the dollar, so a base the Worker would
+               have crossed is crossed here instead with the ECB's own daily leg - multiplied
+               in, the same way. A base the ECB does not publish has no browser-side leg at
+               all, and the card says that rather than drawing dollars under a foreign label. */
+            let pts=j.prices,unit="USD",src3="CoinGecko",note3="";
+            if(b0!=="USD"){
+              const leg=await ecbLegPts(b0,s2,e2);
+              if(leg.length){pts=j.prices.map(p=>[p[0],p[1]*lastAt(leg,p[0])]).filter(p=>isFinite(p[1])&&p[1]>0);
+                unit=b0;src3="CoinGecko + ECB";note3="crossed through USD (ECB)"}
+              else{pts=[];note3=t("chartNoSeries")}
+            }
+            d={points:pts,label:s+(unit==="USD"?"":"/"+unit),unit:unit,source:src3,cadence:"daily",local:1,note:note3};
+          }
+        }else if(kind==="fx"){
+          const f=s2.toISOString().slice(0,10)+".."+e2.toISOString().slice(0,10);
+          const rr=await fetch("https://api.frankfurter.dev/v1/"+f+"?from="+encodeURIComponent(b0)+"&to="+encodeURIComponent(s));
+          const j=await rr.json();
+          const pts=Object.keys(j.rates||{}).sort().map(dt=>[new Date(dt).getTime(),j.rates[dt][s]]).filter(p=>isFinite(p[1]));
+          if(pts.length)d={points:pts,label:b0+"/"+s,unit:s,source:"ECB",cadence:"daily",local:1};
+        }
+      }catch(e){}
+    }
+    if(d&&d.points&&d.points.length){
+      const pts=d.points.slice().sort((a,b)=>a[0]-b[0]);
+      chartData={pts:pts,label:d.label||s,unit:d.unit||"",source:d.source||"",cadence:d.cadence||"",
+        first:d.first||ymdMs(pts[0][0]),last:d.last||ymdMs(pts[pts.length-1][0]),count:d.count||pts.length,total:d.total||pts.length,
+        note:d.note||(kind==="metal"&&!wu?t("chartNeedWorker"):""),local:!!d.local};
+    }else{
+      /* Nothing came back. Say why instead of leaving a blank card: metals, the currencies
+         outside the ECB's set and every coin Yahoo serves can only be read through the Worker,
+         so an unreachable Worker or an empty selection has to name itself. */
+      chartData.note=t(kind==="metal"?"chartNeedWorker":"chartNoSeries");
+    }
+    sl.value="100";cap.textContent=chartCaption(chartData);draw();
+  };
+  type.onchange=()=>{symsFor(type.value);load()};
+  bSel.onchange=()=>{settings.chartBase=bSel.value;saveSettings();symsFor(type.value);load()};
+  sym.onchange=load;
+  symsFor(type.value);load();
+}
+/* ============ news (1h cache; the ⟳ button asks the Worker for a fresh copy) ============ */
+function renderNewsBox(id){const el=$("#wb_"+id);if(!el)return;el.innerHTML="";const h=document.createElement("div");h.className="muted";h.textContent=t("inapp");el.appendChild(h);const ul=document.createElement("ul");ul.className="list";el.appendChild(ul);loadNews(id,ul)}
+/* the old 24h payload from the dead feeds is dropped on sight, so the repaired
+   cards appear on the next load without anyone needing a hard refresh */
+try{localStorage.removeItem("pd_news")}catch(e){}
+let newsPending=null;
+/* Freshness is tracked PER CARD: one card refreshing must not re-validate the other
+   cards' data, which is how a schema bump could leave a card serving older content. */
+function newsFresh(all,id){const c=all&&all.cards&&all.cards[id];return !!(c&&typeof c.ts==="number"&&c.v===CONFIG.NEWS_SCHEMA&&Date.now()-c.ts<CONFIG.NEWS_CACHE_HOURS*3600*1000)}
+/* Read-modify-write with the store as the source of truth: all four cards share one
+   record and race to save into it, so writing a snapshot taken when a load started let the
+   last card to finish clobber the others' fresh entries — the GitHub card reverted the feed
+   cards to the previous schema, which silently turned the 1h cache off (every load refetched
+   4 feeds again) and could re-serve old items when a refetch failed. */
+function newsSave(patch,ids){const all=store.get(CONFIG.NEWS_CACHE_KEY,null)||{};all.data=Object.assign({},all.data||{},patch||{});all.cards=all.cards||{};const now=Date.now();(ids||[]).forEach(k=>{all.cards[k]={ts:now,v:CONFIG.NEWS_SCHEMA}});store.set(CONFIG.NEWS_CACHE_KEY,all)}
+/* one shared request per page load: four cards used to mean four round trips */
+function newsOnce(bypass){if(newsPending)return newsPending;const wu=(settings.workerUrl||CONFIG.WORKER_URL);if(!wu)return Promise.resolve(null);newsPending=fetch(wu.replace(/\/$/,"")+"/api/news"+(bypass?"?fresh=1":"")).then(r=>r.ok?r.json():null).catch(()=>null).then(j=>{newsPending=null;return j});return newsPending}
+async function loadNews(id,ul,bypass){const all=store.get(CONFIG.NEWS_CACHE_KEY,null)||{data:{}};const cachedList=(all.data&&all.data[id])||[];if(!bypass&&cachedList.length&&newsFresh(all,id)){paintNews(ul,cachedList);return}if(id==="gh"){await loadNewsGitHub(ul,all);return}const j=await newsOnce(bypass);if(j){const patch={auto:j.auto||[],ai:j.ai||[],fin:j.fin||[]};all.data=Object.assign({},all.data,patch);newsSave(patch,["auto","ai","fin"]);const list=j[id]||[];if(list.length){paintNews(ul,list);return}}if(cachedList.length){paintNews(ul,cachedList);return}if(id==="ai"&&await loadNewsAI(ul,all))return;ul.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=(settings.workerUrl||CONFIG.WORKER_URL)?t("noData"):(t("needWorker")+" ("+t("noData")+")");ul.appendChild(p)}
+/* Offline fallback for the AI card: if the Worker cannot be reached, the card must still
+   answer the same question, so it reads releases straight from the browser — trending
+   open-weight models from Hugging Face and freshly launched free tools from Show HN. */
+async function loadNewsAI(ul,all){
+  const cnt=n=>{const v=Number(n)||0;return v>=1e6?(v/1e6).toFixed(1).replace(/\.0$/,"")+"M":v>=1e3?(v/1e3).toFixed(1).replace(/\.0$/,"")+"k":String(v)};
+  const grab=async(u,f)=>{try{const r=await fetch(u);if(!r.ok)return[];return f(await r.json())}catch(e){return[]}};
+  const hf=grab("https://huggingface.co/api/models?sort=trendingScore&limit=5&direction=-1",j=>Array.isArray(j)?j.map(m=>({title:m.id+" · "+cnt(m.likes)+" likes · "+cnt(m.downloads)+" downloads",link:"https://huggingface.co/"+m.id,desc:[m.pipeline_tag,(m.tags||[]).slice(0,10).join(", ")].filter(Boolean).join(" · "),time:m.createdAt||"",source:"huggingface.co",why:["trending model"]})):[]);
+  const hn=grab("https://hn.algolia.com/api/v1/search_by_date?tags=show_hn&hitsPerPage=8",j=>((j&&j.hits)||[]).map(x=>({title:x.title,link:x.url||("https://news.ycombinator.com/item?id="+x.objectID),desc:(x.points||0)+" points",time:x.created_at,source:"news.ycombinator.com",why:["just released"]})));
+  const [a,b]=await Promise.all([hf,hn]),out=[];
+  for(let i=0;i<5&&out.length<5;i++){if(a[i])out.push(a[i]);if(b[i]&&out.length<5)out.push(b[i])}
+  if(!out.length)return false;
+  /* the same allowance the Worker would attach, so a Show HN launch that states a limit is
+     still comparable while the Worker is unreachable */
+  out.forEach(n=>{if(!n.quota){const q=aiQuota(n);if(q)n.quota=q}});
+  newsSave({ai:out},["ai"]);paintNews(ul,out);return true
+}
+/* GitHub is read straight from the browser — api.github.com is already allowed by the
+   CSP — so there is no Worker hop and no token; the 1h card cache keeps it at roughly
+   one search per visitor per hour, well inside the keyless 10/min search limit. */
+async function loadNewsGitHub(ul,all){try{const d=new Date();d.setDate(d.getDate()-7);const ds=d.toISOString().slice(0,10);const r=await fetch("https://api.github.com/search/repositories?q=created:%3E"+ds+"&sort=stars&order=desc&per_page=5",{headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw 0;const j=await r.json();const arr=(j.items||[]).map(x=>({title:x.full_name+" ★ "+x.stargazers_count,link:x.html_url,desc:x.description||"",time:x.created_at,source:"GitHub"}));if(!arr.length)throw 0;newsSave({gh:arr},["gh"]);paintNews(ul,arr)}catch(e){const prev=(all.data&&all.data.gh)||[];if(prev.length){paintNews(ul,prev);return}ul.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p)}}
+/* The AI card explains itself: items come back with the labels of the ranking rules that
+   matched them, shown as small chips and repeated in the reader, so the order is visible. */
+const WHY_KEY={"open weights":"wOpen","runs locally":"wLocal","free daily limit":"wDaily","trending model":"wTrend","free":"wFree","just released":"wNew","model":"wModel","image/video":"wMedia","API access":"wApi"};
+function whyText(w){return t(WHY_KEY[w]||w)}   /* an unknown label still shows, untranslated */
+function whyLine(n){return (n&&n.why&&n.why.length)?n.why.map(whyText).join(" · "):""}
+/* The free allowance arrives already extracted and normalised by the Worker, so the page only
+   has to word it: the same figure in the same column for every item, in the reader's language,
+   with a one-off grant kept visibly apart from a per-day rate. */
+const QUOTA_KEY={images:"quImages",videos:"quVideos",generations:"quGenerations",prompts:"quPrompts",requests:"quRequests",tokens:"quTokens",words:"quWords",characters:"quCharacters",messages:"quMessages",hours:"quHours",minutes:"quMinutes",seconds:"quSeconds",credits:"quCredits",jobs:"quJobs",GB:"quGB",unlimited:"quUnlimited"};
+function quotaText(q){if(!q)return "";if(q.unit==="unlimited")return t("quUnlimited");const v=q.perDay!=null?q.perDay:q.n;const n=digits(String(v>=10?Math.round(v):Math.round(v*10)/10));const u=t(QUOTA_KEY[q.unit]||q.unit);return q.perDay!=null?n+" "+u+t("quPerDay"):n+" "+u+" · "+t("quOnce")}
+function isAiList(ul){const c=ul&&ul.closest?ul.closest("[data-widget]"):null;return !!(c&&c.dataset.widget==="ai")}
+/* ── free-tier quota: mirrored from worker.js ──
+   The Worker parses and normalises every allowance, so the page only words it — except
+   when the Worker cannot be reached and the fallback below builds the card from the
+   browser's own sources. Those items are AI card items too, so the same parser ships here,
+   verbatim, and the test suite runs both copies over one fixture list and fails if their
+   output ever differs. */
+/* ─────────────── free-tier quota ───────────────
+ * The card answers "what can I use today, and how much of it do I get for free?", so the
+ * free allowance is the one number a reader compares between items — and it arrives as
+ * prose, in whatever unit and whatever period the announcement happened to use ("50 images
+ * per day", "600 requests/month", "20 free credits", "1 million free credits"). Parsed and
+ * normalised once here, every item's allowance lands in the page's quota column in the same
+ * shape, and a per-day figure is what makes a daily allowance and a monthly one comparable
+ * at a glance. Nothing is inferred: an amount needs a real unit (a version number, a model
+ * size or a price is not a quota), a period-less amount is only believed for credits, and
+ * the exact phrase the figure came from rides along as `raw` for the tooltip.
+ */
+const Q_UNITS = [
+  ["images", /^(?:images?|imgs?|pictures?|photos?|renders?|artworks?|upscales?)$/i],
+  ["videos", /^(?:videos?|clips?|reels?|animations?)$/i],
+  ["generations", /^(?:generations?|gens?|creations?)$/i],
+  ["prompts", /^prompts?$/i],
+  ["requests", /^(?:requests?|reqs?|calls?|queries|query)$/i],
+  ["tokens", /^tokens?$/i],
+  ["words", /^words?$/i],
+  ["characters", /^(?:characters?|chars?)$/i],
+  ["messages", /^(?:messages?|msgs?|chats?|conversations?)$/i],
+  ["hours", /^(?:hours?|hrs?)$/i],
+  ["minutes", /^(?:minutes?|mins?)$/i],
+  ["seconds", /^seconds?$/i],
+  ["credits", /^credits?$/i],
+  ["jobs", /^(?:jobs?|tasks?|downloads?|exports?|batches?)$/i],
+  ["GB", /^(?:gbs?|gigabytes?)$/i]
+];
+/* Periods collapse onto a per-day rate: hour ×24, week ÷7, month ÷30, year ÷365. Month and
+ * year use the calendar average, so "600 requests/month" reads as 20/day and lands in the
+ * same column as "50 images/day" instead of looking ten times bigger. A period needs either
+ * a connector ("per day", "/day", "a day") or to be the first word after the amount, so the
+ * "3-day trial" in "50 free images (3-day trial)" is a trial length, not a quota period. */
+const Q_PERIODS = [
+  { re: /(?:\/|per\s+|a\s+|an\s+|each\s+|every\s+)\s*hours?\b|^\s*(?:hour|hourly|hours)\b/i, per: "hour", rate: 24 },
+  { re: /(?:\/|per\s+|a\s+|an\s+|each\s+|every\s+)\s*days?\b|^\s*(?:day|daily|days)\b/i, per: "day", rate: 1 },
+  { re: /(?:\/|per\s+|a\s+|an\s+|each\s+|every\s+)\s*weeks?\b|^\s*(?:week|weekly|weeks)\b/i, per: "week", rate: 1 / 7 },
+  { re: /(?:\/|per\s+|a\s+|an\s+|each\s+|every\s+)\s*months?\b|^\s*(?:month|monthly|months)\b/i, per: "month", rate: 1 / 30 },
+  { re: /(?:\/|per\s+|a\s+|an\s+|each\s+|every\s+)\s*years?\b|^\s*(?:year|yearly|annual|annually|years)\b/i, per: "year", rate: 1 / 365 }
+];
+/* A grant with no period ("20 free credits", "free for up to 20 generations") is a one-off
+ * allowance and is reported as such rather than dressed up as a daily rate. */
+const Q_GRANT = /\b(?:free|bonus|trial|starter|complimentary)\b/i;
+const Q_GRANT_BEFORE = /\b(?:free|trial|starter|complimentary|bonus)\b[^.!?]{0,12}$/i;
+/* "daily 50 images" puts the period before the amount; "50 free images per day" after it. */
+const Q_BEFORE = /\b(daily|weekly|monthly|hourly|per\s+day|a\s+day|each\s+day)\b/i;
+/* An amount, then the unit among the next few words: qualifiers can sit between them
+ * ("20 free credits", "100 free API calls") but a second number ends the search, so the
+ * "2" of "Qwen 2.1 with 50 free images/day" cannot be paired with "images". */
+const Q_AMT = /\b(\d[\d,]*(?:\.\d+)?)\s*(k|m|mn|bn|thousand|million|billion)?\b/gi;
+const Q_WORD = /[a-z]{2,14}/gi;
+const Q_WORDS_MAX = 4;
+const Q_MULT = { k: 1e3, m: 1e6, mn: 1e6, bn: 1e9, thousand: 1e3, million: 1e6, billion: 1e9 };
+const Q_UNLIMITED = /\b(unlimited|unmetered|uncapped|no\s+(?:daily\s+|usage\s+|monthly\s+)?limits?)\b/i;
+const Q_DAY_UNITS = /^(?:images|videos|generations|prompts|requests)$/;
+function qUnit(word) {
+  for (const pair of Q_UNITS) if (pair[1].test(word)) return pair[0];
+  return "";
+}
+/* The stated allowance, normalised: { n, unit, per, perDay, raw }. null when the item
+ * states none — the page shows a dash there rather than an invented figure. */
+function aiQuota(it) {
+  const hay = ((it.title || "") + " — " + (it.desc || "")).slice(0, 400);
+  const found = [];
+  Q_AMT.lastIndex = 0;
+  let m;
+  while ((m = Q_AMT.exec(hay))) {
+    const n = parseFloat(m[1].replace(/,/g, "")) * (Q_MULT[(m[2] || "").toLowerCase()] || 1);
+    if (!isFinite(n) || n <= 0 || n > 1e6) continue;   /* a multi-million allowance is not a quota */
+    const before = hay.slice(Math.max(0, m.index - 18), m.index);
+    /* "$5 in free credits" is a price line, not a count, so a currency sign disqualifies
+     * the amount outright. */
+    if (/[$€£¥]/.test(before)) continue;
+    const between = hay.slice(m.index + m[0].length, m.index + m[0].length + 60).replace(/\d[\s\S]*$/, "");
+    Q_WORD.lastIndex = 0;
+    let unit = "", end = -1, w, words = 0;
+    while ((w = Q_WORD.exec(between)) && words++ < Q_WORDS_MAX) {
+      const u = qUnit(w[0]);
+      if (u) { unit = u; end = w.index + w[0].length; break; }
+    }
+    if (!unit) continue;
+    const granted = unit === "credits" || Q_GRANT.test(between.slice(0, end)) || Q_GRANT_BEFORE.test(before);
+    const after = between.slice(end, end + 26);
+    let per = "", rate = 0, spanAt = 0, spanLen = 0;
+    for (const p of Q_PERIODS) {
+      const hit = p.re.exec(after);
+      if (hit) { per = p.per; rate = p.rate; spanAt = hit.index; spanLen = hit[0].length; break; }
+    }
+    if (!per && Q_BEFORE.test(before)) per = "day";
+    /* No period and no grant: an amount on its own is not an allowance, so no chip. */
+    if (!per && !granted) continue;
+    const perDay = per ? Math.round(n * (rate || 1) * 100) / 100 : null;
+    found.push({
+      at: m.index,
+      score: (per && per !== "total" ? 4 : 0) + (Q_DAY_UNITS.test(unit) ? 2 : 0) + (unit === "credits" ? 1 : 0) + (per === "day" ? 1 : 0),
+      q: {
+        n: Math.round(n), unit: unit, per: per || "total", perDay: perDay,
+        raw: hay.slice(m.index, m.index + m[0].length + end + spanAt + spanLen).replace(/\s+/g, " ").trim().slice(0, 80)
+      }
+    });
+  }
+  if (found.length) {
+    /* Several amounts can appear (a free tier plus a paid one): take the most useful —
+     * a stated period over a bare grant, a generative unit over infrastructure — and the
+     * earliest when they tie. */
+    found.sort((a, b) => (b.score - a.score) || (a.at - b.at));
+    return found[0].q;
+  }
+  const unl = Q_UNLIMITED.exec(hay);
+  if (unl) return { n: null, unit: "unlimited", per: "day", perDay: null, raw: unl[0].slice(0, 80) };
+  return null;
+}
+/* ── end of the mirrored free-tier quota parser ── */
+function paintNews(ul,arr){ul.innerHTML="";if(!arr||!arr.length){const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p);return}const ai=isAiList(ul);arr.slice(0,5).forEach(n=>{const li=document.createElement("li");if(ai)li.className="qrow";const col=document.createElement("div");col.style.flex="1";col.style.minWidth="0";const b2=document.createElement("button");b2.className="mini";b2.style.textAlign="start";b2.style.width="100%";b2.style.fontSize="14px";b2.textContent=n.title||"(untitled)";const why=whyLine(n),qt=quotaText(n.quota);b2.onclick=()=>openReader(n.title||"",((why?why+" — ":"")+(qt?qt+" · ":"")+(n.source||"")+" · "+(n.time||"")).trim(),n.desc||"",n.link);col.appendChild(b2);if(n.why&&n.why.length){const w=document.createElement("div");w.className="why";n.why.forEach(k=>{const c=document.createElement("span");c.textContent=whyText(k);w.appendChild(c)});col.appendChild(w)}li.appendChild(col);if(ai){const q=document.createElement("div");q.className="qta"+(n.quota?(n.quota.per==="total"?" once":""):" none");q.textContent=qt||"—";q.title=(n.quota&&n.quota.raw)||t("quNone");li.appendChild(q)}ul.appendChild(li)})}
+/* ============ Generators card: the free allowances, item by item ============
+   The dataset is MIRRORED verbatim from worker.js (same GEN-DATA markers): the Worker owns it
+   and serves it at /api/generators, and this copy exists so the card — and the search index
+   below — still answer when the Worker is unreachable. The harness diffs the two copies. */
+/* GEN-DATA-BEGIN (mirrored verbatim in index.html; the harness compares the two copies) */
+const GEN_CHECKED = "2026-10-13";
+const GEN_TOOLS = [
+{"id":"bing","tool":"Bing Image Creator","kind":"image","n":15,"unit":"creations","span":"day","note":"genNBing","url":"https://www.bing.com/images/create/help"},
+{"id":"leonardo","tool":"Leonardo.Ai","kind":"image","n":150,"unit":"fastTokens","span":"day","note":"genNLeonardo","url":"https://leonardo.ai/pricing"},
+{"id":"krea","tool":"Krea","kind":"image","n":100,"unit":"units","span":"day","note":"genNKrea","url":"https://www.krea.ai/docs/user-guide/help-and-support/compute-units"},
+{"id":"nightcafe","tool":"NightCafe","kind":"image","n":5,"unit":"credits","span":"day","note":"genNNight","url":"https://creator.nightcafe.studio/pricing"},
+{"id":"seaart","tool":"SeaArt","kind":"image","n":150,"unit":"stamina","span":"day","note":"genNSea","url":"https://docs.seaart.ai/guide-1/1-seaart-ai-basic-page"},
+{"id":"playground","tool":"Playground","kind":"image","n":10,"unit":"images","span":"3h","note":"genNPlay","url":"https://playgroundai.com/design/pricing"},
+{"id":"recraft","tool":"Recraft","kind":"image","n":30,"unit":"generations","span":"day","note":"genNRecraft","url":"https://www.recraft.ai/features/image-converter"},
+{"id":"ideogram","tool":"Ideogram","kind":"image","n":30,"unit":"credits","span":"week","note":"genNIdeo","url":"https://docs.ideogram.ai/plans-and-billing/available-plans"},
+{"id":"flow","tool":"Google Flow (Veo)","kind":"video","n":50,"unit":"credits","span":"day","note":"genNFlow","url":"https://support.google.com/flow/answer/16526234"},
+{"id":"pixverse","tool":"PixVerse","kind":"video","n":30,"unit":"credits","span":"day","note":"genNPix","url":"https://app.pixverse.ai/subscribe"},
+{"id":"dreamina","tool":"Dreamina","kind":"video","n":120,"unit":"credits","span":"day","note":"genNDream","url":"https://dreamina.capcut.com/ai-video/free-image-to-video-generator-credits-faq"},
+{"id":"runway","tool":"Runway","kind":"video","n":125,"unit":"credits","span":"once","note":"genNRunway","url":"https://help.runwayml.com/hc/en-us/articles/50404627334547-Free-plan-details"},
+{"id":"ltx","tool":"LTX Studio","kind":"video","n":800,"unit":"credits","span":"once","note":"genNLtx","url":"https://support.ltx.studio/hc/en-us/articles/32039381455122-Understanding-the-free-plan"}
+];
+/* GEN-DATA-END */
+
+const GEN_UNIT_KEY={creations:"genUCreations",fastTokens:"genUFast",units:"genUUnits",stamina:"genUStamina",credits:"quCredits",images:"quImages",generations:"quGenerations"};
+/* the date the mirror was checked; replaced by /api/generators' own `checked` when it answers */
+let genChecked=GEN_CHECKED;
+/* one line of "15 creations/day" in the active language — the unit stays the vendor's own name */
+function genSpanText(g){return g.span==="day"?t("quPerDay"):g.span==="week"?t("genPerWeek"):g.span==="3h"?t("genPer3h"):g.span==="once"?" · "+t("quOnce"):"/"+g.span}
+function genAllowText(g){return digits(String(g.n))+" "+t(GEN_UNIT_KEY[g.unit]||g.unit)+genSpanText(g)}
+function paintGen(ul,arr){ul.innerHTML="";if(!arr||!arr.length){const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p);return}arr.forEach(g=>{const li=document.createElement("li");li.className="qrow";const col=document.createElement("div");col.style.flex="1";col.style.minWidth="0";const b=document.createElement("button");b.className="mini";b.style.textAlign="start";b.style.width="100%";b.style.fontSize="14px";b.textContent=g.tool;b.onclick=()=>openReader(g.tool,(t(g.kind==="video"?"genVideo":"genImage")+" · "+genAllowText(g)+" · "+t("genChecked")+" "+genChecked).trim(),t(g.note),g.url);col.appendChild(b);const w=document.createElement("div");w.className="why";const k=document.createElement("span");k.textContent=t(g.kind==="video"?"genVideo":"genImage");w.appendChild(k);const fr=document.createElement("span");fr.textContent=t("wFree");w.appendChild(fr);col.appendChild(w);li.appendChild(col);const q=document.createElement("div");q.className="qta"+(g.span==="once"?" once":"");q.textContent=genAllowText(g);q.title=g.tool+" — "+t(g.note);li.appendChild(q);ul.appendChild(li)});const f=document.createElement("p");f.className="muted";f.textContent=t("genChecked")+" "+genChecked+" · "+t("genHint");ul.appendChild(f)}
+function renderGen(ul,bypass){if(!ul){const el=$("#wb_gen");if(!el)return;el.innerHTML="";ul=document.createElement("ul");ul.className="list";el.appendChild(ul)}loadGen(ul,bypass)}
+/* like the feed cards: read the 1h cache, else ask the Worker, else fall back to the mirror */
+async function loadGen(ul,bypass){const all=store.get(CONFIG.NEWS_CACHE_KEY,null)||{data:{}};const cached=(all.data&&all.data.gen)||[];if(!bypass&&cached.length&&newsFresh(all,"gen")){if(all.data.genChecked)genChecked=all.data.genChecked;paintGen(ul,cached);return}const wu=(settings.workerUrl||CONFIG.WORKER_URL);let j=null;try{if(wu){const r=await fetch(wu.replace(/\/$/,"")+"/api/generators");if(r.ok)j=await r.json()}}catch(e){}if(j&&j.tools&&j.tools.length){genChecked=j.checked||genChecked;newsSave({gen:j.tools,genChecked:genChecked},["gen"]);paintGen(ul,j.tools);return}if(cached.length){paintGen(ul,cached);return}genChecked=GEN_CHECKED;paintGen(ul,GEN_TOOLS)}
+
+/* ============ calendar ============ */
+let calCursor=new Date();calCursor.setDate(1);
+function renderCal(){const el=$("#wb_cal");if(!el)return;el.innerHTML="";const nav=document.createElement("div");nav.className="row";const pv=document.createElement("button");pv.className="mini";pv.textContent="‹";pv.onclick=()=>{calCursor.setMonth(calCursor.getMonth()-1);renderCal()};const nx=document.createElement("button");nx.className="mini";nx.textContent="›";nx.onclick=()=>{calCursor.setMonth(calCursor.getMonth()+1);renderCal()};const lab=document.createElement("div");lab.style.fontWeight="800";lab.textContent=digits(calCursor.toLocaleDateString(settings.lang==="ar"?"ar-EG":"en-US",{month:"long",year:"numeric"}));nav.appendChild(pv);nav.appendChild(lab);nav.appendChild(nx);const sp=document.createElement("span");sp.style.flex="1";nav.appendChild(sp);const add=document.createElement("button");add.className="btn";add.textContent="+ "+t("addEvent");add.onclick=()=>eventModal();nav.appendChild(add);el.appendChild(nav);const grid=document.createElement("div");grid.style.display="grid";grid.style.gridTemplateColumns="repeat(7,1fr)";grid.style.gap="4px";grid.style.marginTop="10px";(settings.lang==="ar"?["ح","ن","ث","ر","خ","ج","س"]:["S","M","T","W","T","F","S"]).forEach(d=>{const c=document.createElement("div");c.className="muted";c.style.textAlign="center";c.textContent=d;grid.appendChild(c)});const y=calCursor.getFullYear(),m=calCursor.getMonth();const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();for(let i=0;i<first;i++)grid.appendChild(document.createElement("div"));for(let d=1;d<=days;d++){const c=document.createElement("button");c.className="mini";c.style.textAlign="center";const ds=y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");const has=events.some(e=>e.date===ds);c.textContent=digits(d)+(has?" •":"");c.style.borderColor=has?"var(--ac)":"";c.onclick=()=>eventModal(ds);grid.appendChild(c)}el.appendChild(grid);const ag=document.createElement("div");ag.style.marginTop="10px";const h=document.createElement("div");h.className="muted";h.textContent=t("agenda");ag.appendChild(h);events.slice().sort((a,b)=>(a.date+a.time)>(b.date+b.time)?1:-1).slice(0,8).forEach(e=>{const kv=document.createElement("div");kv.className="kv";const a=document.createElement("span");a.textContent=esc(e.date+" "+(e.time||"")+" — "+e.title);kv.appendChild(a);const b2=document.createElement("span");b2.className="row";const ics=document.createElement("button");ics.className="mini";ics.textContent="ICS";ics.onclick=()=>downloadIcs(e);const g=document.createElement("a");g.className="mini";g.textContent="G";g.target="_blank";g.rel="noopener noreferrer";g.href=gcal(e);const del=document.createElement("button");del.className="mini";del.textContent="✕";del.onclick=async()=>{if(await confirmModal(t("del"),e.title,t("yesDel"))){events=events.filter(x=>x.id!==e.id);store.set("pd_events",events);renderCal()}};b2.appendChild(ics);b2.appendChild(g);b2.appendChild(del);kv.appendChild(b2);ag.appendChild(kv)});el.appendChild(ag)}
+function eventModal(preset){openModal("<h3></h3><div class='field'><label></label><input id='eT' type='text'></div><div class='field'><label></label><input id='eD' type='date'></div><div class='field'><label></label><input id='eH' type='time'></div><div class='row' style='justify-content:flex-end'><button class='btn ghost' id='eC'></button><button class='btn' id='eS'></button></div>");const bx=$("#modalBox");const Ls=bx.querySelectorAll("label");bx.querySelector("h3").textContent=t("addEvent");Ls[0].textContent=t("evTitle");Ls[1].textContent=t("evDate");Ls[2].textContent=t("evTime");bx.querySelector("#eC").textContent=t("cancel");bx.querySelector("#eS").textContent=t("save");if(preset)bx.querySelector("#eD").value=preset;bx.querySelector("#eC").onclick=closeModal;bx.querySelector("#eS").onclick=()=>{const title=bx.querySelector("#eT").value.trim();const date=bx.querySelector("#eD").value;const time=bx.querySelector("#eH").value;if(!title||!date){toast(t("evTitle"));return}events.push({id:"e"+Date.now(),title,date,time});store.set("pd_events",events);closeModal();renderCal()}}
+function icsDate(d,tm){return d.replace(/-/g,"")+"T"+(tm?tm.replace(":","")+"00":"090000")}
+function downloadIcs(e){const ics=["BEGIN:VCALENDAR","VERSION:2.0","BEGIN:VEVENT","UID:"+e.id+"@dash","DTSTART:"+icsDate(e.date,e.time),"SUMMARY:"+e.title.replace(/\n/g," "),"END:VEVENT","END:VCALENDAR"].join("\r\n");const b=new Blob([ics],{type:"text/calendar"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=e.title.slice(0,30)+".ics";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+function gcal(e){return"https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(e.title)+"&dates="+icsDate(e.date,e.time)+"/"+icsDate(e.date,e.time)}
+/* ============ tasks ============ */
+function renderTasks(full){const id=full?"wb_tasks":"wb_todayTasks";const el=document.getElementById(id);if(!el)return;el.innerHTML="";const list=full?tasks:tasks.filter(x=>!x.done||(x.due&&x.due.slice(0,10)===new Date().toISOString().slice(0,10))).slice(0,6);if(!full&&!list.length){const p=document.createElement("p");p.className="muted";p.textContent="—";el.appendChild(p)}const ul=document.createElement("ul");ul.className="list";(full?tasks:list).forEach(x=>{const li=document.createElement("li");const c=document.createElement("button");c.className="circle"+(x.done?" done":"");c.textContent="✓";c.setAttribute("aria-label",t("done"));c.onclick=()=>{x.done=!x.done;store.set("pd_tasks",tasks);renderTasks(true);renderTasks(false)};li.appendChild(c);const tx=document.createElement("div");tx.style.flex="1";const s=document.createElement("span");s.textContent=x.text;if(x.done)s.className="strike";tx.appendChild(s);if(x.due){const d2=document.createElement("div");d2.className="muted";const today=new Date().toISOString().slice(0,10);d2.textContent=digits(x.due)+(x.due.slice(0,10)<today&&!x.done?" · "+t("overdue"):x.due.slice(0,10)===today?" · "+t("today"):"");tx.appendChild(d2)}li.appendChild(tx);if(full){const eb=document.createElement("button");eb.className="mini";eb.textContent=t("edit");eb.onclick=()=>taskModal(x);li.appendChild(eb);const db=document.createElement("button");db.className="mini";db.textContent=t("del");db.onclick=async()=>{if(await confirmModal(t("del"),x.text,t("yesDel"))){tasks=tasks.filter(y=>y.id!==x.id);store.set("pd_tasks",tasks);renderTasks(true);renderTasks(false)}};li.appendChild(db)}ul.appendChild(li)});el.appendChild(ul);if(full){const r=document.createElement("div");r.className="row";r.style.marginTop="8px";const inp=document.createElement("input");inp.type="text";inp.placeholder=t("taskPh");inp.style.flex="1";const b2=document.createElement("button");b2.className="btn";b2.textContent=t("add");b2.onclick=()=>{const v=inp.value.trim();if(!v)return;tasks.push({id:"t"+Date.now(),text:v,done:false,due:""});store.set("pd_tasks",tasks);renderTasks(true);renderTasks(false)};inp.onkeydown=e=>{if(e.key==="Enter")b2.click()};r.appendChild(inp);r.appendChild(b2);el.appendChild(r)}}
+function taskModal(x){openModal("<h3></h3><div class='field'><input id='tT' type='text'></div><div class='field'><label></label><input id='tD' type='date'></div><div class='row' style='justify-content:flex-end'><button class='btn ghost' id='tC'></button><button class='btn' id='tS'></button></div>");const bx=$("#modalBox");bx.querySelector("h3").textContent=t("edit");bx.querySelector("label").textContent=t("due");bx.querySelector("#tT").value=x.text;bx.querySelector("#tD").value=(x.due||"").slice(0,10);bx.querySelector("#tC").textContent=t("cancel");bx.querySelector("#tS").textContent=t("save");bx.querySelector("#tC").onclick=closeModal;bx.querySelector("#tS").onclick=()=>{x.text=bx.querySelector("#tT").value.trim()||x.text;const d=bx.querySelector("#tD").value;x.due=d||"";store.set("pd_tasks",tasks);closeModal();renderTasks(true);renderTasks(false)}}
+/* ============ countdowns ============ */
+function cdNext(c){const now=new Date();let dt=new Date(c.date+(c.time?"T"+c.time:"T00:00"));if(c.recurring){dt.setFullYear(now.getFullYear());if(dt<now&&c.mode==="until")dt.setFullYear(now.getFullYear()+1)}return dt}
+function cdParts(from,to){let ms=to-from;ms=Math.abs(ms);const s=Math.floor(ms/1000);return{y:Math.floor(s/31536000),mo:Math.floor(s%31536000/2592000),d:Math.floor(s%2592000/86400),h:Math.floor(s%86400/3600),mi:Math.floor(s%3600/60),sec:s%60}}
+function cdText(c){const now=new Date(),dt=cdNext(c);const p=cdParts(now,dt);const u=c.units||{d:1,h:1,mi:1};const bits=[];if(u.y)bits.push(digits(p.y)+" "+t("years"));if(u.mo)bits.push(digits(p.mo)+" "+t("months"));if(u.d)bits.push(digits(p.d)+" "+t("days"));if(u.h)bits.push(digits(p.h)+" "+t("hours"));if(u.mi)bits.push(digits(p.mi)+" "+t("minutes"));if(u.sec)bits.push(digits(p.sec)+" "+t("seconds"));return (c.mode==="since"?"± ":"")+bits.join(" · ")}
+function tickCountdowns(){document.querySelectorAll("[data-cd]").forEach(n=>{const c=countdowns.find(x=>x.id===n.dataset.cd);if(c)n.textContent=cdText(c)});const nx=$("#nxCd");if(nx&&countdowns.length){const s=countdowns.slice().sort((a,b)=>cdNext(a)-cdNext(b));nx.textContent=s[0].title+" — "+cdText(s[0])}}
+function renderCds(){const el=$("#wb_cds");if(!el)return;el.innerHTML="";const add=document.createElement("button");add.className="btn";add.textContent="+ "+t("plusCd");add.onclick=()=>cdModal();el.appendChild(add);const ul=document.createElement("ul");ul.className="list";countdowns.forEach(c=>{const li=document.createElement("li");const d2=document.createElement("div");d2.style.flex="1";const a=document.createElement("div");a.style.fontWeight="700";a.textContent=c.title;d2.appendChild(a);const b2=document.createElement("div");b2.className="pill";b2.dataset.cd=c.id;b2.textContent=cdText(c);d2.appendChild(b2);li.appendChild(d2);const eb=document.createElement("button");eb.className="mini";eb.textContent=t("edit");eb.onclick=()=>cdModal(c);li.appendChild(eb);const db=document.createElement("button");db.className="mini";db.textContent=t("del");db.onclick=async()=>{if(await confirmModal(t("del"),c.title,t("yesDel"))){countdowns=countdowns.filter(x=>x.id!==c.id);store.set("pd_countdowns",countdowns);renderCds();renderNext()}};li.appendChild(db);ul.appendChild(li)});el.appendChild(ul)}
+function renderNext(){const el=$("#wb_nextCd");if(!el)return;el.innerHTML="";if(!countdowns.length){const p=document.createElement("p");p.className="muted";p.textContent="—";el.appendChild(p);return}const s=countdowns.slice().sort((a,b)=>cdNext(a)-cdNext(b))[0];const d2=document.createElement("div");d2.style.fontWeight="700";d2.textContent=s.title;el.appendChild(d2);const b2=document.createElement("div");b2.className="big";b2.id="nxCd";b2.textContent=cdText(s);el.appendChild(b2)}
+const PRESETS=[["xmas","12-25"],["newyr","01-01"],["ramadan","2026-02-18"],["eidF","2026-03-20"],["eidA","2026-05-27"]];
+function cdModal(c){c=c||{id:"c"+Date.now(),title:"",date:new Date().toISOString().slice(0,10),time:"",mode:"until",recurring:false,units:{d:1,h:1,mi:1}};const isNew=!countdowns.find(x=>x.id===c.id);openModal("<h3></h3><div class='field'><label>"+t("evTitle")+"</label><input id='cT' type='text'></div><div class='field'><label>"+t("evDate")+"</label><input id='cD' type='date'></div><div class='field'><label>"+t("evTime")+"</label><input id='cH' type='time'></div><div class='field'><label>"+t("presets")+"</label><select id='cP'></select></div><div class='field'><label>"+t("mode")+"</label><select id='cM'><option value='until'>"+t("until")+"</option><option value='since'>"+t("since")+"</option></select></div><label class='checkline'><input type='checkbox' id='cR'> "+t("recurring")+"</label><div class='field'><label>"+t("unitsShow")+"</label><div class='checkline' id='cU'></div></div><div class='row' style='justify-content:flex-end'><button class='btn ghost' id='cC'></button><button class='btn' id='cS'></button></div>");const bx=$("#modalBox");bx.querySelector("h3").textContent=t("plusCd");bx.querySelector("#cT").value=c.title;bx.querySelector("#cD").value=c.date;bx.querySelector("#cH").value=c.time||"";bx.querySelector("#cM").value=c.mode;bx.querySelector("#cR").checked=!!c.recurring;const ps=bx.querySelector("#cP");[[t("custom"),""],...PRESETS.map(([k,v])=>[t(k),v])].forEach(([l,v])=>{const o=document.createElement("option");o.value=v;o.textContent=l;ps.appendChild(o)});ps.onchange=()=>{if(ps.value){const y=new Date().getFullYear();bx.querySelector("#cD").value=/^\d{2}-/.test(ps.value)?y+"-"+ps.value:ps.value}};const uu=bx.querySelector("#cU");[["y",t("years")],["mo",t("months")],["d",t("days")],["h",t("hours")],["mi",t("minutes")],["sec",t("seconds")]].forEach(([k,l])=>{const lab=document.createElement("label");lab.className="checkline";const cb=document.createElement("input");cb.type="checkbox";cb.checked=!!(c.units&&c.units[k]);cb.dataset.k=k;lab.appendChild(cb);lab.appendChild(document.createTextNode(l));uu.appendChild(lab)});bx.querySelector("#cC").textContent=t("cancel");bx.querySelector("#cS").textContent=t("save");bx.querySelector("#cC").onclick=closeModal;bx.querySelector("#cS").onclick=()=>{c.title=bx.querySelector("#cT").value.trim()||t("cdDefault");c.date=bx.querySelector("#cD").value;c.time=bx.querySelector("#cH").value;c.mode=bx.querySelector("#cM").value;c.recurring=bx.querySelector("#cR").checked;c.units={};uu.querySelectorAll("input").forEach(i=>c.units[i.dataset.k]=i.checked);if(isNew)countdowns.push(c);store.set("pd_countdowns",countdowns);closeModal();renderCds();renderNext()}}
+/* ============ data + settings ============ */
+function persistAll(){store.set("pd_tasks",tasks);store.set("pd_events",events);store.set("pd_countdowns",countdowns)}
+function renderData(){const el=$("#wb_data");if(!el)return;el.innerHTML="";const mk=(l,fn,dan)=>{const b=document.createElement("button");b.className=dan?"btn danger":"btn ghost";b.style.margin="4px";b.textContent=l;b.onclick=fn;el.appendChild(b)};mk(t("export"),()=>{const data={settings,tasks,events,countdowns,location:location_,v:CONFIG.VERSION};const b=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="dashboard-v"+CONFIG.VERSION+".json";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)});mk(t("csv"),()=>{let s="text,done,due\n";tasks.forEach(x=>s+='"'+x.text.replace(/"/g,'""')+'",'+(x.done?1:0)+',"'+(x.due||"")+'"\n');const b=new Blob([s],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="tasks.csv";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)});mk(t("copy"),async()=>{try{await navigator.clipboard.writeText(JSON.stringify({tasks,events,countdowns}));toast("✓")}catch(e){toast("✕")}});const imp=document.createElement("input");imp.type="file";imp.accept=".json";imp.style.marginTop="8px";imp.onchange=()=>{const f=imp.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(rd.result);openModal("<h3>"+t("import")+"</h3><div class='row'><button class='btn ghost' id='iR'>"+t("replace")+"</button><button class='btn' id='iM'>"+t("merge")+"</button></div>");$("#modalBox").querySelector("#iR").onclick=()=>{if(j.tasks)tasks=j.tasks;if(j.events)events=j.events;if(j.countdowns)countdowns=j.countdowns;persistAll();closeModal();buildPages()};$("#modalBox").querySelector("#iM").onclick=()=>{if(j.tasks)tasks=tasks.concat(j.tasks);if(j.events)events=events.concat(j.events);if(j.countdowns)countdowns=countdowns.concat(j.countdowns);persistAll();closeModal();buildPages()}}catch(e){toast("✕")}};rd.readAsText(f)};el.appendChild(imp);mk(t("wipe"),async()=>{if(await confirmModal(t("wipe"),t("wipeSure"),t("yesDel"))){Object.keys(localStorage).filter(k=>k.startsWith("pd_")).forEach(k=>localStorage.removeItem(k));location.reload()}},true)}
+function switchRow(label,val,fn){const d2=document.createElement("div");d2.className="setrow";const s=document.createElement("span");s.textContent=label;d2.appendChild(s);const b2=document.createElement("button");b2.className="switch";b2.setAttribute("role","switch");b2.setAttribute("aria-checked",val?"true":"false");b2.onclick=()=>{fn(!val)};d2.appendChild(b2);return d2}
+function renderSettings(){const el=$("#wb_settings");if(!el)return;el.innerHTML="";const addL=(txt)=>{const d2=document.createElement("div");d2.className="muted";d2.style.marginTop="10px";d2.textContent=txt;el.appendChild(d2)};addL(t("lang"));const lr=document.createElement("div");lr.className="row";["en","ar"].forEach(l=>{const b=document.createElement("button");b.className="mini";b.textContent=l==="en"?"English":"العربية";b.style.borderColor=settings.lang===l?"var(--ac)":"";b.onclick=()=>{settings.lang=l;saveSettings();applyPrefs();buildPages()};lr.appendChild(b)});el.appendChild(lr);addL(t("theme"));const tr=document.createElement("div");tr.className="row";[["light",t("light")],["dark",t("dark")],["auto",t("autoT")]].forEach(([v,l])=>{const b=document.createElement("button");b.className="mini";b.textContent=l;b.style.borderColor=settings.themeMode===v?"var(--ac)":"";b.onclick=()=>{settings.themeMode=v;saveSettings();applyPrefs()};tr.appendChild(b)});el.appendChild(tr);addL(t("accent"));
+const ar=document.createElement("div");ar.className="row";[["orange","acOrange"],["amber","acAmber"],["coral","acCoral"],["teal","acTeal"],["violet","acViolet"]].forEach(([a,al])=>{const b=document.createElement("button");b.className="mini";b.textContent=t(al);b.style.borderColor=settings.accent===a?"var(--ac)":"";b.onclick=()=>{settings.accent=a;saveSettings();applyPrefs()};ar.appendChild(b)});el.appendChild(ar);
+addL(t("theme"));
+const thr=document.createElement("div");thr.className="row";[["dark",t("thGrey")],["midnight",t("thMid")],["forest",t("thFor")],["light",t("light")],["auto",t("autoT")]].forEach(([v,l])=>{const b=document.createElement("button");b.className="mini";b.textContent=l;b.style.borderColor=settings.themeMode===v?"var(--ac)":"";b.onclick=()=>{settings.themeMode=v;saveSettings();applyPrefs()};thr.appendChild(b)});el.appendChild(thr);
+addL(t("bgPick"));
+const bsel=document.createElement("select");[["default",t("bgDefault")],["none",t("bgNone")],["grid",t("bgGrid")],["dots",t("bgDots")],["waves",t("bgWaves")],["aurora",t("bgAurora")]].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;bsel.appendChild(o)});bsel.value=settings.bg||"default";bsel.onchange=()=>{settings.bg=bsel.value;saveSettings();applyPrefs()};el.appendChild(bsel);
+addL(t("digits"));const dr=document.createElement("div");dr.className="row";[["western",t("west")],["eastern",t("east")]].forEach(([v,l])=>{const b=document.createElement("button");b.className="mini";b.textContent=l;b.onclick=()=>{settings.digits=v;saveSettings();applyPrefs();buildPages()};dr.appendChild(b)});el.appendChild(dr);addL(t("workerUrl"));const wi=document.createElement("input");wi.type="text";wi.placeholder=CONFIG.WORKER_URL||"https://dashboard-api.<you>.workers.dev";wi.value=settings.workerUrl||"";wi.onchange=()=>{settings.workerUrl=wi.value.trim();saveSettings();buildPages()};el.appendChild(wi);const wh=document.createElement("div");wh.className="muted";wh.style.fontSize="12px";wh.textContent=t("workerHint")+" "+(CONFIG.WORKER_URL||"—");el.appendChild(wh);
+addL(t("metalsSrc"));
+const ps=document.createElement("select");const o0=document.createElement("option");o0.value="";o0.textContent=t("srcDefault");ps.appendChild(o0);(CONFIG.METALS_PROVIDERS||[]).forEach(p=>{const o=document.createElement("option");o.value=p.id;o.textContent=p.label;ps.appendChild(o)});ps.value=settings.metalsProvider||"";ps.onchange=()=>{settings.metalsProvider=ps.value;saveSettings();loadMetals()};el.appendChild(ps);
+addL(t("byokKey"));
+const ki=document.createElement("input");ki.type="password";ki.autocomplete="off";ki.placeholder=t("byokPh");ki.value=byokKey();ki.onchange=()=>{setByokKey(ki.value.trim());loadMetals()};el.appendChild(ki);
+const hh=document.createElement("div");hh.className="muted";hh.style.fontSize="12px";hh.style.marginTop="4px";hh.textContent=t("byokHint");el.appendChild(hh);
+addL(t("widget"));Object.keys(WIDGET_META).forEach(id=>{el.appendChild(switchRow(titleFor(id)+(isHidden(id)?" ("+t("hide")+")":""),!isHidden(id),v=>{settings.widgets[id]=v;saveSettings();buildPages()}))});addL(t("version")+": v"+CONFIG.VERSION);const cb=document.createElement("button");cb.className="btn ghost";cb.textContent=t("changelog");cb.onclick=()=>{openModal("<h3>"+t("changelog")+"</h3><div id='cl'></div><div class='row' style='justify-content:flex-end'><button class='btn' id='cX'>"+t("close")+"</button></div>");const L=$("#modalBox").querySelector("#cl");CHANGELOG.forEach(c=>{const d2=document.createElement("div");d2.className="kv";const a=document.createElement("span");a.textContent="v"+c.v+" · "+c.d;d2.appendChild(a);const b2=document.createElement("div");b2.className="muted";b2.textContent=settings.lang==="ar"?c.ar:c.en;d2.appendChild(b2);L.appendChild(d2)});$("#modalBox").querySelector("#cX").onclick=closeModal};el.appendChild(cb)}
+/* ============ install / QR ============ */
+const IS_STANDALONE=window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches||window.navigator.standalone===true;
+function shareLinks(url){const enc2=encodeURIComponent(url);return{
+ whatsapp:"https://wa.me/?text="+enc2,
+ instagram:"https://www.instagram.com/",   /* IG has no web share URL; deep-link the app */
+ snapchat:"https://www.snapchat.com/",     /* snap chat creative kit needs login; share target via copy */
+ mail:"mailto:?subject="+encodeURIComponent("Dashboard")+"&body="+enc2,
+ native:{title:"Dashboard",text:"Dashboard app"}
+}}
+function detectPlatform(){const ua=navigator.userAgent||"";const iOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);const android=/Android/.test(ua);const safari=/Safari/.test(ua)&&!/Chrome|FxiOS|CriOS|EdgiOS/.test(ua);return{iOS,android,safari:iOS&&safari}}
+function installModal(){const pt=detectPlatform();openModal("<h3></h3><p class='muted' id='iTxt'></p><div class='row' style='justify-content:flex-end;margin-top:10px'><button class='btn ghost' id='iC'></button><button class='btn' id='iD'></button></div>");const bx=$("#modalBox");bx.querySelector("h3").textContent=t("install");const steps=pt.iOS?(settings.lang==="ar"?"١) افتح هذا الرابط في Safari.\n٢) اضغط زر المشاركة ⬆️ في الأسفل.\n٣) اختر «إضافة إلى الشاشة الرئيسية» ثم «إضافة».":"1) Open this site in Safari.\n2) Tap the Share button ⬆️ at the bottom.\n3) Choose \"Add to Home Screen\", then Add."):(settings.lang==="ar"?"افتح قائمة المتصفح ثم اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».":"Open the browser menu, then choose \"Install app\" or \"Add to Home Screen\".");const it2=bx.querySelector("#iTxt");it2.style.whiteSpace="pre-line";it2.textContent=steps;bx.querySelector("#iC").textContent=t("close");bx.querySelector("#iC").onclick=closeModal;bx.querySelector("#iD").textContent=t("qr");bx.querySelector("#iD").onclick=()=>{closeModal();qrModal()}}
+function qrModal(){openModal("<h3></h3><p class='muted'></p><div style='text-align:center' id='qrHold'></div><div class='row' style='justify-content:center;margin-top:10px'><button class='btn' id='qC'></button></div>");const bx=$("#modalBox");bx.querySelector("h3").textContent=t("qr");bx.querySelector("p").textContent=CONFIG.APP_URL;const hold=bx.querySelector("#qrHold");hold.className="qrbox";const cv=document.createElement("canvas");const M=(typeof QR_M_JSON==="string")?JSON.parse(QR_M_JSON):QR_M_JSON;const n=M.length,sc=Math.floor(560/(n+8)),pad=2*sc;cv.width=(n+pad*2)*sc;cv.height=cv.width;const ctx=cv.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#1e1e22";M.forEach((row,y)=>row.forEach((v,x)=>{if(v)ctx.fillRect((x+pad)*sc,(y+pad)*sc,sc,sc)}));cv.style.width="100%";cv.style.height="auto";hold.appendChild(cv);bx.querySelector("#qC").textContent=t("close");bx.querySelector("#qC").onclick=closeModal}
+$("#installBtn").onclick=installModal;
+$("#qrBtn").onclick=qrModal;
+/* ============ search (Spotlight-style) ============ */
+/* Spotlight search. A multi-word query used to match only exact phrases, so "free image
+   tools" could not reach the card built for exactly that. Matching is now token-wise: every
+   word of the query must appear in the haystack (single-word queries behave as before). The
+   free-allowance figures are indexed as first-class results — each generator, with the number
+   it grants, and each cached AI headline that states a quota — so "daily limit" finds the
+   figure itself rather than only the card that holds it. */
+$("#search").addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();const box=$("#searchResults");box.innerHTML="";if(!q){box.style.display="none";return}const ws=q.split(/\s+/).filter(Boolean);const hit=h=>ws.every(w=>h.includes(w));const out=[];Object.keys(WIDGET_META).forEach(id=>{const hay=(titleFor(id)+" "+WIDGET_META[id].k+" "+id).toLowerCase();if(hit(hay))out.push({l:titleFor(id)+" — "+pageNames()[WIDGET_META[id].p],fn:()=>jumpTo(id)})});let genHits=0;GEN_TOOLS.forEach(g=>{if(genHits>=5)return;const hay=(g.tool+" "+g.kind+" "+g.unit+" "+g.span+" "+(g.span==="day"?"daily":"")+" free tools limit allowance "+genAllowText(g)).toLowerCase();if(hit(hay)){genHits++;out.push({l:"🎞️ "+g.tool+" — "+genAllowText(g),fn:()=>jumpTo("gen")})}});const allNews=store.get(CONFIG.NEWS_CACHE_KEY,null)||{};let aiHits=0;((allNews.data&&allNews.data.ai)||[]).forEach(n=>{if(!n.quota||aiHits>=5)return;const hay=(n.title+" "+((n.why||[]).map(k=>whyText(k)).join(" "))+" "+(n.quota.raw||"")+" "+(n.quota.unit||"")).toLowerCase();if(hit(hay)){aiHits++;out.push({l:"🤖 "+(n.title||"").slice(0,44)+" — "+quotaText(n.quota),fn:()=>jumpTo("ai")})}});tasks.slice(0,5).forEach(x=>{if(hit(x.text.toLowerCase()))out.push({l:"✓ "+x.text,fn:()=>jumpTo("tasks")})});events.slice(0,5).forEach(x=>{if(hit(x.title.toLowerCase()))out.push({l:"📅 "+x.title,fn:()=>jumpTo("cal")})});(coinCache&&coinCache.data||[]).forEach(c=>{if(hit(c.symbol.toLowerCase())||hit(c.name.toLowerCase()))out.push({l:c.symbol.toUpperCase()+" $"+num(c.current_price),fn:()=>jumpTo("crypto")})});if(!out.length){box.style.display="none";return}out.slice(0,10).forEach(o=>{const b=document.createElement("button");b.textContent=o.l;b.onclick=()=>{box.style.display="none";$("#search").value="";o.fn()};box.appendChild(b)});box.style.display="block"});
+function jumpTo(id){const p=WIDGET_META[id].p;if(isDesktop()){curPage=p;showPageView(p);renderDots();renderTabs();window.scrollTo({top:0});setTimeout(()=>{const n=document.getElementById("w_"+id);if(n){n.scrollIntoView({behavior:"smooth",block:"center"});n.classList.add("flash");setTimeout(()=>n.classList.remove("flash"),1600)}},60)}else{goPage(p);setTimeout(()=>{const n=document.getElementById("w_"+id);if(n){n.scrollIntoView({behavior:"smooth",block:"start"});n.classList.add("flash");setTimeout(()=>n.classList.remove("flash"),1600)}},350)}}
+/* ============ boot ============ */
+function renderAll(){renderClock();renderWeather();renderPrayer();renderQuote();renderNext();renderTasks(false);renderCrypto();renderFx();renderMetals();renderChart();renderNewsBox("auto");renderNewsBox("ai");renderNewsBox("gh");renderGen();renderNewsBox("fin");renderCal();renderTasks(true);renderCds();renderData();renderQrShare();renderSettings()}
+applyPrefs();buildPages();applyLayoutMode();renderTabs();
+</script>
+</body>
+</html>

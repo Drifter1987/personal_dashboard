@@ -1,0 +1,41 @@
+# Deployment config for the dashboard API Worker.
+#
+#   account : 8660293d…  (Drifter_87@live.com's Account)
+#   worker  : home-dashboard-api  ->  https://home-dashboard-api.drifter-87.workers.dev
+#   page    : Pages project "home-dashboard", production branch "main",
+#             served at https://home-dashboard-5ma.pages.dev (Cloudflare appended the
+#             -5ma suffix because the plain "home-dashboard" name was already taken).
+#
+# Why every binding is spelled out here: `wrangler deploy` driven by a config file does
+# NOT preserve variables it does not know about (keep_vars defaults to false). An
+# undeclared ALLOWED_ORIGIN would be dropped, and an undeclared secrets-store binding
+# would be dropped too - which would take /api/metals down with it. Both live bindings
+# are therefore declared below, exactly as they exist in production today.
+#
+# compatibility_date is pinned to the date the live Worker is already running, so this
+# deploy does not also change runtime behaviour.
+
+name = "home-dashboard-api"
+main = "worker.js"
+compatibility_date = "2026-10-11"
+
+# Stated explicitly so a deploy does not silently enable versioned preview URLs for this
+# API. Without this line wrangler turns them on by default (workers.dev route enabled).
+preview_urls = false
+
+[vars]
+# The only origin allowed to read this API. Must match the page's own host.
+ALLOWED_ORIGIN = "https://home-dashboard-5ma.pages.dev"
+
+# The Worker's metals provider key, held in the account's default secrets store
+# (secret named personal_dashboard). worker.js reads this with
+# `await env.METALS_API_KEY.get()`.
+#
+# The store_id below is kept VERBATIM and is deliberately not redacted: it is a functional
+# config value. A prefixed or placeholder id would silently break this binding on the next
+# deploy, and a secrets-store id is an account-scoped identifier rather than a secret -
+# it grants nothing without the account credential that the API requires.
+[[secrets_store_secrets]]
+binding = "METALS_API_KEY"
+store_id = "511d1a675636417c88acb05c68f401e9"
+secret_name = "personal_dashboard"

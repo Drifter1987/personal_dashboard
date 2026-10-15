@@ -1,0 +1,19 @@
+# Credentials and secrets — never commit any of these.
+# (The machine-wide rule: a secret never enters a commit, project source, or a log.)
+.cf_access_token
+.env
+.env.*
+.dev.vars
+.wrangler/
+*.pem
+*.key
+
+# Scratch output and logs from deploy/login runs.
+*.log
+_gate.txt
+
+# Editor and OS cruft.
+node_modules/
+Thumbs.db
+desktop.ini
+.DS_Store
