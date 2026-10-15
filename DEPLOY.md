@@ -98,6 +98,48 @@ Secrets are never printed, logged or committed: the machine-wide rule and this p
 [`AGENTS.md`](AGENTS.md) both say so. `.gitignore` covers `.cf_access_token`, `.env` and
 `.wrangler/`.
 
+### If the credential answers 403 (`9109 Invalid access token`)
+
+That error means the short-lived **access** token expired. The stored `refresh_token` usually
+still works, and refreshing is faster and safer than a re-login:
+
+- `oauth_token`, `refresh_token` and `expiration_time` live in the wrangler config above.
+- POST `grant_type=refresh_token` with that refresh token and wrangler's **public** OAuth
+  client id (`54d11594-84e4-41aa-b438-e81b8fa78ee7`) to `https://dash.cloudflare.com/oauth2/token`.
+  No client secret is involved — it is a public client, which is why this works from a script.
+- Store the returned access token **and** the rotated refresh token back into the file; then
+  confirm the identity with `wrangler whoami`.
+- Do **not** print, log or paste any of these values, and do not commit the config file.
+
+Work on the file in place only after taking a copy — `~/.wrangler/credential-backups/` holds the
+known-good copies, including account B's.
+
+### Pass the account explicitly — wrangler can *assert* one
+
+Observed 2026-10-15: with a credential for account B installed and no account in any config,
+`wrangler d1 export` / `d1 list` addressed **account A's** account id anyway and got
+`401` / `Authentication error [code: 10000]` back. Wrangler does not always *derive* the account
+from the credential; it will happily **assert** one and let the API reject it. So for anything that
+reads or writes remote state, make the target explicit rather than inferred:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=8660293d… wrangler deploy     # account A
+CLOUDFLARE_ACCOUNT_ID=c3e022ad… wrangler d1 list    # account B
+```
+
+With the account set explicitly the same command succeeded and listed the right database. The
+controller for this hazard is `whoami` **plus** an explicit id on every write — not the file you
+assume is being read. (The source of the asserted id was not identified; no config file, cache or
+environment variable on the machine carried it. It is unknown, not absent, so do not rely on it
+being absent.)
+
+### A presigned URL is a credential
+
+`wrangler d1 export` prints a one-hour `*.r2.cloudflarestorage.com` download URL whose query string
+contains live `X-Amz-Credential`, `X-Amz-Signature` and `X-Amz-Date` values. Treat that link exactly
+like a password: it can be used by anyone who has it. Never paste it into chat, an issue, a commit or
+a log, and let it expire.
+
 ## CI publishing
 
 `.github/workflows/checks.yml` runs the gate on every push and pull request, and produces the
