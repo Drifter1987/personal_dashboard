@@ -162,7 +162,7 @@
 <body>
 <header class="topbar">
   <div class="wrap topbar-inner">
-    <a class="brand" href="index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Home Dashboard docs</a>
+    <a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Home Dashboard docs</a>
     <span class="status">Guide · set up once</span>
     <nav class="topnav" aria-label="Guide sections">
       <a href="#before">Before</a>
@@ -206,7 +206,7 @@
       <ul class="prereqs">
         <li><span>GitHub Desktop installed and signed in as <strong>Drifter1987</strong>. It is already on this machine.</span><span class="need">installed</span></li>
         <li><span>A Cloudflare login that can open <strong>Workers &amp; Pages</strong>. Use the main account, <strong>Drifter_87@live.com</strong>.</span><span class="need">your login</span></li>
-        <li><span>The project folder on this machine: <code>Ghazi_Tools/personal_dashboard</code>. It already has the 4 waiting commits.</span><span class="need">local</span></li>
+        <li><span>The project folder on this machine: <code>Ghazi_Tools/personal_dashboard</code>. It already holds finished work that was never pushed.</span><span class="need">local</span></li>
       </ul>
       <div class="callout" style="margin-top: 20px">
         <strong>Which tool does what — they are not alternatives.</strong>
@@ -231,9 +231,9 @@
         <li class="step" id="s1">
           <span class="when">2 min</span>
           <h3>Push the changes that are already waiting</h3>
-          <p class="why">There are 4 finished commits on this machine that GitHub has never seen. Nothing can publish them until they are there.</p>
+          <p class="why">The finished work is still only on this machine - commits GitHub has never seen. Nothing can publish them until they are there.</p>
           <p class="action">Open <b>GitHub Desktop</b>, select the <b>personal_dashboard</b> repository, then click <b>Push origin</b> in the top bar.</p>
-          <p class="verify"><b>You should see</b> "Last fetched just now" and no more "Push origin" button with a number. On github.com, the newest commit on <code>main</code> reads <code>Release 2.17.0: settings that open in place, cards that carry files</code>.</p>
+          <p class="verify"><b>You should see</b> "Last fetched just now", and <b>Push origin</b> with no number beside it. On github.com, the commits you just pushed sit at the top of <code>main</code> with today's date on them.</p>
           <details class="fallback">
             <summary>If the repo is not in the list</summary>
             <p>Use <b>File → Add local repository</b> and point it at <code>Documents/AI_Workspace/02_Projects/Ghazi_Tools/personal_dashboard</code>. If the push is refused, click <b>Pull origin</b> first, then push again.</p>
@@ -244,7 +244,7 @@
           <span class="when">1 min</span>
           <h3>Look at what Cloudflare has today</h3>
           <p class="why">The existing project was made by uploading files, not by connecting a repository. That kind of project can never be switched to automatic publishing, so it is worth seeing that now instead of hunting for a button that does not exist.</p>
-          <p class="action">In the Cloudflare dashboard open <b>Workers &amp; Pages</b> → <b>home-dashboard</b>. Look at the address: <b>home-dashboard-5ma.pages.dev</b>, currently serving <b>v2.10.0</b>.</p>
+          <p class="action">In the Cloudflare dashboard open <b>Workers &amp; Pages</b> → <b>home-dashboard</b>. Look at the address: <b>home-dashboard-5ma.pages.dev</b>, serving <b>v2.10.0</b> when this guide was written.</p>
           <p class="verify"><b>You should see</b> no Git connection anywhere on that project's settings page. Cloudflare's documentation says it plainly: a direct-upload project "cannot switch to Git integration later". So step 3 creates a new, separate project.</p>
         </li>
 
@@ -350,7 +350,7 @@
         <p>Same procedure with the explaining removed. Not a summary — every step still has to happen.</p>
       </div>
       <ul class="fastpath">
-        <li><span>GitHub Desktop → <strong>Push origin</strong>, so the 4 waiting commits exist on GitHub.</span></li>
+        <li><span>GitHub Desktop → <strong>Push origin</strong>, so the commits GitHub is missing reach it.</span></li>
         <li><span>Remember the old project is <strong>direct upload</strong> and cannot be converted; a new project is required.</span></li>
         <li><span>Cloudflare → <strong>Workers &amp; Pages → Create application → Pages → Connect to Git</strong> → allow only <strong>personal_dashboard</strong>.</span></li>
         <li><span>Name it <code>home-dashboard-live</code>, branch <code>main</code>.</span></li>
@@ -427,7 +427,7 @@
       </div>
       <div class="note" style="margin-top: 16px">
         <b>How current is this?</b>
-        <p style="margin: 6px 0 0">Written 2026-10-17. Checked here: the 4 unpushed commits, the old project being direct upload with no Git provider, the live site serving v2.10.0, and the build tools Cloudflare's image provides (Node 22.16, Python 3.13). Taken from Cloudflare's documentation rather than executed here: the dashboard click paths in steps 3 to 6, which need your login. If a button name has changed since, the docs at <a href="https://developers.cloudflare.com/pages/get-started/git-integration/">developers.cloudflare.com/pages/get-started/git-integration</a> are the source of truth.</p>
+        <p style="margin: 6px 0 0">Written 2026-10-17. Checked here: the commits sitting unpushed on this machine (five of them on that date), the old project being direct upload with no Git provider, the live site serving v2.10.0, and the build tools Cloudflare's image provides (Node 22.16, Python 3.13). Taken from Cloudflare's documentation rather than executed here: the dashboard click paths in steps 3 to 6, which need your login. If a button name has changed since, the docs at <a href="https://developers.cloudflare.com/pages/get-started/git-integration/">developers.cloudflare.com/pages/get-started/git-integration</a> are the source of truth.</p>
       </div>
     </div>
   </section>
