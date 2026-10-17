@@ -1,13 +1,13 @@
-# The deploy gate, on every push and every pull request.
+# The deploy gate, on every push and every pull request - and, on `main`, the publish itself.
 #
 # `node _deploy.mjs` is exactly what a local release goes through: it runs the harness
 # (node _check.mjs - the shipped Worker and page, against the real sources) and then proves
 # the release bundle is the thing that was just tested (deploy/index.html identical to
 # index.html, every deploy/ file present in dashboard-site.zip with the same CRC-32).
 #
-# A failing check fails this job, and the `bundle` job that produces the upload never runs,
-# so a red push cannot be published. CI deliberately does not pass --sync: it fails on a
-# stale bundle instead of quietly rewriting it.
+# A failing check fails this job, and the `publish` job that follows it never runs, so a red
+# push cannot be published. CI deliberately does not pass --sync: it fails on a stale bundle
+# instead of quietly rewriting it.
 #
 # Note: the harness talks to live third parties (ECB, Yahoo, CoinGecko, the news feeds), so a
 # red run is worth a glance at which check failed before you re-run the job.
@@ -15,14 +15,24 @@
 # PUBLISHING TARGET: Drifter_87@live.com (8660293d…) — the main hosting
 # account. A Worker deploy is pinned by wrangler.toml, but a Pages deploy carries no account
 # binding in config at all, so in CI the API token *is* the account selector and must be scoped
-# to that account.
+# to that account. The token is a repository secret; nothing in this repo carries it.
 #
-# Publishing is not wired into this workflow yet. To make it automatic, add a `publish` job that
-# runs only on pushes to `main`, after `gate` succeeds, using repository secrets
-# CLOUDFLARE_API_TOKEN (scoped to the account above) and CLOUDFLARE_ACCOUNT_ID:
+# What `publish` does, and only when all of it is true: the event is a push to `main` (or a
+# manual run of this workflow on `main`), and `gate` has already passed on that commit. It then
+# uploads deploy/ to the existing Pages project - the same project, and therefore the same
+# address, as the hand-run `wrangler pages deploy` it replaces - and finishes by running
+# `node _smoke.mjs --page-only`, which fetches the live site and compares it byte-for-byte with
+# the bundle the gate passed. A publish that uploads but does not go live is a failed job, not
+# a green one: this is the difference between the CLI exiting 0 and the site being right.
 #
-#   - run: npx wrangler deploy
-#   - run: npx wrangler pages deploy deploy/ --project-name home-dashboard
+# The Worker (`worker.js` -> home-dashboard-api) is deliberately NOT in this job. It carries the
+# push keys, the KV namespace and the cron, its deploy is rare, and it is pinned by
+# wrangler.toml rather than by the token. Deploy it by hand, from DEPLOY.md section 2; the last
+# section of `node _smoke.mjs` is what proves it landed.
+#
+# Two repository secrets are required (Settings > Secrets and variables > Actions):
+#   CLOUDFLARE_API_TOKEN   Account > Cloudflare Pages > Edit, scoped to the account above
+#   CLOUDFLARE_ACCOUNT_ID  8660293d5a5646d0131b5edad05d7910
 #
 # GitHub only reads .github/workflows at the repository ROOT. While this project sits inside a
 # larger folder, this file never runs - it needs the project to be its own repository.
@@ -59,6 +69,7 @@ jobs:
           node --check _check.mjs
           node --check _deploy.mjs
           node --check _tasks.test.mjs
+          node --check _smoke.mjs
           PY=$(command -v python3 || command -v python)
           "$PY" -c "import py_compile; py_compile.compile('_zip.py', cfile='_zip.pyc', doraise=True)"
       - name: Deploy gate
@@ -77,3 +88,59 @@ jobs:
           path: dashboard-site.zip
           if-no-files-found: error
           retention-days: 14
+
+  publish:
+    name: publish the page (main only)
+    needs: gate
+    # main, and only main: a pull request, a scratch branch or a tag must never reach the
+    # live address. Neither does a cancelled or failed gate, because of `needs` above.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # wrangler-action records the deployment against the commit, which needs this
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Before the credential exists, publishing would fail on every push, and a red X that means
+      # "nobody has added the secret yet" is how a repo teaches people to ignore red. So the
+      # missing secret is a warning that names itself, and the two steps below are skipped until
+      # it is added. The secret is read into the environment here rather than interpolated into
+      # the command line, so it never reaches a shell's argv or the log.
+      - name: Is the publishing credential in place?
+        id: creds
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Publishing credential present: deploy/ will be uploaded and then verified live."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Publishing skipped::No CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repository secret, so nothing was published. Add both (DEPLOY.md section 2), then re-run this job."
+          fi
+
+      # The same project the hand-run deploy used, so the address does not move. `--branch=main`
+      # is explicit rather than inferred: on this project main is the production branch, and any
+      # other branch name would silently create a preview deployment instead of updating the site.
+      - name: Publish deploy/ to the Pages project
+        if: steps.creds.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy deploy --project-name=home-dashboard --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      # An upload that exits 0 is not proof the site changed: the edge can still answer with the
+      # previous deployment, and a stale asset is invisible from here. This compares the live
+      # bytes with deploy/ - the page and every file - and fails the job when they differ.
+      - name: Prove the live site serves the tested bundle
+        if: steps.creds.outputs.ready == 'true'
+        run: node _smoke.mjs --page-only

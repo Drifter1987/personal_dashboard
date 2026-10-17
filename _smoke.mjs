@@ -6,7 +6,13 @@
      node _smoke.mjs                    check production, byte-for-byte
      node _smoke.mjs --once             one fetch per URL, no edge-staleness retries
      node _smoke.mjs --timeout=20000    per-request timeout in ms (default 15000)
+     node _smoke.mjs --page-only        the page only, skip the Worker and CORS (CI publish)
      node _smoke.mjs --help
+
+   --page-only exists for the CI publish job, which deploys the page and nothing else: on a
+   commit that also touches worker.js, the Worker checks would fail a job whose work - the page
+   - landed correctly, and a red run nobody trusts is worse than a scoped one. The page checks
+   are not reduced by it: every file is still fetched and compared byte-for-byte.
 
    It answers three questions, and exits 1 if any answer is wrong:
 
@@ -51,12 +57,14 @@ const HELP = `Post-deploy smoke test: live page bytes, Worker health, CORS origi
   node _smoke.mjs                    check production, byte-for-byte
   node _smoke.mjs --once             one fetch per URL, no edge-staleness retries
   node _smoke.mjs --timeout=20000    per-request timeout in ms (default 15000)
+  node _smoke.mjs --page-only        the page only, skip the Worker and CORS (CI publish)
 
 Exits 0 only when the live site matches the tested bundle and the API is healthy and
-correctly pinned to the dashboard's origin; 1 otherwise.
+correctly pinned to the dashboard's origin; 1 otherwise. With --page-only, only the first
+half of that sentence is claimed.
 
   SMOKE_PAGE=<url>   page to compare against deploy/ (default ${PROD_PAGE})
-  SMOKE_API=<url>    Worker to check (default ${PROD_API})`;
+  SMOKE_API=<url>    Worker to check (default ${PROD_API}) - unused with --page-only`;
 
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
@@ -64,8 +72,9 @@ if (argv.includes("--help") || argv.includes("-h")) {
   process.exit(0);
 }
 const ONCE = argv.includes("--once");
+const PAGE_ONLY = argv.includes("--page-only");
 const timeoutArg = argv.find((a) => a.startsWith("--timeout="));
-const unknown = argv.filter((a) => a !== "--once" && !a.startsWith("--timeout="));
+const unknown = argv.filter((a) => a !== "--once" && a !== "--page-only" && !a.startsWith("--timeout="));
 const TIMEOUT = timeoutArg ? Number(timeoutArg.slice("--timeout=".length)) : 15000;
 if (unknown.length || !Number.isFinite(TIMEOUT) || TIMEOUT <= 0) {
   console.error("_smoke.mjs: " + (unknown.length ? "unknown flag(s) " + unknown.join(" ") : "bad --timeout value")
@@ -197,64 +206,66 @@ if (!check("page: " + PAGE_URL + " answers 200 text/html",
 }
 
 /* ── 2/3  the Worker ──────────────────────────────────────────────────────────── */
-const workerSrc = read("worker.js");
-const srcVersion = workerSrc ? (workerSrc.toString("utf8").match(/^const VERSION = "([^"]+)";/m) || [])[1] : null;
+if (!PAGE_ONLY) {
+  const workerSrc = read("worker.js");
+  const srcVersion = workerSrc ? (workerSrc.toString("utf8").match(/^const VERSION = "([^"]+)";/m) || [])[1] : null;
 
-const health = await get(API_URL + "/api/health", { headers: { Origin: PROD_PAGE } });
-let healthJson = null;
-if (health.ok && health.status === 200) {
-  try { healthJson = JSON.parse(health.body.toString("utf8")); } catch { healthJson = null; }
-}
-const hOk = check("worker: /api/health answers 200 JSON",
-  !!healthJson, healthJson ? undefined : health.ok ? "HTTP " + health.status + ": " + health.body.toString("utf8").slice(0, 120) : "request failed: " + health.error);
+  const health = await get(API_URL + "/api/health", { headers: { Origin: PROD_PAGE } });
+  let healthJson = null;
+  if (health.ok && health.status === 200) {
+    try { healthJson = JSON.parse(health.body.toString("utf8")); } catch { healthJson = null; }
+  }
+  const hOk = check("worker: /api/health answers 200 JSON",
+    !!healthJson, healthJson ? undefined : health.ok ? "HTTP " + health.status + ": " + health.body.toString("utf8").slice(0, 120) : "request failed: " + health.error);
 
-if (hOk) {
-  check("worker: reports ok: true", healthJson.ok === true, "ok = " + JSON.stringify(healthJson.ok));
-  check("worker: metals key resolves", healthJson.keyResolved === true,
-    "keyResolved = " + JSON.stringify(healthJson.keyResolved) + ", keyKind = " + JSON.stringify(healthJson.keyKind)
-      + (healthJson.keyResolved === true ? "" : " - check the secrets-store binding before trusting /api/metals"));
-  check("worker: deployed version matches worker.js" + (srcVersion ? " (" + srcVersion + ")" : ""),
-    !!srcVersion && healthJson.v === srcVersion,
-    "live v" + healthJson.v + " vs source " + (srcVersion || "unknown")
-      + (healthJson.v === srcVersion ? "" : " - run wrangler deploy"));
-}
+  if (hOk) {
+    check("worker: reports ok: true", healthJson.ok === true, "ok = " + JSON.stringify(healthJson.ok));
+    check("worker: metals key resolves", healthJson.keyResolved === true,
+      "keyResolved = " + JSON.stringify(healthJson.keyResolved) + ", keyKind = " + JSON.stringify(healthJson.keyKind)
+        + (healthJson.keyResolved === true ? "" : " - check the secrets-store binding before trusting /api/metals"));
+    check("worker: deployed version matches worker.js" + (srcVersion ? " (" + srcVersion + ")" : ""),
+      !!srcVersion && healthJson.v === srcVersion,
+      "live v" + healthJson.v + " vs source " + (srcVersion || "unknown")
+        + (healthJson.v === srcVersion ? "" : " - run wrangler deploy"));
+  }
 
-/* ── 3/3  CORS: the dashboard's origin in, everything else out ─────────────────── */
-const toml = read("wrangler.toml");
-const allowedOrigin = toml ? (toml.toString("utf8").match(/^\s*ALLOWED_ORIGIN\s*=\s*"([^"]*)"/m) || [])[1] : null;
+  /* ── 3/3  CORS: the dashboard's origin in, everything else out ─────────────────── */
+  const toml = read("wrangler.toml");
+  const allowedOrigin = toml ? (toml.toString("utf8").match(/^\s*ALLOWED_ORIGIN\s*=\s*"([^"]*)"/m) || [])[1] : null;
 
-check("cors: wrangler.toml pins ALLOWED_ORIGIN to " + PROD_PAGE,
-  allowedOrigin === PROD_PAGE,
-  allowedOrigin === null ? "ALLOWED_ORIGIN not found in wrangler.toml" : allowedOrigin
-    + (allowedOrigin === PROD_PAGE ? "" : " - the live dashboard could not read its own API"));
+  check("cors: wrangler.toml pins ALLOWED_ORIGIN to " + PROD_PAGE,
+    allowedOrigin === PROD_PAGE,
+    allowedOrigin === null ? "ALLOWED_ORIGIN not found in wrangler.toml" : allowedOrigin
+      + (allowedOrigin === PROD_PAGE ? "" : " - the live dashboard could not read its own API"));
 
-if (hOk && allowedOrigin) {
-  check("cors: the dashboard origin is echoed exactly",
-    health.headers.get("access-control-allow-origin") === allowedOrigin,
-    "Access-Control-Allow-Origin: " + health.headers.get("access-control-allow-origin")
-      + " (want " + allowedOrigin + ")");
-  check("cors: Vary: Origin is set (so caches cannot mix the two answers)",
-    /(^|,\s*)origin(\s*,|$)/i.test(health.headers.get("vary") || ""),
-    "Vary: " + (health.headers.get("vary") || "(absent)"));
+  if (hOk && allowedOrigin) {
+    check("cors: the dashboard origin is echoed exactly",
+      health.headers.get("access-control-allow-origin") === allowedOrigin,
+      "Access-Control-Allow-Origin: " + health.headers.get("access-control-allow-origin")
+        + " (want " + allowedOrigin + ")");
+    check("cors: Vary: Origin is set (so caches cannot mix the two answers)",
+      /(^|,\s*)origin(\s*,|$)/i.test(health.headers.get("vary") || ""),
+      "Vary: " + (health.headers.get("vary") || "(absent)"));
 
-  const foreign = "https://not-the-dashboard.example";
-  const bad = await get(API_URL + "/api/health", { headers: { Origin: foreign } });
-  const acao = bad.ok ? bad.headers.get("access-control-allow-origin") : null;
-  check("cors: a foreign origin is not granted access",
-    bad.ok && acao !== foreign,
-    !bad.ok ? "request failed: " + bad.error
-      : "Access-Control-Allow-Origin: " + acao + (acao === foreign ? " - the dashboard origin is not enforced" : ""));
+    const foreign = "https://not-the-dashboard.example";
+    const bad = await get(API_URL + "/api/health", { headers: { Origin: foreign } });
+    const acao = bad.ok ? bad.headers.get("access-control-allow-origin") : null;
+    check("cors: a foreign origin is not granted access",
+      bad.ok && acao !== foreign,
+      !bad.ok ? "request failed: " + bad.error
+        : "Access-Control-Allow-Origin: " + acao + (acao === foreign ? " - the dashboard origin is not enforced" : ""));
 
-  const pre = await get(API_URL + "/api/health", {
-    method: "OPTIONS",
-    headers: { Origin: allowedOrigin, "Access-Control-Request-Method": "GET" }
-  });
-  check("cors: preflight answers 204 with the dashboard origin",
-    pre.ok && pre.status === 204 && pre.headers.get("access-control-allow-origin") === allowedOrigin
-      && /GET/i.test(pre.headers.get("access-control-allow-methods") || ""),
-    pre.ok ? "HTTP " + pre.status + ", allow-origin " + pre.headers.get("access-control-allow-origin")
-      + ", allow-methods " + pre.headers.get("access-control-allow-methods")
-      : "request failed: " + pre.error);
+    const pre = await get(API_URL + "/api/health", {
+      method: "OPTIONS",
+      headers: { Origin: allowedOrigin, "Access-Control-Request-Method": "GET" }
+    });
+    check("cors: preflight answers 204 with the dashboard origin",
+      pre.ok && pre.status === 204 && pre.headers.get("access-control-allow-origin") === allowedOrigin
+        && /GET/i.test(pre.headers.get("access-control-allow-methods") || ""),
+      pre.ok ? "HTTP " + pre.status + ", allow-origin " + pre.headers.get("access-control-allow-origin")
+        + ", allow-methods " + pre.headers.get("access-control-allow-methods")
+        : "request failed: " + pre.error);
+  }
 }
 
 /* ── verdict ──────────────────────────────────────────────────────────────────── */
@@ -270,5 +281,7 @@ if (fails.length) {
 }
 console.log("\nSMOKE PASSED: " + PAGE_URL + " serves the tested bundle " + brief(testedHash)
   + (testedVersion === "unknown" ? "" : " (v" + testedVersion + ")") + ", all " + files.length
-  + " files match, the Worker is healthy and its origin is pinned to " + allowedOrigin + ".");
+  + " files match"
+  + (PAGE_ONLY ? " (page only - the Worker and CORS were not checked)."
+    : ", the Worker is healthy and its origin is pinned to " + allowedOrigin + "."));
 process.exit(0);
