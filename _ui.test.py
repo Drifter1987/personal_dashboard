@@ -108,6 +108,25 @@ def wait_for(page, expr, want, limit=1500):
     page.wait_for_function("() => " + expr + " === " + str(want), timeout=limit)
 
 
+def settle(page, expr, quiet=250, limit=3000):
+    """Wait until a value stops changing, and return it.
+
+    A smooth scroll is not done when it has moved: it is done when it has stopped. Reading the
+    pager the moment after goPage() saw 0 locally and 2100 on a slower runner, which made this
+    contract report a bug that only existed in the harness's timing.
+    """
+    last = page.evaluate(expr)
+    waited = 0
+    while waited < limit:
+        page.wait_for_timeout(quiet)
+        waited += quiet
+        now = page.evaluate(expr)
+        if now == last:
+            return now
+        last = now
+    return last
+
+
 def click_in_view(page, locator, settle=250):
     """Click without letting the harness's own scroll-into-view pollute the measurement.
 
@@ -235,7 +254,10 @@ def cases(browser, base):
         try:
             page.evaluate("goPage(5)")
             wait_for(page, "curPage", 5)
-            left = page.evaluate("Math.round(document.getElementById('pages').scrollLeft)")
+            left = settle(page, "Math.round(document.getElementById('pages').scrollLeft)")
+            if not check("contract: the phone pager actually reaches the last section", left > 0,
+                         "x=" + str(left)):
+                return
             page.locator('details[data-set="cards"] > summary').click()
             page.evaluate("scrollTo(0, 600)")
             page.wait_for_timeout(150)
@@ -316,11 +338,30 @@ def cases(browser, base):
             page.reload()
             page.wait_for_function("window.buildPages && document.querySelectorAll('[data-widget]').length > 20")
             page.wait_for_timeout(200)
+            settle(page, "Math.round(scrollY)", quiet=120, limit=1200)
             now = page.evaluate("({p:curPage, y:Math.round(scrollY), q:location.search})")
             check("reopening the dashboard lands on Home, not the section you left",
                   left_at["p"] == 5 and now["p"] == 0 and now["y"] == 0 and now["q"] == "",
                   "left at section %d · reopened at %d, y=%d, url=%r" % (
                       left_at["p"], now["p"], now["y"], now["q"]))
+            # Locally a reload happens to start at the top on its own; on the CI runner the
+            # browser restored 351px of the old offset, which is how this was found. The offset
+            # has to belong to the page, not to whether the restore won a race.
+            rest = page.evaluate("history.scrollRestoration")
+            check("\u2026and the offset belongs to the page, not to the browser's own restore",
+                  rest == "manual", "history.scrollRestoration=%r" % rest)
+        finally:
+            ctx.close()
+
+    # ── 8b. a link that names a section still opens it, at that section's top ───────────────
+    def a_shortcut_link_opens_its_section():
+        ctx, page = boot(browser, base + "?p=3", 941, 620)
+        try:
+            settle(page, "Math.round(scrollY)", quiet=120, limit=1200)
+            now = page.evaluate("({p:curPage, y:Math.round(scrollY), q:location.search})")
+            check("a shortcut link still opens the section it names, at its top",
+                  now["p"] == 3 and now["y"] == 0 and now["q"] == "?p=3",
+                  "section %s · y=%s · url=%r" % (now["p"], now["y"], now["q"]))
         finally:
             ctx.close()
 
@@ -378,6 +419,7 @@ def cases(browser, base):
             shortening_page_clamps_but_never_snaps_to_the_top,
             section_change_starts_at_the_top, phone_keeps_section_and_offset,
             only_two_scrollers_exist, a_loading_card_keeps_its_frame, opening_lands_on_home,
+            a_shortcut_link_opens_its_section,
             buttons_do_not_move_the_view, today_button]
 
 

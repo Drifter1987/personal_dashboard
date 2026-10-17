@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.22.0</title>
+<title>Home Dashboard v2.22.1</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -451,7 +451,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.22.0",
+  VERSION: "2.22.1",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -476,6 +476,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.22.1", d:"2026-10-17", en:"Opening the dashboard is opening it, not resuming the document. With the section no longer remembered, the browser still restored its own scroll offset, so Home could open halfway down the page - and it did so only on a slower machine, which is how the layout contract caught it in CI after passing locally. The page now owns its scroll restoration and starts at the top, while a ?p= link still opens its section at that section's top. The contract also stopped reading the phone's pager mid-scroll: it waits for the settled position, so a slow runner measures where the pager came to rest instead of reporting an animation as a bug.", ar:"فتح اللوحة صار فتحًا لا استئنافًا لموضعك. مع إلغاء تذكّر القسم، كان المتصفح لا يزال يعيد موضع التمرير الخاص به، فقد تفتح «الرئيسية» في منتصف الصفحة — ولم يحدث ذلك إلا على جهاز أبطأ، وهكذا التقط عقد التخطيط في CI ما مرّ محليًا. صارت الصفحة تتولّى تمريرها بنفسها وتبدأ من الأعلى، والرابط الذي يحمل ?p لا يزال يفتح قسمه من أعلى ذلك القسم. وتوقّف العقد عن قراءة شريط الهاتف أثناء حركته: ينتظر الموضع المستقر، فيقيس المشغّل البطيء أين استقر الشريط بدل أن يبلّغ عن حركة كأنها عيب."},
 {v:"2.22.0", d:"2026-10-17", en:"Reopening the dashboard lands on Home, and only Home. The address used to record the section you were reading (?p=), which meant a closed app came back to Markets or Settings days later; a section is now a place you go, not a memory the app keeps for you, so the address is never rewritten as you move around. A link that names a section still opens it - the manifest's shortcuts and a shared link carry ?p= and keep working - because that is someone handing you a page, not the app remembering. The layout contract grew to match: it now proves a reload opens Home whatever section you left, that a card body holds the height it had while its next batch of data is loading (a bounded wait releases the frame if the new content really is shorter, so a card cannot leave a hole), and that pressing the theme button, a card's refresh or a calendar arrow leaves the section and the offset exactly where they were. That contract is a CI job of its own now, and publishing waits for it. And the page's five parallel card tables - section and search words, icons, names, painters and refresh actions - are one registry, so adding a card is a single entry instead of five edits that could disagree.", ar:"إعادة فتح اللوحة تهبط على «الرئيسية» وحدها. كان العنوان يسجّل القسم الذي تقرأه (?p)، فيعود التطبيق المغلق بعد أيام إلى «الأسواق» أو «الإعدادات»؛ وصار القسم مكانًا تذهب إليه لا ذكرى يحفظها التطبيق لك، فلا يُعاد كتابة العنوان أثناء تنقّلك. والرابط الذي يسمّي قسمًا ما زال يفتحه — اختصارات التطبيق المثبَّت والرابط المشارَك يحملان ?p ويعملان كما كانا — لأن هذا صفحة يسلّمها لك أحدهم، لا ذاكرة للتطبيق. وكبر عقد التخطيط ليطابق ذلك: يثبت الآن أن إعادة التحميل تفتح الرئيسية أيًّا كان القسم الذي تركته، وأن جسم البطاقة يحتفظ بارتفاعه بينما تُحمّل دفعته التالية من البيانات (بانتظار محدود يُحرّر الإطار إذا كان الجديد أقصر فعلًا، فلا تترك البطاقة فراغًا)، وأن ضغط زر المظهر أو تحديث بطاقة أو سهم في التقويم يترك القسم وموضع التمرير كما هما بالضبط. وهذا العقد صار مهمة CI مستقلة، والنشر ينتظرها. وجداول البطاقات الخمسة المتوازية في الصفحة — القسم وكلمات البحث والأيقونات والأسماء والرسّامون وإجراءات التحديث — صارت سجلًا واحدًا، فإضافة بطاقة سطر واحد بدل خمسة تعديلات قد تتناقض."},
 {v:"2.21.1", d:"2026-10-17", en:"The scroll behaviour is a test now, not a promise. A small Chromium contract drives the real page and measures what a person notices: turning a card off or moving one keeps the page exactly where it was, the card under a hidden one does not shift, a page that became shorter than your offset clamps instead of jumping to the top, a section change still opens at the top, the phone keeps its section and its side offset, and Today still rests on the month you are in. Writing it shrank the fix: only the document and the phone's pager can ever scroll, so a rebuild no longer tracks containers that cannot move.", ar:"صار سلوك التمرير اختبارًا لا وعدًا. عقد صغير في Chromium يشغّل الصفحة الحقيقية ويقيس ما يلاحظه المستخدم: إيقاف بطاقة أو تحريكها يترك الصفحة في موضعها بالضبط، والبطاقة التي تحت المخفية لا تتزحزح، والصفحة التي قصُرت عن موضع تمريرك تُقصَر بدل أن تقفز إلى الأعلى، وتغيير القسم ما زال يفتح من الأعلى، والهاتف يحفظ قسمه وموضعه الأفقي، وزر «اليوم» ما زال يستقر على الشهر الذي أنت فيه. وكتابة العقد اختصرت الإصلاح: المستند وشريط الأقسام على الهاتف هما الوحيدان القابلان للتمرير، فلم يعد إعادة البناء يتتبّع حاويات لا تتحرك."},
 {v:"2.21.0", d:"2026-10-17", en:"The dashboard stopped jumping. Hiding a card, reordering one, switching language or turning a chip off rebuilt every card from scratch, and the page you were reading snapped back to the top each time - the rebuilt list is briefly shorter than the scroll you had, and the browser clamps it. A rebuild now remembers the card under the header and puts it back on the same line, keeps the pager's horizontal position on a phone, and returns to the top only when you actually change section.", ar:"توقّفت اللوحة عن القفز. إخفاء بطاقة أو تغيير ترتيبها أو تبديل اللغة أو إيقاف بطاقة من الإعدادات كان يعيد بناء البطاقات كلها، فيرتدّ ما تقرأه إلى أعلى الصفحة في كل مرة: القائمة تُبنى أقصر من موضع تمريرك لحظةً فيقصّه المتصفح. صار إعادة البناء يتذكّر البطاقة التي تحت الشريط ويعيدها إلى السطر نفسه، ويحفظ موضع التمرير الأفقي على الهاتف، ولا يعود إلى الأعلى إلا عند تغيير القسم فعلًا."},
@@ -2362,8 +2363,13 @@ pushResume();
 swBoot();
 watchNotif();
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){rollNow();pushSyncSoon();swCheck()}});
+/* Opening the dashboard is opening it, not resuming the document: with no link naming a section
+   it lands on Home at the top. The browser restores a reloaded document's offset on its own,
+   which put Home halfway down - the app appearing to remember a scroll it no longer remembers a
+   section for. A ?p= link still opens its section, and goPage takes that section to the top. */
+if("scrollRestoration" in history)history.scrollRestoration="manual";
 /* deep links: ?p=3 opens the Planner directly - that is what the manifest shortcuts use. */
-const __p=new URLSearchParams(location.search).get("p");if(__p!==null&&/^\d+$/.test(__p)&&+__p<pageCount())goPage(+__p);
+const __p=new URLSearchParams(location.search).get("p");if(__p!==null&&/^\d+$/.test(__p)&&+__p<pageCount())goPage(+__p);else scrollTo(0,0);
 </script>
 </body>
 </html>
