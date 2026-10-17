@@ -618,6 +618,71 @@ check("page: the newest changelog entry is the version the page runs, in both la
   newest ? "v" + newest.v + " (" + newest.d + ") · en " + newest.en.length + " / ar " + newest.ar.length + " chars · running v" + running
     : "CHANGELOG not parseable");
 
+/* The release notes are read as a deck: one card per version, newest first, and each card opens
+   a reading view of that version's own words. The split below is executed on the shipped array,
+   because "the note is broken into readable parts" is only true if no word is lost doing it. */
+if (CHANGELOG) {
+  const seen = CHANGELOG.map((e) => e.v);
+  const dupes = seen.filter((v, i) => seen.indexOf(v) !== i);
+  const noAr = CHANGELOG.filter((e) => !e.ar || !e.ar.trim()).length;
+  check("changelog: one entry per version, no duplicate version, and no note missing a language",
+    !dupes.length && !noAr && seen.length >= 20, seen.length + " entries"
+      + (dupes.length ? " · duplicate " + dupes.join(", ") : "") + (noAr ? " · " + noAr + " without Arabic" : ""));
+
+  /* A changelog is written in the languages the app offers, both ways: a note missing one is
+     invisible to a reader of that language, and a note carrying one the app does not offer is
+     a note nobody can read. Both are drift, so both are checked against the shipped tables
+     rather than against a list written here. */
+  const appLangs = (() => {
+    const body = (pageSrc.match(/const I18N = \{([\s\S]*?)\n\};/) || [])[1] || "";
+    return [...body.matchAll(/^(\w+):\{/gm)].map((m) => m[1]);
+  })();
+  const langKeys = (e) => Object.keys(e).filter((k) => k !== "v" && k !== "d");
+  const langDrift = CHANGELOG.filter((e) => {
+    const k = langKeys(e);
+    return k.length !== appLangs.length || appLangs.some((l) => typeof e[l] !== "string" || !e[l].trim());
+  });
+  const chipsSrc = (pageSrc.match(/sub\(t\("lang"\)\);chips\((\[\[[\s\S]*?\]\]),/) || [])[1] || "";
+  const chipLangs = [...chipsSrc.matchAll(/\["(\w+)"/g)].map((m) => m[1]);
+  check("changelog: every note is written in exactly the app's languages, and the switch offers them",
+    appLangs.length >= 2 && !langDrift.length && chipLangs.join(" ") === appLangs.join(" "),
+    appLangs.join(" + ") + (langDrift.length ? " · drift in " + langDrift.slice(0, 3).map((e) => "v" + e.v).join(", ")
+      : " · " + CHANGELOG.length + " notes complete")
+    + (chipLangs.join(" ") === appLangs.join(" ") ? "" : " · language chips " + (chipLangs.join(" ") || "not found")));
+
+  check("changelog deck: the modal lays the entries out as cards and opens a version in its own view",
+    /CHANGELOG\.forEach\(c=>\{/.test(pageSrc)
+    && /b\.className="clcard"/.test(pageSrc) && /b\.dataset\.v=c\.v/.test(pageSrc)
+    && /function openChangelogEntry\(c\)\{/.test(pageSrc)
+    && /#clBack"\)\.onclick=openChangelog/.test(pageSrc)
+    && /lead\.className="clstand"/.test(pageSrc) && /p\.className="clpara"/.test(pageSrc)
+    && /\.clv\{[^}]*color:var\(--ac\)/.test((pageSrc.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || "")
+    && /\.clcard\{[^}]*border-inline-start/.test((pageSrc.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || ""),
+    "card per entry · version in the accent colour · standfirst + paragraphs · back to the deck");
+
+  const deckSrc = (pageSrc.match(/let SENT_SPLIT=[^\n]*\nfunction clSentences\(c\)\{[^\n]*\}\nfunction clParas\(c\)\{[^\n]*\}/) || [])[0];
+  let deck = null;
+  if (deckSrc) {
+    try { deck = new Function("clText", deckSrc + "\nreturn { clSentences, clParas };")((c) => (c.en || "")); } catch (e) { deck = null; }
+  }
+  if (deck) {
+    const asText = (c) => (c.en || "").trim().replace(/\s+/g, " ");
+    const lossy = CHANGELOG.filter((c) => deck.clSentences(c).join(" ") !== asText(c));
+    const broken = CHANGELOG.filter((c) => deck.clSentences(c).some((s) => /^\d+\.$/.test(s)));
+    const multi = CHANGELOG.filter((c) => deck.clSentences(c).length > 1);
+    const emptyParas = multi.filter((c) => deck.clParas(c).some((p) => !p.trim())).length;
+    check("changelog deck: splitting a note into a standfirst and paragraphs keeps every word",
+      !lossy.length && !broken.length && !emptyParas && multi.length > 10,
+      lossy.length ? "lost words in " + lossy[0].v + " (" + deck.clSentences(lossy[0]).join(" ").length
+        + " vs " + asText(lossy[0]).length + " chars)"
+        : broken.length ? "sentence ended mid version number in " + broken[0].v
+          : "" + multi.length + " notes split · newest: " + deck.clSentences(newest).length + " sentences, "
+            + deck.clParas(newest).length + " paragraphs");
+  } else {
+    check("changelog deck: the sentence splitter is extractable from the page", false, "clSentences/clParas not found");
+  }
+}
+
 /* ── palette contrast ───────────────────────────────────────────────────────────
    Four themes x five accents are all selectable in Settings, so "readable" is a property
    of every combination, not just the default one. Each ratio below is computed from the
@@ -760,11 +825,16 @@ const scrollHandler = (pageSrc.match(/\$\("#pages"\)\.addEventListener\("scroll"
 check("phone geometry: section tracking reads the scroll offset direction-agnostically (an RTL pager reports negative scrollLeft)",
   /Math\.abs\(\s*el\.scrollLeft\s*\)/.test(scrollHandler) && !/Math\.round\(el\.scrollLeft\s*\//.test(scrollHandler) && scrollHandler.indexOf("renderPager()") >= 0,
   scrollHandler ? ((scrollHandler.match(/Math\.[a-z]+\([^)]*scrollLeft[^)]*\)/) || [])[0] || "no scrollLeft read") + (scrollHandler.indexOf("renderPager()") >= 0 ? " · repaints the bar on every scroll" : " · bar not repainted on scroll") : "pages scroll handler not found");
+/* The pager counts whatever the markup holds - six sections since 2.13.0 - so a literal that
+   drifts from the sections is the bug this catches, and adding a tab stays a one-line change. */
+const pageSections = (pageSrc.match(/<section class="page" data-page="\d+">/g) || []).length;
 check("phone geometry: the progress bar is a labelled progressbar whose value the renderer keeps in step with the section",
-  /<div class="pbar" id="pbar" role="progressbar"[^>]*aria-valuemax="5"/.test(pageSrc)
+  pageSections > 0
+  && new RegExp('<div class="pbar" id="pbar" role="progressbar"[^>]*aria-valuemax="' + pageSections + '"').test(pageSrc)
   && /setAttribute\("aria-valuenow",String\(curPage\+1\)\)/.test(pageSrc)
+  && /setAttribute\("aria-valuemax",String\(names\.length\)\)/.test(pageSrc)
   && /aria-valuetext/.test(pageSrc),
-  ((pageSrc.match(/<div class="pbar"[^>]*>/) || [])[0] || "pbar markup missing").slice(0, 96));
+  pageSections + " sections · " + ((pageSrc.match(/<div class="pbar"[^>]*>/) || [])[0] || "pbar markup missing").slice(0, 88));
 
 const emptyBranch = (pageSrc.match(/\}else\{[\s\S]{0,320}?chartData\.note=t\(kind==="metal"\?"chartNeedWorker":"chartNoSeries"\);/) || [])[0] || "";
 check("chart: an empty result states why (Worker-only series) instead of drawing a blank card",
@@ -906,8 +976,16 @@ if (genSpanSrc && genAllowSrc) {
     const { whyText } = new Function("t", "WHY_KEY", whySrc + "\nreturn { whyText };")(
       t, new Function("return {" + whyInner + "};")());
     const WIDGET_META = new Function("return " + (pageSrc.match(/const WIDGET_META=([^\n\r]*);/) || [])[1] + ";")();
-    const titleForSrc = (pageSrc.match(/function titleFor\(id\)\{[\s\S]*?return m\[id\]\|\|id\}/) || [])[0];
+    const titleForSrc = (pageSrc.match(/function titleFor\(id[^)]*\)\{[\s\S]*?return m\[id\]\|\|id\}/) || [])[0];
     const { titleFor } = new Function("t", titleForSrc + "\nreturn { titleFor };")(t);
+    /* A card's name can now depend on what the card is showing, so the harness lifts the page's
+       own naming function out as well and binds the one piece of state it reads: the window. */
+    const nameForSrc = (pageSrc.match(/function nameFor\(id\)\{[^\n\r]*\}/) || [])[0];
+    const { nameFor } = new Function("titleFor", "weekSpan", nameForSrc + "\nreturn { nameFor };")(titleFor, () => 7);
+    /* A rename or a deletion of either naming function would leave the search rows unnamed, so
+       their extraction is asserted before anything runs through them. */
+    check("search: the page's card-naming functions are extractable from the shipped page",
+      !!titleForSrc && !!nameForSrc, (titleForSrc || "").length + " + " + (nameForSrc || "").length + " chars");
     const { pageNames } = new Function("t", (pageSrc.match(/function pageNames\(\)\{[^\n\r]*\}/) || [])[0] + "\nreturn { pageNames };")(t);
     const PAGE_GEN = new Function(pGen + "\nreturn { GEN_TOOLS };")();
     const jumps = [];
@@ -922,13 +1000,13 @@ if (genSpanSrc && genAllowSrc) {
       "#search": { value: "" },
       "#searchResults": { innerHTML: "", style: {}, appendChild: (b) => rows.push(b) }
     };
-    const handler = new Function("$", "store", "CONFIG", "WIDGET_META", "titleFor", "pageNames", "jumpTo",
+    const handler = new Function("$", "store", "CONFIG", "WIDGET_META", "nameFor", "pageNames", "jumpTo",
       "GEN_TOOLS", "genAllowText", "quotaText", "whyText", "tasks", "events", "coinCache", "num", "document",
       "return (" + arrow + ");")(
       (s) => els[s],
       { get: (k, d) => (k === "test_news" ? genRec : d) },
       { NEWS_CACHE_KEY: "test_news" },
-      WIDGET_META, titleFor, pageNames, (id) => jumps.push(id),
+      WIDGET_META, nameFor, pageNames, (id) => jumps.push(id),
       PAGE_GEN.GEN_TOOLS, allow, quotaText, whyText,
       [{ text: "buy milk" }], [{ title: "team sync" }], { data: [] }, String,
       { createElement: () => ({ textContent: "", onclick: null }) });
@@ -943,7 +1021,7 @@ if (genSpanSrc && genAllowSrc) {
     const r1 = run("free image tools");
     check('search: "free image tools" opens on the Generators card with its image tools beside it',
       r1.display === "block"
-      && r1.labels.indexOf(t("gen") + " — " + pageNames()[2]) >= 0
+      && r1.labels.indexOf(t("gen") + " — " + pageNames()[WIDGET_META.gen.p]) >= 0
       && r1.labels.filter((l) => l.indexOf("🎞️ ") === 0).length >= 1
       && r1.labels.some((l) => /fast tokens\/day|creations\/day|images\/3h|credits\/day|units\/day|stamina\/day/.test(l)),
       r1.labels.slice(0, 3).join(" | ") + (r1.labels.length > 3 ? " | +" + (r1.labels.length - 3) + " more" : ""));
@@ -953,7 +1031,7 @@ if (genSpanSrc && genAllowSrc) {
     const aiRows2 = r2.labels.filter((l) => l.indexOf("🤖 ") === 0);
     check('search: "daily limit" finds the daily tools with their figures, the card, and a quota headline',
       r2.display === "block"
-      && r2.labels.indexOf(t("gen") + " — " + pageNames()[2]) >= 0
+      && r2.labels.indexOf(t("gen") + " — " + pageNames()[WIDGET_META.gen.p]) >= 0
       && genRows2.length >= 3 && genRows2.length <= 5
       && aiRows2.length === 1 && /50 images\/day/.test(aiRows2[0]),
       genRows2.length + " tools · " + aiRows2.length + " headline | " + r2.labels.slice(0, 2).join(" | "));
@@ -1033,7 +1111,7 @@ check("arabic: the two dictionaries carry the same keys, so no key can fall back
   enK.length + " en / " + arK.length + " ar");
 /* A Latin run is allowed only where it is a format, a ticker, a source's own name or the
    {x} placeholder - anything else is a string that was left half translated. */
-const LATIN_TOKEN = /(JSON|CSV|QR|ETH|Yahoo|CoinGecko|\{x\})/g;
+const LATIN_TOKEN = /(JSON|CSV|PDF|Excel|QR|ETH|Yahoo|CoinGecko|\{x\})/g;
 const latinAr = arK.filter((k) => /[A-Za-z]/.test(PAGE_I18N.ar[k]));
 const strayed = latinAr.filter((k) => PAGE_I18N.ar[k].replace(LATIN_TOKEN, "").match(/[A-Za-z]/));
 check("arabic: every Latin run left in the dictionary is a known code, brand or placeholder",
@@ -1061,10 +1139,117 @@ check("arabic: the labels that never went through t() now do (clock, weather, pr
   && /H\.month\.ar\|\|H\.month\.en/.test(pageSrc)
   && /settings\.lang==="ar"\?\["/.test(pageSrc)
   && /t\("evTitle"\)/.test(pageSrc) && /t\("mode"\)/.test(pageSrc) && /t\("cdDefault"\)/.test(pageSrc)
-  && /\[\["orange","acOrange"\]/.test(pageSrc) && /textContent=t\(al\)/.test(pageSrc));
+  && /\["orange",t\("acOrange"\)\],\["amber",t\("acAmber"\)\]/.test(pageSrc) && /b\.textContent=l;/.test(pageSrc));
 check("arabic: the shell's tooltips, the install name and the tab title come from the dictionary",
   /\[\["#langBtn","lang"\],\["#themeBtn","theme"\],\["#installBtn","install"\],\["#qrBtn","qr"\],\["#editBtn","editLayout"\]\]/.test(pageSrc)
   && /apple-mobile-web-app-title/.test(pageSrc) && /document\.title=t\("brand"\)\+" v"\+CONFIG\.VERSION/.test(pageSrc));
+/* ── the six sections, and the card that is named for its window ────────────────────
+   PAGES is the only list that decides where a card lives, and WIDGET_META.p has to agree
+   with it: a mismatch would leave a card's own up/down/hide buttons moving it on a page it
+   is not on. Home is a promise about what is read first, so it is asserted literally. */
+const pagesInner = (pageSrc.match(/const PAGES=\[([\s\S]*?)\];/) || [])[1];
+const PAGES_X = pagesInner ? new Function("return [" + pagesInner + "];")() : null;
+const META_X = (() => {
+  const inner = (pageSrc.match(/const WIDGET_META=([^\n\r]*);/) || [])[1];
+  try { return inner ? new Function("return " + inner + ";")() : null; } catch (e) { return null; }
+})();
+if (PAGES_X && META_X) {
+  const homes = {};
+  PAGES_X.forEach((ids, p) => ids.forEach((id) => { homes[id] = (homes[id] || []).concat(p); }));
+  const metaIds = Object.keys(META_X);
+  const twice = Object.keys(homes).filter((id) => homes[id].length > 1);
+  const missing = metaIds.filter((id) => !homes[id]);
+  const misplaced = metaIds.filter((id) => homes[id] && homes[id][0] !== META_X[id].p);
+  check("layout: every card has exactly one home, and the section it is listed under is the page it reports",
+    twice.length === 0 && missing.length === 0 && misplaced.length === 0,
+    PAGES_X.length + " sections · " + metaIds.length + " cards"
+    + (twice.length ? " · listed twice: " + twice.join(",") : "")
+    + (missing.length ? " · not listed: " + missing.join(",") : "")
+    + (misplaced.length ? " · page disagrees: " + misplaced.join(",") : ""));
+  check("layout: Home opens with the clock, the weather, prayer, the quote and the week's review, in that order",
+    PAGES_X[0].slice(0, 5).join(",") === "clock,weather,prayer,quote,week"
+    && PAGES_X[0].indexOf("todayTasks") > 4 && PAGES_X[0].indexOf("nextCd") > 4,
+    PAGES_X[0].join(" → "));
+  check("layout: the free image & video tools live in News, and the sixth tab is Settings",
+    PAGES_X[2].indexOf("gen") >= 0 && PAGES_X[5].indexOf("gen") < 0
+    && (!PAGE_I18N || PAGE_I18N.en.tools === "Settings"),
+    "News: " + PAGES_X[2].join(", ") + " · tab 6: " + (PAGE_I18N ? PAGE_I18N.en.tools : "?"));
+  check("layout: a new tab is one entry in PAGES plus one section in the markup, and the pager counts them",
+    pageSections === PAGES_X.length
+    && /function pageCount\(\)\{return PAGES\.length\}/.test(pageSrc)
+    && /for\(let p=0;p<pageCount\(\);p\+\+\)/.test(pageSrc)
+    && /Math\.min\(pageCount\(\)-1,curPage\+1\)/.test(pageSrc)
+    && /i<pageCount\(\)/.test(pageSrc) && /\+__p<pageCount\(\)/.test(pageSrc)
+    && !/p<5;/.test(pageSrc) && !/\^\[0-4\]\$/.test(pageSrc) && !/" \/ 5"/.test(pageSrc),
+    pageSections + " sections in the markup · " + PAGES_X.length + " in PAGES");
+}
+/* ── settings cards, attachments and the save ──────────────────────────────────────
+   Three promises this release makes, each asserted where it would break silently: a settings
+   group that opens in place and remembers it opened, a card that can carry files while the
+   exported record stays small, and a save that is either written or reported. */
+check("settings: each group is a card that opens in place, and an opened card is remembered",
+  /const group=\(key,title,badge,build\)=>\{/.test(pageSrc)
+  && /const d=document.createElement\("details"\);d.className="setcard"/.test(pageSrc)
+  && /d\.addEventListener\("toggle",\(\)=>\{open0\[key\]=d\.open;settings\.setOpen=open0;saveSettings\(\)\}\)/.test(pageSrc)
+  && (pageSrc.match(/\n  group\("/g) || []).length >= 6,
+  (pageSrc.match(/\n  group\("/g) || []).length + " cards, each with a value on its shut face");
+check("attachments: a card takes files, the bytes live in IndexedDB, and the record keeps only the metadata",
+  /id='kAttFile' type='file' multiple hidden accept='/.test(pageSrc)
+  && /indexedDB\.open\("pd_files",1\)/.test(pageSrc)
+  && /async function filePut\(rec\)/.test(pageSrc) && /async function fileDel\(ids\)/.test(pageSrc)
+  && /if\(all\.length\)o\.att=all; else delete o\.att;/.test(pageSrc)
+  && /attChip\(x\)/.test(pageSrc)
+  && (pageSrc.match(/const gone=\(x\.att\|\|\[\]\)\.map\(a=>a\.id\)/g) || []).length >= 2,
+  "file input · pd_files store · metadata on the card · chip in the list and on the board · delete removes the bytes");
+check("storage: every change is written, the page flushes when it hides, and a refused write is reported",
+  /set\(k,v\)\{try\{localStorage\.setItem\(k,JSON\.stringify\(v\)\);this\.ok=true;return true\}/.test(pageSrc)
+  && /addEventListener\("pagehide",flushState\)/.test(pageSrc)
+  && /document\.visibilityState==="hidden"\) flushState\(\)/.test(pageSrc)
+  && /toast\(t\("storeFail"\)\)/.test(pageSrc)
+  && /function storageLine\(\)\{/.test(pageSrc),
+  "store.set returns and reports · pagehide + visibility flush · storage line in About");
+/* The review card answers to two names, and which one it uses is the window it is showing. */
+const tfSrc = (pageSrc.match(/function titleFor\(id[^)]*\)\{[\s\S]*?return m\[id\]\|\|id\}/) || [])[0];
+if (tfSrc && PAGE_I18N) {
+  const tX = (k) => (PAGE_I18N.en[k] !== undefined ? PAGE_I18N.en[k] : k);
+  const { titleFor } = new Function("t", tfSrc + "\nreturn { titleFor };")(tX);
+  check("review card: the title is the window it is showing - This Week over seven days, This Month over thirty",
+    titleFor("week", 7) === tX("weekTitle") && titleFor("week", 30) === tX("weekMonth")
+    && tX("weekTitle") === "This Week" && tX("weekMonth") === "This Month"
+    && !!PAGE_I18N.ar.weekTitle && !!PAGE_I18N.ar.weekMonth,
+    titleFor("week", 7) + " / " + titleFor("week", 30) + " · ar: " + PAGE_I18N.ar.weekTitle + " / " + PAGE_I18N.ar.weekMonth);
+  check("review card: the header is repainted when the window changes, and the timeline carries the chart's crosshair",
+    /function paintWeekTitle\(\)\{[^\n\r]*h2 \.wtitle/.test(pageSrc)
+    && /function renderWeek\(\)\{\s*const el=\$\("#wb_week"\);if\(!el\)return;el\.innerHTML="";paintWeekTitle\(\)/.test(pageSrc)
+    && /tt\.className="wtitle"/.test(pageSrc) && /r\.setAttribute\("aria-label",t\("refresh"\)\+": "\+nm\)/.test(pageSrc)
+    && /box\.addEventListener\("pointermove",point\)/.test(pageSrc)
+    && /box\.addEventListener\("pointerleave"/.test(pageSrc)
+    && /xh\.className="xhair"/.test(pageSrc) && /xdot\.style\.top=/.test(pageSrc)
+    && /\n\.wkbox\{position:relative\}/.test(pageSrc),
+    "header repaint + pointermove/leave on the wkbox crosshair");
+}
+/* Settings is grouped, and the technical rows are no longer the first thing on the card. */
+check("settings: the groups are cards that open in place, the cards are listed by section, and the window is a setting",
+  /group\("look",t\("setLook"\)/.test(pageSrc) && /group\("cards",t\("setCards"\)/.test(pageSrc)
+  && /group\("week",t\("setWeek"\)/.test(pageSrc) && /group\("sources",t\("setSources"\)/.test(pageSrc)
+  && /group\("about",t\("setAbout"\)/.test(pageSrc) && /group\("push",t\("pushTitle"\)/.test(pageSrc)
+  && /for\(let p=0;p<pageCount\(\);p\+\+\)\{[\s\S]{0,320}className="cardchips"/.test(pageSrc)
+  && /className="cchip"/.test(pageSrc) && /setAttribute\("aria-pressed",String\(vis\)\)/.test(pageSrc)
+  && /className="setsech"/.test(pageSrc)
+  && /function pageOrder\(p\)\{return pageAll\(p\)\.filter/.test(pageSrc) && /pageAll\(p\)\.forEach\(id=>/.test(pageSrc)
+  && /settings\.weekSpan=v;saveSettings\(\);renderWeek\(\);renderSettings\(\)/.test(pageSrc)
+  && /settings\.order=\{\};settings\.widgets=\{\};settings\.orderRev=LAYOUT_REV/.test(pageSrc),
+  "six cards that open in place · chips per section · hidden cards keep their chip · window + reset layout");
+
+/* The generator list is a grid of tiles under a kind heading, not one bordered row per tool with
+   its own kind/free chips - the kind moved to the heading, so each row is a name and a figure. */
+const genSrc = (pageSrc.match(/function paintGen\(host,arr\)\{[\s\S]*?\n\}/) || [])[0] || "";
+check("tools: one tile per generator, grouped under a kind heading, with no per-row chrome",
+  !!genSrc && /className="genh"/.test(genSrc) && /className="gengrid"/.test(genSrc)
+  && /className="gentile"/.test(genSrc) && /className="gname"/.test(genSrc) && /className="gall"/.test(genSrc)
+  && !/qrow/.test(genSrc) && !/className="why"/.test(genSrc),
+  genSrc ? "kind headings from the data · tile grid · name + figure" : "paintGen not extractable");
+
 /* The chart's own wording - the source name and the note - is lifted from the shipped page
    and run against the shipped Arabic dictionary, so the two cannot drift apart. */
 const noteSrc = (pageSrc.match(/function noteText\(note\)\{[\s\S]*?\n\}/) || [])[0];
