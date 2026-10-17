@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.19.1</title>
+<title>Home Dashboard v2.20.0</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -85,6 +85,9 @@ h1.brand{margin:0;font-size:inherit;line-height:1.25;letter-spacing:inherit}
 .card.flash{outline:3px solid var(--ac)}
 .card h2{margin:0 0 8px;font-size:16px;display:flex;align-items:center;gap:8px}
 .card h2 .sp{flex:1}
+/* a control that cannot do anything right now looks like one: the Today button sits disabled
+   while today's month is already showing */
+.mini:disabled{opacity:.45;cursor:default}
 .mini{background:transparent;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer;color:var(--text2);min-height:26px;display:inline-flex;align-items:center;justify-content:center}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .muted{color:var(--muted);font-size:13px}
@@ -448,7 +451,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.19.1",
+  VERSION: "2.20.0",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -473,6 +476,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.20.0", d:"2026-10-17", en:"The calendar has a Today button. Flipping back from December used to be a row of clicks on the arrow; one press now returns to the month you are in, and the button greys itself out while that month is already on screen so it never looks like a control that did nothing. It sits beside the month frame, so the arrows stay where they were.", ar:"التقويم صار فيه زر «اليوم». الرجوع من ديسمبر كان يحتاج صفًّا من النقرات على السهم؛ والآن نقرة واحدة تعيدك إلى الشهر الذي أنت فيه، ويبهت الزر عندما يكون هذا الشهر معروضًا أصلًا فلا يبدو زرًّا لم يفعل شيئًا. وموضعه إلى جانب إطار الشهر، فيبقى السهمان كما هما."},
 {v:"2.19.1", d:"2026-10-17", en:"The blank page is fixed, and it was ours. The offline worker precached the shell from /index.html, which the host answers with a 308 to /, so the copy it stored was flagged as a redirect - and a browser refuses a redirected response for a navigation, which is why the address opened to an error page while the site itself was answering 200. The worker now copies the shell from / where there is no redirect, refuses to serve a redirected copy even if an older release left one cached, falls back to the network when the cache itself cannot be opened, and takes over at once when it inherits a cache no page can load, so a browser stuck on the old worker repairs itself instead of waiting for someone to clear site data by hand.", ar:"الصفحة البيضاء أُصلحت، والخلل كان منا. عامل العمل دون اتصال يحفظ قوقعة التطبيق من مسار الصفحة الافتراضية الذي يجيبه المضيف بتحويل إلى الجذر، فتُعلَّم النسخة المحفوظة بأنها تحويل — والمتصفح يرفض استجابة محوَّلة لطلب تنقّل، ولهذا كان العنوان يفتح على صفحة خطأ بينما الموقع نفسه يجيب 200. صار العامل ينسخ القوقعة من الجذر حيث لا تحويل، ويرفض تقديم نسخة محوَّلة حتى لو تركها إصدار أقدم في الذاكرة، ويرجع إلى الشبكة حين تتعذر الذاكرة نفسها، ويتولى فورًا إذا ورث ذاكرة لا تُفتح منها أي صفحة، فيُصلح المتصفح نفسه بدل أن ينتظر من يمحو بيانات الموقع يدويًا."},
 {v:"2.19.0", d:"2026-10-17", en:"The calendar reads like a printed one. Monday is the first day of the week, so the weekend shares the end of each row, and every row carries its ISO week number in a quiet column on the left - the same number a wall calendar prints beside the row, taken from the week's own Monday rather than counted row by row. The month and year now sit in a fixed frame as wide as the longest month name in the language, with an arrow on each side, so the arrows stay where your finger expects them instead of sliding about as May becomes September.", ar:"التقويم يقرأ كتقويم ورقي: الاثنين أول أيام الأسبوع، فيجتمع نهاية الأسبوع في آخر كل صف، ويحمل كل صف رقم أسبوعه في عمود هادي على اليسار — الرقم نفسه الذي يطبعه التقويم الحائطي إلى جانب الصف، مأخوذًا من يوم الاثنين الخاص بالأسبوع لا من عدّ الصفوف داخل الشهر. والشهر والسنة في إطار ثابت بعرض أطول اسم شهر في اللغة، بشريط سهم على كل جانب، فيبقى السهمان في موضعهما الذي تتوقعه بدل أن يزحفا حين يصير «مايو» «سبتمبر»."},
 {v:"2.18.0", d:"2026-10-17", en:"The calendar rings today. Its cell is filled in the accent colour instead of being merely outlined like the other thirty, and it is marked as the current date for a screen reader - keyed to your own local calendar, so after midnight it moves with you rather than with UTC. The Tasks card lists open work only: a finished task used to keep its place in the list until it was deleted, and now it drops out the moment it is ticked, behind a Show completed button that counts what is waiting there. The count sits on the button, so the list never reads as if the completed ones were lost, and hiding them again is the same single tap.", ar:"التقويم يعلّم يوم اليوم. خليته تُملأ بلون التمييز بدل أن تبقى مجرّدة الإطار مثل بقية الخلايا، وتُعلَّم بأنها تاريخ اليوم لقارئ الشاشة — والمفتاح مأخوذ من تقويم جهازك المحلي، فيتحرك معك بعد منتصف الليل لا مع توقيت غرينتش. وبطاقة المهام تعرض المفتوح وحده: المهمة المنجزة كانت تحتفظ بمكانها في القائمة حتى تُحذف، والآن تخرج منها لحظة تعليمها، خلف زر «إظهار المكتملة» يعدّ ما ينتظر هناك. والعدد على الزر نفسه، فلا تبدو القائمة كأنها فقدت المكتملة، وإخفاؤها مرة أخرى بنقرة واحدة."},
@@ -1430,7 +1434,14 @@ function renderCal(){const el=$("#wb_cal");if(!el)return;el.innerHTML="";const n
    fixed frame and cannot jump when "May" becomes "September" - the label cannot resize it. */
 const lab=document.createElement("div");lab.className="callab";
 for(let i=0;i<12;i++){const s=document.createElement("span");s.textContent=digits(new Date(calCursor.getFullYear(),i,1).toLocaleDateString(settings.lang==="ar"?"ar-EG":"en-US",{month:"long",year:"numeric"}));if(i===calCursor.getMonth())s.className="on";lab.appendChild(s)}
-nav.appendChild(pv);nav.appendChild(lab);nav.appendChild(nx);const sp=document.createElement("span");sp.style.flex="1";nav.appendChild(sp);const add=document.createElement("button");add.className="btn";add.textContent="+ "+t("addEvent");add.onclick=()=>eventModal();nav.appendChild(add);el.appendChild(nav);const grid=document.createElement("div");grid.style.display="grid";
+nav.appendChild(pv);nav.appendChild(lab);nav.appendChild(nx);
+/* Back to the month you are actually in. Disabled while that month is already on screen, so it
+   never reads as a button that did nothing when pressed. */
+const td=document.createElement("button");td.className="mini todaybtn";td.textContent=t("today");
+const now=new Date();
+td.disabled=calCursor.getFullYear()===now.getFullYear()&&calCursor.getMonth()===now.getMonth();
+td.onclick=()=>{calCursor=new Date();calCursor.setDate(1);renderCal()};
+nav.appendChild(td);const sp=document.createElement("span");sp.style.flex="1";nav.appendChild(sp);const add=document.createElement("button");add.className="btn";add.textContent="+ "+t("addEvent");add.onclick=()=>eventModal();nav.appendChild(add);el.appendChild(nav);const grid=document.createElement("div");grid.style.display="grid";
 /* eight columns: the week number, then the seven days. Monday leads, so the weekend sits
    together at the end of the row. */
 grid.style.gridTemplateColumns="auto repeat(7,1fr)";grid.style.gap="4px";grid.style.marginTop="10px";

@@ -1572,6 +1572,12 @@ check("tasks: the card lists open work by default, the completed ones behind a c
     && /showDone\?t\("hideDone"\):t\("showDone"\)\+\(doneN/.test(pageSrc)
     && /if\(full&&!list\.length\)\{[^\n]{0,80}t\("taskNone"\)/.test(pageSrc),
   "open-only list · counted toggle · empty line");
+check("calendar: a Today button returns to the current month, and rests disabled on it",
+  /td\.className="mini todaybtn";td\.textContent=t\("today"\)/.test(pageSrc)
+    && /td\.disabled=calCursor\.getFullYear\(\)===now\.getFullYear\(\)&&calCursor\.getMonth\(\)===now\.getMonth\(\)/.test(pageSrc)
+    && /calCursor=new Date\(\);calCursor\.setDate\(1\);renderCal\(\)/.test(pageSrc)
+    && /\.mini:disabled\{/.test(pageSrc),
+  "reset to this month · disabled while it is showing");
 check("calendar: Monday leads, every row carries its ISO week, and the arrows flank a fixed frame",
   /\(new Date\(y,m,1\)\.getDay\(\)\+6\)%7/.test(pageSrc)
     && /function isoWeek\(d\)/.test(pageSrc)
