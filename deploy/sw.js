@@ -19,7 +19,7 @@
  * The cache name carries the version, and activating a worker deletes every other
  * home-dashboard cache, so an old shell can never be served after an update.
  */
-const VERSION = "2.19.0";
+const VERSION = "2.19.1";
 const CACHE = "home-dashboard-" + VERSION;
 /* absolute, so a cache key never depends on a worker's base-URL rules */
 const at = (p) => new URL(p, self.location.href).href;
@@ -34,15 +34,34 @@ const ASSETS = [
   at("./icons/app-qr.png")
 ];
 
+/* A shell the browser cannot serve. The host answers /index.html with a 308 to /, so a worker
+   that cached that path stored a response flagged `redirected` - and a navigation runs with
+   redirect mode "manual", which refuses such a response: the app opens to an error page while
+   the site itself is perfectly healthy. This worker no longer stores one, but a browser can
+   still be holding what an older worker left behind, so install looks for it. */
+async function stuckShell() {
+  try {
+    const names = await caches.keys();
+    for (const n of names) {
+      if (n.indexOf("home-dashboard-") !== 0 || n === CACHE) continue;
+      const hit = await (await caches.open(n)).match(SHELL);
+      if (hit && hit.redirected) return true;
+    }
+  } catch (e) { /* cannot tell: assume nothing is wrong */ }
+  return false;
+}
+
 /* Install: copy the shell in, bypassing the HTTP cache so a new version never precaches the old
    bytes. The HTML is required - if it cannot be fetched there is no offline worth claiming - while
-   an icon that fails to arrive must not take the whole install down. No skipWaiting here: the
-   swap happens when the user presses Reload, never underneath them mid-sentence. */
+   an icon that fails to arrive must not take the whole install down. The shell is fetched from /
+   rather than /index.html: the same bytes, but no redirect to be flagged on the response. No
+   skipWaiting in the ordinary case - the swap happens when the user presses Reload, never
+   underneath them mid-sentence. The one exception is a page nobody can open at all. */
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
-      const res = await fetch(new Request(SHELL, { cache: "reload" }));
+      const res = await fetch(new Request(ROOT, { cache: "reload" }));
       if (!res || !res.ok) throw new Error("shell " + (res ? res.status : "unreachable"));
       await cache.put(SHELL, res.clone());
       /* the same bytes answer "/" as well, so a bare navigation works offline too */
@@ -50,6 +69,10 @@ self.addEventListener("install", (event) => {
       await Promise.all(ASSETS.map((u) => cache.add(new Request(u, { cache: "reload" })).catch(() => null)));
     })()
   );
+  /* A worker that inherited a shell no browser will load cannot offer a Reload button, because
+     no page can open to show one. Waiting politely would leave the app dead until someone
+     cleared site data by hand, so that is the one case where taking over immediately is kind. */
+  event.waitUntil(stuckShell().then((stuck) => { if (stuck) return self.skipWaiting(); }));
 });
 
 self.addEventListener("activate", (event) => {
@@ -72,7 +95,7 @@ self.addEventListener("message", (event) => {
 
 async function checkForUpdate() {
   try {
-    const res = await fetch(new Request(SHELL, { cache: "no-store" }));
+    const res = await fetch(new Request(ROOT, { cache: "no-store" }));
     if (!res || !res.ok) return;
     const fresh = await res.clone().text();
     const cache = await caches.open(CACHE);
@@ -95,15 +118,24 @@ async function tell(msg) {
 }
 
 /* Navigation: the shell from cache, so an installed app opens instantly and with no signal.
-   A page that is not cached yet (first visit) comes from the network and is kept. */
+   A page that is not cached yet (first visit) comes from the network and is kept.
+
+   Two guards, both learned the hard way: a cache that cannot be opened must not become a dead
+   page, and a redirected response must never be handed to a navigation - the browser refuses it
+   and the user sees an error page instead of the app. */
 async function shellFor(request) {
-  const cache = await caches.open(CACHE);
-  const hit = await cache.match(SHELL);
-  if (hit) return hit;
+  try {
+    const cache = await caches.open(CACHE);
+    const hit = await cache.match(SHELL);
+    if (hit && !hit.redirected) return hit;
+  } catch (e) { /* fall through to the network */ }
   const res = await fetch(request);
   if (res && res.ok) {
-    await cache.put(SHELL, res.clone());
-    await cache.put(ROOT, res.clone());
+    try {
+      const cache = await caches.open(CACHE);
+      await cache.put(SHELL, res.clone());
+      await cache.put(ROOT, res.clone());
+    } catch (e) { /* a page that loads beats a cache that would not */ }
   }
   return res;
 }
@@ -111,9 +143,11 @@ async function shellFor(request) {
 /* Everything else on this origin (icons, the manifest): cache first, then the network, and the
    answer is kept for next time. */
 async function assetFor(request) {
-  const cache = await caches.open(CACHE);
-  const hit = await cache.match(request, { ignoreSearch: true });
-  if (hit) return hit;
+  try {
+    const cache = await caches.open(CACHE);
+    const hit = await cache.match(request, { ignoreSearch: true });
+    if (hit) return hit;
+  } catch (e) { /* the network is the next answer */ }
   try {
     const res = await fetch(request);
     if (res && res.ok && res.type === "basic") await cache.put(request, res.clone());
@@ -130,7 +164,8 @@ self.addEventListener("fetch", (event) => {
   try { url = new URL(req.url); } catch (e) { return; }
   if (url.origin !== self.location.origin) return;
   if (url.pathname === "/sw.js") return;
-  event.respondWith(req.mode === "navigate" ? shellFor(req) : assetFor(req));
+  /* last resort: whatever went wrong in here, the page still gets a chance from the network */
+  event.respondWith((req.mode === "navigate" ? shellFor(req) : assetFor(req)).catch(() => fetch(req)));
 });
 
 self.addEventListener("push", (event) => {

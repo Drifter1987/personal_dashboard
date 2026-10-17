@@ -43,15 +43,22 @@ function makeWorld(bodies) {
   };
 
   const map = new Map();
+  /* clone() drops an own `redirected` flag a test set, so it is re-applied on the way in and out -
+     that flag is the whole point of the poisoned-cache test */
+  const copyOf = (res) => {
+    const c = res.clone();
+    if (res.redirected) Object.defineProperty(c, "redirected", { value: true });
+    return c;
+  };
   const openCache = (name) => {
     if (!map.has(name)) map.set(name, new Map());
     const m = map.get(name);
     const abs = (k) => (typeof k === "string" ? new URL(k, ORIGIN + "/").href : k.url);
     return {
-      async put(k, res) { m.set(abs(k), res.clone()); },
+      async put(k, res) { m.set(abs(k), copyOf(res)); },
       async match(k) {
         const v = m.get(abs(k));
-        return v ? v.clone() : undefined;
+        return v ? copyOf(v) : undefined;
       },
       async add(req) {
         const res = await world.fetch(typeof req === "string" ? new URL(req, ORIGIN).href : req);
@@ -123,9 +130,9 @@ const nav = (path) => ({ url: ORIGIN + path, method: "GET", mode: "navigate", he
   ok("install: precaches the shell under both ./index.html and ./",
     cache.has(ORIGIN + "/index.html") && cache.has(ORIGIN + "/"),
     cache.size + " entries: " + [...cache.keys()].map((u) => new URL(u).pathname).join(" "));
-  ok("install: the shell request bypasses the HTTP cache, so a release never precaches old bytes",
-    w.calls.some((c) => c.path === "/index.html" && c.cache === "reload"),
-    JSON.stringify(w.calls.filter((c) => c.path === "/index.html")));
+  ok("install: the shell comes from / with the HTTP cache bypassed - not the 308-prone /index.html",
+    w.calls.some((c) => c.path === "/" && c.cache === "reload") && !w.calls.some((c) => c.path === "/index.html"),
+    JSON.stringify(w.calls.filter((c) => c.cache === "reload")));
   ok("install: the icons come along", cache.has(ORIGIN + "/icons/icon-192.png") && cache.has(ORIGIN + "/icons/icon-512.png"));
   ok("install: does NOT skipWaiting - the new worker waits for the page", w.skipWaiting === 0, "skipWaiting calls: " + w.skipWaiting);
 }
@@ -154,6 +161,45 @@ const nav = (path) => ({ url: ORIGIN + path, method: "GET", mode: "navigate", he
   try { await w.fire("install"); } catch (e) { threw = e; }
   ok("install: a 404 on the shell fails the install instead of claiming a cache it does not have",
     !!threw, threw ? threw.message : "silently installed");
+}
+
+/* ── the blank page: a navigation must never receive a redirected response ───────
+   The live host answers /index.html with a 308 to /. A worker that cached that response stored
+   one flagged `redirected`, and navigation uses redirect mode "manual", which refuses it: the
+   app opened to an error page while the site itself answered 200. That regression shipped, so
+   it is run here against a cache poisoned in exactly that way. */
+{
+  const w = makeWorld({ "/": "<!doctype html><p>fresh</p>" });
+  const poisoned = new Response("<p>old</p>", { status: 200, headers: { "content-type": "text/html" } });
+  Object.defineProperty(poisoned, "redirected", { value: true });
+  await (await w.caches.open(CACHE)).put("/index.html", poisoned);
+  const g = await w.fire("fetch", { request: nav("/") });
+  const body = await textOf(g.responded);
+  ok("fetch: a redirected shell left in the cache is never served to a navigation",
+    !!g.responded && g.responded.redirected === false && body.includes("fresh"),
+    g.responded ? "redirected=" + g.responded.redirected + " · " + body.slice(0, 18) : "no response");
+}
+
+/* ── a cache that cannot be opened is not a dead page ─────────────────────────── */
+{
+  const w = makeWorld();
+  const realOpen = w.caches.open;
+  w.caches.open = async (n) => { if (n === CACHE) throw new Error("cache evicted"); return realOpen(n); };
+  const g = await w.fire("fetch", { request: nav("/") });
+  ok("fetch: when the cache itself fails, the navigation still comes from the network",
+    !!g.responded && (await textOf(g.responded)).includes("v1"),
+    g.responded ? "served the network copy" : "navigation failed");
+}
+
+/* ── an app nobody can open is the one case that may take over immediately ────── */
+{
+  const w = makeWorld();
+  const old = new Response("<p>unloadable</p>", { status: 200 });
+  Object.defineProperty(old, "redirected", { value: true });
+  await (await w.caches.open("home-dashboard-0.0.9")).put("/index.html", old);
+  await w.fire("install");
+  ok("install: a cache holding an unloadable shell makes the new worker take over at once",
+    w.skipWaiting === 1, "skipWaiting calls: " + w.skipWaiting);
 }
 
 /* ── activate: old versioned caches go, someone else's cache stays ─────────────── */
@@ -226,7 +272,9 @@ const nav = (path) => ({ url: ORIGIN + path, method: "GET", mode: "navigate", he
   await w.fire("message", { data: { type: "CHECK" } });
   ok("check: an unchanged page raises no update", msgs.length === 0, msgs.length + " messages");
 
+  /* the page changes at both addresses: the worker re-reads / now, not the 308-prone /index.html */
   w.bodies["/index.html"] = "<!doctype html><p>v2</p>";
+  w.bodies["/"] = "<!doctype html><p>v2</p>";
   await w.fire("message", { data: { type: "CHECK" } });
   ok("check: a changed page tells the open tab an update is ready", msgs.length === 1 && msgs[0].type === "PD_UPDATE",
     JSON.stringify(msgs[0] || null));

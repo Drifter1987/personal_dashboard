@@ -1449,9 +1449,15 @@ check("offline: the worker's cache version is the page's version, so a release i
   !!pageVer && pageVer === swVer, "page " + pageVer + " / worker " + swVer);
 check("offline: the shell is required at install - a 404 cannot pose as an offline app",
   /if \(!res \|\| !res\.ok\) throw new Error\("shell /.test(swSrc));
-check("offline: the new worker waits; skipping waiting only ever comes from the page's Reload",
-  (swSrc.match(/skipWaiting\(/g) || []).length === 1 && /data\.type === "SKIP_WAITING"\) self\.skipWaiting\(\)/.test(swSrc),
-  (swSrc.match(/skipWaiting\(/g) || []).length + " call site(s)");
+/* Two call sites, each with one reason: the page's Reload, and the one case where no page can
+   open to offer it - a worker that inherited a shell the browser refuses to serve. Anything
+   else skipping the wait would take the app away mid-sentence, so the count is pinned. */
+check("offline: the new worker waits, and only a Reload or an unloadable inherited shell skips that",
+  (swSrc.match(/skipWaiting\(/g) || []).length === 2
+    && /data\.type === "SKIP_WAITING"\) self\.skipWaiting\(\)/.test(swSrc)
+    && /stuckShell\(\)\.then\(\(stuck\) => \{ if \(stuck\) return self\.skipWaiting\(\)/.test(swSrc)
+    && /hit\.redirected/.test(swSrc),
+  (swSrc.match(/skipWaiting\(/g) || []).length + " call site(s): reload + stuck-shell recovery");
 check("offline: the API and every other origin are passed straight through, never cached",
   /url\.origin !== self\.location\.origin\) return;/.test(swSrc) && !/caches\.default/.test(swSrc));
 check("page: the worker is registered at boot, not only when reminders are switched on",
