@@ -193,17 +193,34 @@ if (!check("page: " + PAGE_URL + " answers 200 text/html",
     liveVer === testedVersion,
     liveVer === testedVersion ? "v" + liveVer : "live says v" + liveVer + " - the page did not publish, or the bundle is stale");
 
-  /* the rest of the bundle: icons, manifest, headers - each compared on its own */
+  /* the rest of the bundle: icons, manifest, headers - each compared on its own.
+
+     A deploy lands file by file at the edge, so one asset can still be the previous copy while
+     the page is already new: that is propagation, not a bad upload, and failing on the first
+     look made a correct release red (sw.js lagged index.html by about a second). Each asset
+     therefore gets the same bounded patience the page gets - and a difference that survives it
+     is still a failure, so nothing is being waved through. */
   const bad = [];
   for (const name of files) {
     if (name === PAGE) continue;
     const local = read(join(DEPLOY, name));
-    const res = await get(PAGE_URL + name);
-    /* the reasons are kept apart: a 200 that differs in bytes is a stale asset, not a 404 */
-    if (!local) bad.push(name + " (missing locally)");
-    else if (!res.ok) bad.push(name + " (" + res.error + ")");
-    else if (res.status !== 200) bad.push(name + " (HTTP " + res.status + ")");
-    else if (sha(res.body) !== sha(local)) bad.push(name + " (bytes differ)");
+    if (!local) { bad.push(name + " (missing locally)"); continue; }
+    const want = sha(local);
+    let why = "not fetched";
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+      const res = await get(PAGE_URL + name);
+      /* the reasons are kept apart: a 200 that differs in bytes is a stale asset, not a 404 */
+      if (!res.ok) why = res.error;
+      else if (res.status !== 200) why = "HTTP " + res.status;
+      else if (sha(res.body) !== want) why = "bytes differ";
+      else { why = ""; break }
+      if (attempt < ATTEMPTS) {
+        console.log("      " + name + " attempt " + attempt + "/" + ATTEMPTS + ": " + why
+          + " (the edge may still be serving the previous copy), re-checking in " + WAIT_MS / 1000 + "s");
+        await sleep(WAIT_MS);
+      }
+    }
+    if (why) bad.push(name + " (" + why + ")");
   }
   check("page: all " + files.length + " published files match " + DEPLOY + "/ (" + PAGE + " + "
     + (files.length - 1) + " assets)", bad.length === 0,
