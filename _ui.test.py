@@ -29,10 +29,14 @@ VERBOSE = "-v" in sys.argv
 # A card above the fold is hidden from its own header, which is itself off-screen, so the click
 # is dispatched in the page: a Playwright click would scroll the header into view first and move
 # the very thing being measured. Returns the next card's position before the hide.
+# "Above the fold" is meant literally: the last card that ends before the sticky header. Picking
+# the first card that merely reaches past it hid whatever was under the header instead, which is
+# not the case this is named for.
 HIDE_TOP_CARD = (
     "(() => {const e=document.querySelector('.topbar').getBoundingClientRect().bottom;"
     "const cards=[...document.querySelectorAll('.page.active [data-widget]')];"
-    "const first=cards.find(n=>n.getBoundingClientRect().bottom>e);"
+    "const above=cards.filter(n=>n.getBoundingClientRect().bottom<=e);"
+    "const first=above[above.length-1]||cards[0];"
     "const next=cards[cards.indexOf(first)+1];"
     "if(!first||!next)return null;"
     "const top=Math.round(next.getBoundingClientRect().top);"
@@ -301,6 +305,35 @@ def cases(browser, base):
         check("only the document and the phone pager ever scroll, at any width", ok,
               "; ".join(detail) or "4 widths × 6 sections")
 
+    # ── 6b. a card is only as tall as what it holds ────────────────────────────
+    def a_card_is_only_as_tall_as_its_content():
+        detail = []
+        ok = True
+        ctx, page = boot(browser, base, 941, 620)
+        try:
+            for section in range(6):
+                page.evaluate("goPage(%d)" % section)
+                wait_for(page, "curPage", section)
+                page.wait_for_timeout(120)
+                rows = page.evaluate(
+                    "(() => [...document.querySelectorAll('.page.active .card[data-widget]')]"
+                    ".map(c => {const b=c.querySelector('[id^=wb_]'), cs=getComputedStyle(c);"
+                    "const inner=b.lastElementChild||b;"
+                    "const end=inner.getBoundingClientRect().bottom;"
+                    "return {id:c.dataset.widget,"
+                    "slack:c.getBoundingClientRect().bottom-parseFloat(cs.paddingBottom)"
+                    "-parseFloat(cs.borderBottomWidth)-end}}))()"
+                )
+                for row in rows:
+                    # a line of block spacing (13px) is normal; a stretched card is hundreds
+                    if row["slack"] > 24:
+                        ok = False
+                        detail.append("section %d %s: %.0fpx" % (section, row["id"], row["slack"]))
+        finally:
+            ctx.close()
+        check("no card is taller than what it holds, so no card draws a border around nothing",
+              ok, "; ".join(detail) or "6 sections · every card sized to its content")
+
     # ── 7. a card that is loading keeps its frame ───────────────────────────────────────────
     def a_loading_card_keeps_its_frame():
         ctx, page = boot(browser, base, 941, 620)
@@ -418,7 +451,8 @@ def cases(browser, base):
     return [rebuild_keeps_offset, reorder_keeps_offset, hiding_a_card_above_holds_the_card_below,
             shortening_page_clamps_but_never_snaps_to_the_top,
             section_change_starts_at_the_top, phone_keeps_section_and_offset,
-            only_two_scrollers_exist, a_loading_card_keeps_its_frame, opening_lands_on_home,
+            only_two_scrollers_exist, a_card_is_only_as_tall_as_its_content,
+            a_loading_card_keeps_its_frame, opening_lands_on_home,
             a_shortcut_link_opens_its_section,
             buttons_do_not_move_the_view, today_button]
 
