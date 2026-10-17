@@ -46,6 +46,19 @@ sources, and the thing that gets published is byte-identical to the thing that w
 (`deploy/index.html` matches `index.html`; every `deploy/` file is in `dashboard-site.zip` with
 the same CRC-32). A failing check stops the run before anything is written.
 
+The harness reads sources; it cannot see layout. The browser contract does, and is the check to
+run after touching a card's structure, the pager or the calendar:
+
+```bash
+python _ui.test.py             # Chromium: scroll survives a rebuild, a section change starts at
+                               # the top, Today rests on the current month; 15 checks
+python _ui.test.py -v          # same run, with every measurement printed
+```
+
+It serves the working tree on a loopback port, blocks every external host so a card arriving
+mid-measurement cannot add flake, and uses a fresh browser context per case, so it never touches
+the machine's own saved dashboard.
+
 Note: the harness talks to live third parties (ECB, Yahoo, CoinGecko, news feeds), so a red
 run is worth reading before re-running.
 

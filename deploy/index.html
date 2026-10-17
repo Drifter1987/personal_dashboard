@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.21.0</title>
+<title>Home Dashboard v2.21.1</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -451,7 +451,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.21.0",
+  VERSION: "2.21.1",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -476,6 +476,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.21.1", d:"2026-10-17", en:"The scroll behaviour is a test now, not a promise. A small Chromium contract drives the real page and measures what a person notices: turning a card off or moving one keeps the page exactly where it was, the card under a hidden one does not shift, a page that became shorter than your offset clamps instead of jumping to the top, a section change still opens at the top, the phone keeps its section and its side offset, and Today still rests on the month you are in. Writing it shrank the fix: only the document and the phone's pager can ever scroll, so a rebuild no longer tracks containers that cannot move.", ar:"صار سلوك التمرير اختبارًا لا وعدًا. عقد صغير في Chromium يشغّل الصفحة الحقيقية ويقيس ما يلاحظه المستخدم: إيقاف بطاقة أو تحريكها يترك الصفحة في موضعها بالضبط، والبطاقة التي تحت المخفية لا تتزحزح، والصفحة التي قصُرت عن موضع تمريرك تُقصَر بدل أن تقفز إلى الأعلى، وتغيير القسم ما زال يفتح من الأعلى، والهاتف يحفظ قسمه وموضعه الأفقي، وزر «اليوم» ما زال يستقر على الشهر الذي أنت فيه. وكتابة العقد اختصرت الإصلاح: المستند وشريط الأقسام على الهاتف هما الوحيدان القابلان للتمرير، فلم يعد إعادة البناء يتتبّع حاويات لا تتحرك."},
 {v:"2.21.0", d:"2026-10-17", en:"The dashboard stopped jumping. Hiding a card, reordering one, switching language or turning a chip off rebuilt every card from scratch, and the page you were reading snapped back to the top each time - the rebuilt list is briefly shorter than the scroll you had, and the browser clamps it. A rebuild now remembers the card under the header and puts it back on the same line, keeps the pager's horizontal position on a phone, and returns to the top only when you actually change section.", ar:"توقّفت اللوحة عن القفز. إخفاء بطاقة أو تغيير ترتيبها أو تبديل اللغة أو إيقاف بطاقة من الإعدادات كان يعيد بناء البطاقات كلها، فيرتدّ ما تقرأه إلى أعلى الصفحة في كل مرة: القائمة تُبنى أقصر من موضع تمريرك لحظةً فيقصّه المتصفح. صار إعادة البناء يتذكّر البطاقة التي تحت الشريط ويعيدها إلى السطر نفسه، ويحفظ موضع التمرير الأفقي على الهاتف، ولا يعود إلى الأعلى إلا عند تغيير القسم فعلًا."},
 {v:"2.20.0", d:"2026-10-17", en:"The calendar has a Today button. Flipping back from December used to be a row of clicks on the arrow; one press now returns to the month you are in, and the button greys itself out while that month is already on screen so it never looks like a control that did nothing. It sits beside the month frame, so the arrows stay where they were.", ar:"التقويم صار فيه زر «اليوم». الرجوع من ديسمبر كان يحتاج صفًّا من النقرات على السهم؛ والآن نقرة واحدة تعيدك إلى الشهر الذي أنت فيه، ويبهت الزر عندما يكون هذا الشهر معروضًا أصلًا فلا يبدو زرًّا لم يفعل شيئًا. وموضعه إلى جانب إطار الشهر، فيبقى السهمان كما هما."},
 {v:"2.19.1", d:"2026-10-17", en:"The blank page is fixed, and it was ours. The offline worker precached the shell from /index.html, which the host answers with a 308 to /, so the copy it stored was flagged as a redirect - and a browser refuses a redirected response for a navigation, which is why the address opened to an error page while the site itself was answering 200. The worker now copies the shell from / where there is no redirect, refuses to serve a redirected copy even if an older release left one cached, falls back to the network when the cache itself cannot be opened, and takes over at once when it inherits a cache no page can load, so a browser stuck on the old worker repairs itself instead of waiting for someone to clear site data by hand.", ar:"الصفحة البيضاء أُصلحت، والخلل كان منا. عامل العمل دون اتصال يحفظ قوقعة التطبيق من مسار الصفحة الافتراضية الذي يجيبه المضيف بتحويل إلى الجذر، فتُعلَّم النسخة المحفوظة بأنها تحويل — والمتصفح يرفض استجابة محوَّلة لطلب تنقّل، ولهذا كان العنوان يفتح على صفحة خطأ بينما الموقع نفسه يجيب 200. صار العامل ينسخ القوقعة من الجذر حيث لا تحويل، ويرفض تقديم نسخة محوَّلة حتى لو تركها إصدار أقدم في الذاكرة، ويرجع إلى الشبكة حين تتعذر الذاكرة نفسها، ويتولى فورًا إذا ورث ذاكرة لا تُفتح منها أي صفحة، فيُصلح المتصفح نفسه بدل أن ينتظر من يمحو بيانات الموقع يدويًا."},
@@ -834,11 +835,13 @@ function saveOrder(p,o){settings.order=settings.order||{};settings.order[p]=o;se
    above the viewport disappears, the same offset is left pointing at different content.
    So keepView records the first card visible under the header (plus a few successors, in case
    the card being hidden is that one) and the pager's horizontal offset, rebuilds, then puts
-   that card back on the same line. Scroll positions of every scrollable container are saved
-   too, because the vertical scroller is the document on a wide screen but a .page can be the
-   scroller at other breakpoints. The second pass lands after layout, for content that paints
-   from cache on the next frame (a restored calendar, a memoised news list). */
-function scrollers(){const out=[];const se=document.scrollingElement||document.documentElement;out.push({el:se,top:se.scrollTop});const seen=new Set([se]);document.querySelectorAll("#pages,.page").forEach(el=>{if(seen.has(el))return;seen.add(el);out.push({el,top:el.scrollTop,left:el.scrollLeft})});return out}
+   that card back on the same line. Only two scrollers can be moved by a rebuild: the document,
+   which scrolls vertically on every width, and the pager, which scrolls sideways on a phone.
+   A .page is never its own scroller - _ui.test.py asserts that at four widths and every section,
+   so if a future stylesheet makes one scrollable that case fails rather than silently drifting.
+   The second pass lands after layout, for content that paints from cache on the next frame (a
+   restored calendar, a memoised news list). */
+function scrollers(){const se=document.scrollingElement||document.documentElement;return [{el:se,top:se.scrollTop},{el:$("#pages"),left:$("#pages").scrollLeft}]}
 function viewAnchor(){const page=document.querySelector('.page[data-page="'+curPage+'"]');if(!page)return[];const bar=document.querySelector(".topbar");const edge=bar?bar.getBoundingClientRect().bottom:0;const out=[];page.querySelectorAll("[data-widget]").forEach(n=>{const r=n.getBoundingClientRect();if(r.height>0&&r.bottom>edge)out.push({id:n.dataset.widget,top:r.top})});return out.slice(0,4)}
 function keepView(fn){
   const saved=scrollers();
@@ -846,7 +849,7 @@ function keepView(fn){
   fn();
   const restore=()=>{
     saved.forEach(s=>{if(s.left!==undefined&&Math.abs(s.el.scrollLeft-s.left)>1)s.el.scrollLeft=s.left;
-      if(Math.abs(s.el.scrollTop-s.top)>1)s.el.scrollTop=s.top});
+      if(s.top!==undefined&&Math.abs(s.el.scrollTop-s.top)>1)s.el.scrollTop=s.top});
     const live=anchors.find(a=>document.getElementById("w_"+a.id));
     if(!live)return;
     /* put that card back where it was: the difference is what the page above it gained or lost */

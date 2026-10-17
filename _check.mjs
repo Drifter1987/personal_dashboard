@@ -1595,18 +1595,15 @@ check("calendar: today's cell is filled and marked, keyed to the local day rathe
     && /const today=isoLocal\(new Date\(\)\)/.test(pageSrc),
   "local key · filled cell · aria-current · tasks read the same day");
 
-/* A rebuild is a repaint, not navigation. Hiding or reordering a card replaces every card element,
-   and the browser used to clamp the scroll to the top because the rebuilt page was briefly shorter
-   than the offset it was showing. The view is anchored to the first card under the header and the
-   phone pager's own offset is restored; only a section change is allowed to go back to the top. */
-check("layout: rebuilding the cards keeps the reader where they were instead of snapping to the top",
+/* The scroll contract is behavioural and lives in _ui.test.py, which measures it in Chromium.
+   What belongs here is the one architectural fact that keeps that behaviour reachable: a rebuild
+   goes through keepView, and a reorder is not navigation. Nothing below asserts how keepView
+   works, so changing its internals (as the browser contract allows) does not churn the harness. */
+check("layout: every rebuild is view-preserving, and a reorder is not treated as navigation",
   /function keepView\(fn\)\{/.test(pageSrc)
     && /function buildPages\(\)\{keepView\(\(\)=>\{/.test(pageSrc)
-    && /requestAnimationFrame\(restore\)/.test(pageSrc)
-    && /out\.push\(\{el,top:el\.scrollTop,left:el\.scrollLeft\}\)/.test(pageSrc)
-    && /goPage\(p,\{keepScroll:true\}\)/.test(pageSrc)
-    && /if\(!\(opts&&opts\.keepScroll\)\)window\.scrollTo\(\{top:0/.test(pageSrc),
-  "anchored restore · second pass after layout · pager offset kept · reorder does not jump");
+    && /goPage\(p,\{keepScroll:true\}\)/.test(pageSrc),
+  "buildPages wrapped · reorder keeps the view · behaviour measured in _ui.test.py");
 
 console.log("\n-- sample payload --");
 for (const card of ["auto", "ai", "fin"]) {
