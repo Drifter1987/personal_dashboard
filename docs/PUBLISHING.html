@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="description" content="How to make one commit publish the dashboard to the live site. 8 short steps, set up once in Cloudflare, then push and refresh." />
+<meta name="description" content="How to make one push publish the dashboard to the live site. Two credentials to add once, then push and refresh." />
 <title>Publish a change — Home Dashboard guide</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23122b24'/%3E%3Crect x='7' y='17' width='4' height='8' rx='1.5' fill='%2352e3b9'/%3E%3Crect x='14' y='10' width='4' height='15' rx='1.5' fill='%23ffbd62'/%3E%3Crect x='21' y='13' width='4' height='12' rx='1.5' fill='%2372a9ff'/%3E%3C/svg%3E" type="image/svg+xml" />
 <style>
@@ -118,7 +118,7 @@
   .verify code { color: var(--green); font: 12px var(--mono); }
 
   .fallback { margin-top: 13px; border: 1px solid #3d5e8e; border-radius: 10px; background: rgba(114,169,255,.05); }
-  .fallback > summary { padding: 11px 15px; color: var(--blue); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+  .fallback > summary { padding: 11px 15px; color: var(--blue); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; cursor: pointer; }
   .fallback > summary::after { color: var(--blue); font-size: 15px; content: "+"; float: right; }
   .fallback[open] > summary::after { content: "−"; }
   .fallback > p { max-width: none; margin: 0 15px 14px; color: var(--muted); font-size: 13px; }
@@ -163,7 +163,7 @@
 <header class="topbar">
   <div class="wrap topbar-inner">
     <a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Home Dashboard docs</a>
-    <span class="status">Guide · set up once</span>
+    <span class="status preview">Guide · 2 credentials to add</span>
     <nav class="topnav" aria-label="Guide sections">
       <a href="#before">Before</a>
       <a href="#steps">Steps</a>
@@ -179,18 +179,18 @@
     <div class="wrap">
       <p class="eyebrow">Guide · publishing the dashboard</p>
       <h1>One push, and the site <span>updates itself.</span></h1>
-      <p class="lede">Right now a commit stays on your computer. The live site is still on <strong>v2.10.0</strong> because nothing connects the two. This guide connects them once, in Cloudflare, in about fifteen minutes. After that every change is: commit, push, wait a minute, refresh.</p>
+      <p class="lede">The pipeline is already built: every push to <code>main</code> runs the tests, and if they pass it uploads the page to Cloudflare and checks the live site really changed. It is waiting on two credentials that only you can create. Add them once, and publishing becomes: commit, push, wait a minute, refresh.</p>
       <div class="hero-meta">
-        <span class="pill">8 steps</span>
+        <span class="pill">7 steps</span>
         <span class="pill">About 15 minutes, once</span>
-        <span class="pill preview">No API key needed</span>
         <span class="pill">Then ~2 minutes per change</span>
+        <span class="pill preview">No new project, same address</span>
       </div>
       <div class="hero-actions">
         <a class="button" href="#steps">Start at step 1</a>
         <a class="button secondary" href="#fast">Just the short version</a>
       </div>
-      <p class="fine">Steps 1 and 2 were checked on this machine on 2026-10-17. Steps 3 to 6 follow Cloudflare's own documentation and need your Cloudflare login - they are marked as such, not presented as tested here.</p>
+      <p class="fine">Written 2026-10-17. Checked on this machine: the workflow that publishes, the smoke check it finishes with, the project and branch it targets, and the live version the site is serving today. The dashboard clicks are taken from Cloudflare's and GitHub's own documentation and are not presented as executed here.</p>
     </div>
   </section>
 
@@ -201,17 +201,16 @@
           <p class="eyebrow">Before you start</p>
           <h2>What you need.</h2>
         </div>
-        <p>Three things. If one is missing, the step that needs it will not work, so check now rather than halfway through.</p>
+        <p>Three things. Two of them you already have.</p>
       </div>
       <ul class="prereqs">
-        <li><span>GitHub Desktop installed and signed in as <strong>Drifter1987</strong>. It is already on this machine.</span><span class="need">installed</span></li>
-        <li><span>A Cloudflare login that can open <strong>Workers &amp; Pages</strong>. Use the main account, <strong>Drifter_87@live.com</strong>.</span><span class="need">your login</span></li>
-        <li><span>The project folder on this machine: <code>Ghazi_Tools/personal_dashboard</code>. It already holds finished work that was never pushed.</span><span class="need">local</span></li>
+        <li><span>GitHub Desktop installed and signed in as <strong>Drifter1987</strong>, the owner of the repository. It is already on this machine.</span><span class="need">installed</span></li>
+        <li><span>A Cloudflare login for the account that hosts the site: <strong>Drifter_87@live.com</strong>. The token you create in step 2 must belong to this account.</span><span class="need">your login</span></li>
+        <li><span>The project folder on this machine, <code>Ghazi_Tools/personal_dashboard</code>, so the first push has somewhere to come from.</span><span class="need">local</span></li>
       </ul>
       <div class="callout" style="margin-top: 20px">
-        <strong>Which tool does what — they are not alternatives.</strong>
-        <p>Think of GitHub Desktop as <em>the pen</em> and Cloudflare as <em>the printer</em>. The pen writes the change and sends it to GitHub. Cloudflare watches GitHub and prints whatever it receives. You need both, but you only ever touch one of them: after setup, committing and pushing is the whole job.</p>
-        <p>Cloudflare is the safer half: it needs <strong>no API token</strong>, and it can only read the one repository you pick. Nothing secret is copied anywhere.</p>
+        <strong>Nothing here moves your address.</strong>
+        <p>The site keeps its project and its <code>home-dashboard-5ma.pages.dev</code> address. No new project is created, no link changes, no QR code needs reprinting. The only new things are two credentials that let GitHub publish on your behalf.</p>
       </div>
     </div>
   </section>
@@ -221,90 +220,71 @@
       <div class="section-head">
         <div>
           <p class="eyebrow orange">The procedure</p>
-          <h2>Eight steps, in order.</h2>
+          <h2>Seven steps, in order.</h2>
         </div>
-        <p>Steps 1 to 2 are one minute each. Steps 3 to 6 are the setup you only do once. Steps 7 and 8 are what you will actually repeat.</p>
+        <p>Steps 2 and 3 are the credentials — the only part only you can do. Step 4 proves the whole chain works. Steps 5 to 7 are what you will actually repeat.</p>
       </div>
 
       <div class="steps-run">
       <ol class="steps">
         <li class="step" id="s1">
           <span class="when">2 min</span>
-          <h3>Push the changes that are already waiting</h3>
-          <p class="why">The finished work is still only on this machine - commits GitHub has never seen. Nothing can publish them until they are there.</p>
-          <p class="action">Open <b>GitHub Desktop</b>, select the <b>personal_dashboard</b> repository, then click <b>Push origin</b> in the top bar.</p>
-          <p class="verify"><b>You should see</b> "Last fetched just now", and <b>Push origin</b> with no number beside it. On github.com, the commits you just pushed sit at the top of <code>main</code> with today's date on them.</p>
+          <h3>Push what is already waiting</h3>
+          <p class="why">Cloudflare cannot publish a commit that GitHub has never seen, and the pipeline is triggered by the push, not by the file on your disk.</p>
+          <p class="action">Open <b>GitHub Desktop</b>, select the <b>personal_dashboard</b> repository, click <b>Push origin</b>, then click <b>Fetch origin</b> a moment later.</p>
+          <p class="verify"><b>You should see</b> "Last fetched just now", and <b>Push origin</b> with no number beside it. On github.com the commits you just pushed sit at the top of <code>main</code>.</p>
           <details class="fallback">
-            <summary>If the repo is not in the list</summary>
-            <p>Use <b>File → Add local repository</b> and point it at <code>Documents/AI_Workspace/02_Projects/Ghazi_Tools/personal_dashboard</code>. If the push is refused, click <b>Pull origin</b> first, then push again.</p>
+            <summary>If the repository is not in the list</summary>
+            <p>Use <b>File → Add local repository</b> and point it at <code>Documents/AI_Workspace/02_Projects/Ghazi_Tools/personal_dashboard</code>. If a push is refused, click <b>Pull origin</b> first, then push again.</p>
           </details>
         </li>
 
         <li class="step" id="s2">
-          <span class="when">1 min</span>
-          <h3>Look at what Cloudflare has today</h3>
-          <p class="why">The existing project was made by uploading files, not by connecting a repository. That kind of project can never be switched to automatic publishing, so it is worth seeing that now instead of hunting for a button that does not exist.</p>
-          <p class="action">In the Cloudflare dashboard open <b>Workers &amp; Pages</b> → <b>home-dashboard</b>. Look at the address: <b>home-dashboard-5ma.pages.dev</b>, serving <b>v2.10.0</b> when this guide was written.</p>
-          <p class="verify"><b>You should see</b> no Git connection anywhere on that project's settings page. Cloudflare's documentation says it plainly: a direct-upload project "cannot switch to Git integration later". So step 3 creates a new, separate project.</p>
+          <span class="when">5 min</span>
+          <h3>Create one Cloudflare token that can publish</h3>
+          <p class="why">This is the credential that lets GitHub upload the page. It is scoped to publishing pages and nothing else, on one account.</p>
+          <p class="action">In the Cloudflare dashboard:</p>
+          <ol class="clicks">
+            <li>Click your <b>profile icon</b> (top right) → <b>My Profile</b> → <b>API Tokens</b>.</li>
+            <li>Click <b>Create Token</b>, then under <b>Custom token</b> click <b>Get started</b>.</li>
+            <li><b>Token name</b>: <code>GitHub publishes the dashboard</code></li>
+            <li><b>Permissions</b>: <b>Account</b> · <b>Cloudflare Pages</b> · <b>Edit</b> — the three dropdowns, in that order.</li>
+            <li><b>Account Resources</b>: <b>Include</b> · <b>Drifter_87@live.com's Account</b>.</li>
+            <li>Click <b>Continue to summary</b> → <b>Create Token</b>, then <b>copy the token</b>.</li>
+          </ol>
+          <p class="action">Cloudflare shows the value <b>once</b>. Copy it straight into step 3 — do not save it in a file, paste it into a chat, or put it anywhere near the repository.</p>
+          <p class="verify"><b>You should see</b> the token listed under <b>API Tokens</b>, described as <code>Account · Cloudflare Pages · Edit</code>. That description is the proof it will be allowed to publish and not much else.</p>
+          <details class="fallback">
+            <summary>If you lose the value before step 3</summary>
+            <p>A token's value is never shown again. Delete the row and create a new one — a minute of work, and no harm done. Do not try to reuse an older token "to save time": a token with wider permissions than this needs is a bigger problem than the minute.</p>
+          </details>
         </li>
 
         <li class="step" id="s3">
           <span class="when">3 min</span>
-          <h3>Let Cloudflare read your repository</h3>
-          <p class="why">This is the permission step. Cloudflare gets read access to one repository, and nothing else.</p>
-          <p class="action">Still in <b>Workers &amp; Pages</b>:</p>
+          <h3>Give GitHub the token, and the account it belongs to</h3>
+          <p class="why">The token names what may be done; the account id says where. A Pages token carries no account of its own, which is exactly why both are needed.</p>
+          <p class="action">In the repository on github.com: <b>Settings</b> → <b>Secrets and variables</b> → <b>Actions</b> → <b>New repository secret</b>. Add both, one at a time:</p>
           <ol class="clicks">
-            <li>Click <b>Create application</b>, then the <b>Pages</b> tab, then <b>Connect to Git</b>.</li>
-            <li>Choose <b>GitHub</b> and sign in if it asks.</li>
-            <li>When GitHub asks which repositories, choose <b>Only select repositories</b> and tick <b>personal_dashboard</b>.</li>
-            <li>Click <b>Install &amp; Authorize</b>.</li>
+            <li>Name <code>CLOUDFLARE_API_TOKEN</code> — value: the token you just copied.</li>
+            <li>Name <code>CLOUDFLARE_ACCOUNT_ID</code> — value: <code>8660293d5a5646d0131b5edad05d7910</code></li>
           </ol>
-          <p class="verify"><b>You should see</b> <code>Drifter1987/personal_dashboard</code> in the repository list, and a <b>Begin setup</b> button next to it.</p>
+          <p class="verify"><b>You should see</b> two entries under <b>Repository secrets</b>, names only — GitHub never displays a value again, and never will. The names must match exactly: a typo here is the single most common reason the next step does nothing.</p>
           <details class="fallback">
-            <summary>If the repository is missing</summary>
-            <p>Open <code>github.com/settings/installations</code>, find <b>Cloudflare Pages</b>, click <b>Configure</b>, and add the repository to its allowed list. Then come back and refresh.</p>
+            <summary>If you cannot see Settings</summary>
+            <p>You are signed in as someone who is not an owner of <code>Drifter1987/personal_dashboard</code>. Sign in as <b>Drifter1987</b> — repository secrets are not visible to anyone else, which is a feature.</p>
           </details>
         </li>
 
         <li class="step" id="s4">
-          <span class="when">2 min</span>
-          <h3>Create the new Pages project</h3>
-          <p class="why">The name you choose becomes the address, so pick it deliberately. <code>home-dashboard</code> is already taken by the old project, so this one needs a different name.</p>
-          <p class="action">Set <b>Project name</b> to <code>home-dashboard-live</code>, set <b>Production branch</b> to <code>main</code>, then click <b>Begin setup</b>.</p>
-          <p class="verify"><b>You should see</b> a <b>Set up builds and deployments</b> screen with the project name filled in and branch <code>main</code> selected.</p>
+          <span class="when">3 min</span>
+          <h3>Publish for the first time</h3>
+          <p class="why">Until now the pipeline has been running and deliberately skipping the upload, saying so each time. With the credentials in place it can do the real thing.</p>
+          <p class="action">On github.com open the <b>Actions</b> tab, pick the most recent run of <b>checks</b>, and click <b>Re-run all jobs</b> (top right). The run now sees the secrets.</p>
+          <p class="verify"><b>You should see</b> three jobs: <b>deploy gate</b> green, <b>release bundle</b> green, and <b>publish the page</b> green with five steps — the last one reading <code>Prove the live site serves the tested bundle</code>. Then open the site's 6th tab, <b>Settings</b>, and the <b>About</b> card shows the version that was just published, not the old one.</p>
           <details class="fallback">
-            <summary>If the name is rejected</summary>
-            <p>Any unused name works; the address simply follows it. The branch dropdown only lists branches GitHub already has, which is why step 1 comes first.</p>
-          </details>
-        </li>
-
-        <li class="step" id="s5">
-          <span class="when">2 min</span>
-          <h3>Fill in the build settings</h3>
-          <p class="why">Nothing is compiled here: the finished site already sits in the <code>deploy/</code> folder. The build command is a lock, not a compiler - it refuses to publish if that folder and the page ever disagree.</p>
-          <p class="action">Use exactly these three values:</p>
-          <ol class="clicks">
-            <li><b>Framework preset</b>: <b>None</b>.</li>
-            <li><b>Build command</b>: <code>node _deploy.mjs --artifacts-only</code></li>
-            <li><b>Build output directory</b>: <code>deploy</code></li>
-          </ol>
-          <p class="action">Leave <b>Root directory</b> empty. You do not need any environment variables.</p>
-          <p class="verify"><b>You should see</b> the project summary above the button list that same command and the word <code>deploy</code>.</p>
-          <details class="fallback">
-            <summary>If the build complains about npm or dependencies</summary>
-            <p>Add one environment variable under <b>Environment variables</b>: <code>SKIP_DEPENDENCY_INSTALL</code> set to <code>1</code>. There is no <code>package.json</code> in this repository, so there is nothing to install.</p>
-          </details>
-        </li>
-
-        <li class="step" id="s6">
-          <span class="when">2 min</span>
-          <h3>Save, deploy, and check the version</h3>
-          <p class="why">This is the moment the live site finally becomes 2.17.0. If the build fails here, nothing changes and the old site keeps working - so this step is safe to try.</p>
-          <p class="action">Click <b>Save and Deploy</b>, watch the log, then open the new <code>.pages.dev</code> address it gives you.</p>
-          <p class="verify"><b>You should see</b> the log end with <code>Success: Your site was deployed!</code>. Then open the dashboard's 6th tab, <b>Settings</b>, and the <b>About</b> card reads <code>v2.17.0</code>.</p>
-          <details class="fallback">
-            <summary>If the build fails</summary>
-            <p>Click the failed build to read its log. The most likely line is <code>deploy/index.html is byte-identical</code> failing, which means the folder on GitHub is older than <code>index.html</code>. Fix it on the computer with <code>node _deploy.mjs --sync</code>, commit, push, and Cloudflare tries again by itself.</p>
+            <summary>If the publish job says "Publishing skipped"</summary>
+            <p>The secrets are missing or misnamed — go back to step 3 and check both names character by character. Nothing was published, and the live site is untouched and still working, so there is no rush.</p>
           </details>
         </li>
       </ol>
@@ -312,28 +292,36 @@
       <p class="checkpoint">Setup done · now the everyday part</p>
 
       <ol class="steps">
-        <li class="step" id="s7">
+        <li class="step" id="s5">
           <span class="when">2 min</span>
           <h3>Change something, and publish it</h3>
-          <p class="why">This is the whole routine from now on. No Cloudflare dashboard, no commands, no tokens.</p>
-          <p class="action">In <b>GitHub Desktop</b>: open the <b>Changes</b> tab, type a short summary, click <b>Commit to main</b>, then <b>Push origin</b>. Wait about a minute. Refresh the site.</p>
-          <p class="verify"><b>You should see</b> your commit message in Cloudflare under the project's <b>Deployments</b> tab, and the new version number in the dashboard's <b>Settings → About</b> card.</p>
+          <p class="why">This is the whole routine from now on. No Cloudflare dashboard, no commands, no credentials to type again.</p>
+          <p class="action">In <b>GitHub Desktop</b>: open the <b>Changes</b> tab, type a short summary, click <b>Commit to main</b>, then <b>Push origin</b>. Wait a minute or two, then refresh the site.</p>
+          <p class="verify"><b>You should see</b> a new run under <b>Actions</b> for your commit, finishing green in about two minutes, and the new version number in the dashboard's <b>Settings → About</b> card.</p>
           <details class="fallback">
-            <summary>If the site still shows the old version</summary>
-            <p>Check <b>Deployments</b> first: if the newest deployment is still building, wait. If it failed, the old version stays live on purpose. A normal refresh is enough - the service worker deliberately caches nothing.</p>
+            <summary>If the run is still going</summary>
+            <p>Two jobs have to finish before the site changes: the tests, then the upload. If the site looks unchanged after five minutes, open the run and read which job stopped — the table below covers what each failure means.</p>
           </details>
         </li>
 
-        <li class="step" id="s8">
+        <li class="step" id="s6">
           <span class="when">1 min</span>
-          <h3>Decide what happens to the old address</h3>
-          <p class="why">The new site has a new address. The old one keeps serving 2.10.0 forever unless you do something about it, and any QR code or bookmark you have points at the old one.</p>
-          <p class="action">Keep the old <b>home-dashboard</b> project for now, and start using the new address. When you are happy with it, delete the old project in its own <b>Settings → Delete project</b> page — that is permanent, so do it last.</p>
-          <p class="verify"><b>You should see</b> the new address opening correctly on your phone, and the dashboard showing 2.17.0 there too.</p>
+          <h3>Know how to go back</h3>
+          <p class="why">A publish you cannot undo is a publish you hesitate over. Cloudflare keeps every previous version, so a bad change is one click from being gone.</p>
+          <p class="action">In Cloudflare open <b>Workers &amp; Pages</b> → <b>home-dashboard</b> → <b>Deployments</b>, find the version you want back, and use its menu to roll back to it.</p>
+          <p class="verify"><b>You should see</b> the site serving the older version within a minute, and the rolled-back deployment marked as the active one.</p>
           <details class="fallback">
-            <summary>If you reuse the QR code inside the app</summary>
-            <p>Open the app's QR &amp; Share card after the move and check which address it encodes. If it still points at the old project, that is worth fixing before you print or share it again.</p>
+            <summary>If you would rather fix forward</summary>
+            <p>That is usually better: make the correction, commit, push, and the pipeline publishes it. Rollback is for when you want the old version up <em>now</em> and the fix is not ready yet.</p>
           </details>
+        </li>
+
+        <li class="step" id="s7">
+          <span class="when">1 min</span>
+          <h3>Remember what did not change</h3>
+          <p class="why">Two things stay exactly as they were, and both surprise people later.</p>
+          <p class="action">The <b>address</b> is unchanged, so links, bookmarks and QR codes keep working. The <b>API Worker</b> — reminders, the metals endpoint — is <b>not</b> part of this pipeline and still ships by hand.</p>
+          <p class="verify"><b>You should see</b> the dashboard working at the address you already use, with reminders still armed. If the Worker were the thing that changed, this pipeline would not have shipped it.</p>
         </li>
       </ol>
       </div>
@@ -351,12 +339,12 @@
       </div>
       <ul class="fastpath">
         <li><span>GitHub Desktop → <strong>Push origin</strong>, so the commits GitHub is missing reach it.</span></li>
-        <li><span>Remember the old project is <strong>direct upload</strong> and cannot be converted; a new project is required.</span></li>
-        <li><span>Cloudflare → <strong>Workers &amp; Pages → Create application → Pages → Connect to Git</strong> → allow only <strong>personal_dashboard</strong>.</span></li>
-        <li><span>Name it <code>home-dashboard-live</code>, branch <code>main</code>.</span></li>
-        <li><span>Framework <strong>None</strong>, build command <code>node _deploy.mjs --artifacts-only</code>, output <code>deploy</code>.</span></li>
-        <li><span><strong>Save and Deploy</strong>, then confirm <code>v2.17.0</code> in the app's About card.</span></li>
-        <li><span>From now on: commit, push, wait a minute, refresh.</span></li>
+        <li><span>Cloudflare → <strong>My Profile → API Tokens → Create Token → Custom token</strong>; permission <strong>Account · Cloudflare Pages · Edit</strong>, account included <strong>Drifter_87@live.com</strong>.</span></li>
+        <li><span>Copy the value once; never save it anywhere but the next step.</span></li>
+        <li><span>GitHub repo → <strong>Settings → Secrets and variables → Actions</strong>: add <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ACCOUNT_ID</code> (<code>8660293d5a5646d0131b5edad05d7910</code>).</span></li>
+        <li><span>Actions → latest <strong>checks</strong> run → <strong>Re-run all jobs</strong>; wait for <strong>publish the page</strong> to go green.</span></li>
+        <li><span>Check <strong>Settings → About</strong> on the site for the new version.</span></li>
+        <li><span>From now on: commit, push, wait two minutes, refresh.</span></li>
       </ul>
     </div>
   </section>
@@ -366,9 +354,9 @@
       <div class="section-head">
         <div>
           <p class="eyebrow">Recovery</p>
-          <h2>When it goes wrong.</h2>
+          <h2>When it fails.</h2>
         </div>
-        <p>The failures this setup actually produces, in the order they are likely to appear.</p>
+        <p>What each failure actually means, in the order they are likely to appear. In every one of them the live site keeps working: publishing only replaces it after a successful run.</p>
       </div>
       <div class="table-wrap">
         <table>
@@ -377,19 +365,19 @@
             <tr><th>What you see</th><th>Why</th><th>Do this</th></tr>
           </thead>
           <tbody>
-            <tr><td>The old project has no Git option</td><td>It was created by direct upload, and Cloudflare does not allow converting one.</td><td>Create a new project (step 3). Do not delete the old one until the new one works.</td></tr>
-            <tr><td>Cloudflare's repository list is empty</td><td>The GitHub app was installed for a different account, or only for "all repositories" of another login.</td><td>Open <code>github.com/settings/installations</code> → Cloudflare Pages → Configure → add the repository.</td></tr>
-            <tr><td>The production branch dropdown is empty</td><td>The branch does not exist on GitHub yet.</td><td>Push first (step 1), then reload the setup page.</td></tr>
-            <tr><td>Build fails at <code>deploy/index.html</code></td><td>The published folder is older than <code>index.html</code>.</td><td><code>node _deploy.mjs --sync</code>, then commit and push the rebuilt <code>deploy/</code> and zip.</td></tr>
-            <tr><td>Build fails looking for npm or a lockfile</td><td>Cloudflare tried to install dependencies in a repository that has none.</td><td>Add <code>SKIP_DEPENDENCY_INSTALL=1</code> as an environment variable and redeploy.</td></tr>
-            <tr><td>The site loads but shows an old version</td><td>The newest deployment is still building, or the last build failed and Cloudflare kept the previous one.</td><td>Open <b>Deployments</b> and read the newest entry's status before changing anything.</td></tr>
-            <tr><td>Reminders or the metals API stop working</td><td>Those live in the Worker, which is a separate deployment from the page.</td><td>The page moving does not affect them. If the Worker itself changed, it needs its own deploy — ask for it.</td></tr>
+            <tr><td>The run says <strong>Publishing skipped</strong></td><td>The two repository secrets are missing or spelled differently.</td><td>Re-check both names in step 3, then re-run the job. Names are case-sensitive.</td></tr>
+            <tr><td>Publish fails with an authentication or permission error</td><td>The token was deleted, or it lacks <code>Account · Cloudflare Pages · Edit</code>.</td><td>Create a fresh token with that permission, and replace the <code>CLOUDFLARE_API_TOKEN</code> secret's value.</td></tr>
+            <tr><td>The <strong>deploy gate</strong> job is red</td><td>The tests failed on that commit, so nothing was published — by design.</td><td>Open the run, read which check failed, fix it in the next commit. The live site is still the last good version.</td></tr>
+            <tr><td>The run is green but the site is not new</td><td>Look closely at which jobs ran: a green run with <strong>Publishing skipped</strong> published nothing.</td><td>Treat it as the first row: the credentials are the thing to fix.</td></tr>
+            <tr><td>The site shows the old version for a minute or two</td><td>The edge can serve the previous version briefly after an upload. The pipeline's own check waits for it.</td><td>Wait, then refresh. If the publish job is green, the change is live.</td></tr>
+            <tr><td>A push on another branch published nothing</td><td>Only <code>main</code> publishes. Other branches run the tests and stop there.</td><td>Nothing to fix. Merge to <code>main</code> when the change is ready to be live.</td></tr>
+            <tr><td>Reminders or the metals API stopped working</td><td>Those live in the Worker, which this pipeline does not touch.</td><td>Unrelated to publishing. If <code>worker.js</code> changed, the Worker needs its own deploy — ask for it.</td></tr>
           </tbody>
         </table>
       </div>
       <div class="callout" style="margin-top: 20px">
-        <strong>A failed build never breaks the live site.</strong>
-        <p>Cloudflare only switches the live version after a build succeeds. That is why the lock in step 5 is safe to keep: a disagreement between the page and the published folder stops the publish instead of shipping it.</p>
+        <strong>A failed run never breaks the live site.</strong>
+        <p>The upload only happens after the tests pass, and Cloudflare switches the live version only after the upload succeeds. A bad change stops at the red job; the site keeps serving the previous version until something better gets through.</p>
       </div>
     </div>
   </section>
@@ -407,27 +395,27 @@
         <article class="card">
           <span class="label orange">Not covered</span>
           <h3>The Worker API</h3>
-          <p>Reminders, push notifications and the metals endpoint run in a Worker, and Cloudflare's Git connection publishes Pages only. When <code>worker.js</code> changes, that deploy is still a separate, deliberate action.</p>
+          <p>Reminders, push notifications and the metals endpoint run in a Worker with its own keys, storage and schedule. It is deployed by hand, and a page publish never touches it.</p>
         </article>
         <article class="card">
           <span class="label orange">Not covered</span>
-          <h3>Your current address</h3>
-          <p>The new project gets a new <code>.pages.dev</code> address. Keeping the exact old one would need a custom domain attached to the new project, which is a separate piece of setup.</p>
+          <h3>Publishing from another branch</h3>
+          <p>Only <code>main</code> publishes. A branch cannot be used to put a draft in front of someone else at the real address — that is deliberate, and it is also why there are no preview links here.</p>
         </article>
         <article class="card">
-          <span class="label">Deliberate</span>
-          <h3>No API token anywhere</h3>
-          <p>This route never asks you to create or paste a Cloudflare token, and no secret is stored in the repository. That is the main reason it is the safer of the two options.</p>
+          <span class="label">Worth knowing</span>
+          <h3>The tests reach the internet</h3>
+          <p>The gate checks live data sources, so it can occasionally fail for reasons no one here caused. That is a red run to re-run, not a broken site: nothing is published until it is green.</p>
         </article>
         <article class="card">
-          <span class="label">Deliberate</span>
-          <h3>The tests still run on GitHub</h3>
-          <p>The full check suite already runs on every push in GitHub Actions. The Cloudflare build only checks the published folder, which keeps a push-to-live loop down to about a minute instead of several.</p>
+          <span class="label">Worth knowing</span>
+          <h3>The credentials are yours to rotate</h3>
+          <p>Deleting the token in Cloudflare stops publishing immediately and leaves the site alone. A new token plus a new secret value restores it — the account id never changes.</p>
         </article>
       </div>
       <div class="note" style="margin-top: 16px">
         <b>How current is this?</b>
-        <p style="margin: 6px 0 0">Written 2026-10-17. Checked here: the commits sitting unpushed on this machine (five of them on that date), the old project being direct upload with no Git provider, the live site serving v2.10.0, and the build tools Cloudflare's image provides (Node 22.16, Python 3.13). Taken from Cloudflare's documentation rather than executed here: the dashboard click paths in steps 3 to 6, which need your login. If a button name has changed since, the docs at <a href="https://developers.cloudflare.com/pages/get-started/git-integration/">developers.cloudflare.com/pages/get-started/git-integration</a> are the source of truth.</p>
+        <p style="margin: 6px 0 0">Written 2026-10-17. Verified here: the publish job exists and is restricted to <code>main</code> after a green gate, it uploads <code>deploy/</code> to the existing project on the <code>main</code> branch, it finishes with the live page comparison, and the live site was serving the older version that day. Taken from the platforms' documentation rather than run here: the token-creation and secret-adding click paths in steps 2 and 3, and the first real publish in step 4 — all three need your logins. If a button has moved, <a href="https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/">Cloudflare's CI documentation</a> and GitHub's <a href="https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions">secrets documentation</a> are the sources of truth.</p>
       </div>
     </div>
   </section>
@@ -435,7 +423,7 @@
 
 <footer class="footer">
   <div class="wrap footer-inner">
-    <span>Publishing guide — 2026-10-17 · setup checked against this machine, dashboard steps against Cloudflare's docs</span>
+    <span>Publishing guide — 2026-10-17 · pipeline checked against the workflow, dashboard steps against the platforms' docs</span>
     <a href="../DEPLOY.md">Deploy runbook</a>
     <a href="repo-audit-executive-summary.html">Repo audit</a>
   </div>
