@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.20.0</title>
+<title>Home Dashboard v2.21.0</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -451,7 +451,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.20.0",
+  VERSION: "2.21.0",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -476,6 +476,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.21.0", d:"2026-10-17", en:"The dashboard stopped jumping. Hiding a card, reordering one, switching language or turning a chip off rebuilt every card from scratch, and the page you were reading snapped back to the top each time - the rebuilt list is briefly shorter than the scroll you had, and the browser clamps it. A rebuild now remembers the card under the header and puts it back on the same line, keeps the pager's horizontal position on a phone, and returns to the top only when you actually change section.", ar:"توقّفت اللوحة عن القفز. إخفاء بطاقة أو تغيير ترتيبها أو تبديل اللغة أو إيقاف بطاقة من الإعدادات كان يعيد بناء البطاقات كلها، فيرتدّ ما تقرأه إلى أعلى الصفحة في كل مرة: القائمة تُبنى أقصر من موضع تمريرك لحظةً فيقصّه المتصفح. صار إعادة البناء يتذكّر البطاقة التي تحت الشريط ويعيدها إلى السطر نفسه، ويحفظ موضع التمرير الأفقي على الهاتف، ولا يعود إلى الأعلى إلا عند تغيير القسم فعلًا."},
 {v:"2.20.0", d:"2026-10-17", en:"The calendar has a Today button. Flipping back from December used to be a row of clicks on the arrow; one press now returns to the month you are in, and the button greys itself out while that month is already on screen so it never looks like a control that did nothing. It sits beside the month frame, so the arrows stay where they were.", ar:"التقويم صار فيه زر «اليوم». الرجوع من ديسمبر كان يحتاج صفًّا من النقرات على السهم؛ والآن نقرة واحدة تعيدك إلى الشهر الذي أنت فيه، ويبهت الزر عندما يكون هذا الشهر معروضًا أصلًا فلا يبدو زرًّا لم يفعل شيئًا. وموضعه إلى جانب إطار الشهر، فيبقى السهمان كما هما."},
 {v:"2.19.1", d:"2026-10-17", en:"The blank page is fixed, and it was ours. The offline worker precached the shell from /index.html, which the host answers with a 308 to /, so the copy it stored was flagged as a redirect - and a browser refuses a redirected response for a navigation, which is why the address opened to an error page while the site itself was answering 200. The worker now copies the shell from / where there is no redirect, refuses to serve a redirected copy even if an older release left one cached, falls back to the network when the cache itself cannot be opened, and takes over at once when it inherits a cache no page can load, so a browser stuck on the old worker repairs itself instead of waiting for someone to clear site data by hand.", ar:"الصفحة البيضاء أُصلحت، والخلل كان منا. عامل العمل دون اتصال يحفظ قوقعة التطبيق من مسار الصفحة الافتراضية الذي يجيبه المضيف بتحويل إلى الجذر، فتُعلَّم النسخة المحفوظة بأنها تحويل — والمتصفح يرفض استجابة محوَّلة لطلب تنقّل، ولهذا كان العنوان يفتح على صفحة خطأ بينما الموقع نفسه يجيب 200. صار العامل ينسخ القوقعة من الجذر حيث لا تحويل، ويرفض تقديم نسخة محوَّلة حتى لو تركها إصدار أقدم في الذاكرة، ويرجع إلى الشبكة حين تتعذر الذاكرة نفسها، ويتولى فورًا إذا ورث ذاكرة لا تُفتح منها أي صفحة، فيُصلح المتصفح نفسه بدل أن ينتظر من يمحو بيانات الموقع يدويًا."},
 {v:"2.19.0", d:"2026-10-17", en:"The calendar reads like a printed one. Monday is the first day of the week, so the weekend shares the end of each row, and every row carries its ISO week number in a quiet column on the left - the same number a wall calendar prints beside the row, taken from the week's own Monday rather than counted row by row. The month and year now sit in a fixed frame as wide as the longest month name in the language, with an arrow on each side, so the arrows stay where your finger expects them instead of sliding about as May becomes September.", ar:"التقويم يقرأ كتقويم ورقي: الاثنين أول أيام الأسبوع، فيجتمع نهاية الأسبوع في آخر كل صف، ويحمل كل صف رقم أسبوعه في عمود هادي على اليسار — الرقم نفسه الذي يطبعه التقويم الحائطي إلى جانب الصف، مأخوذًا من يوم الاثنين الخاص بالأسبوع لا من عدّ الصفوف داخل الشهر. والشهر والسنة في إطار ثابت بعرض أطول اسم شهر في اللغة، بشريط سهم على كل جانب، فيبقى السهمان في موضعهما الذي تتوقعه بدل أن يزحفا حين يصير «مايو» «سبتمبر»."},
@@ -800,7 +801,9 @@ function applyLayoutMode(){if(isDesktop())showPageView(curPage);else document.qu
    shortcuts keep working. replaceState, not pushState: swiping through five sections should
    not bury the previous site in the back button. */
 function syncPageUrl(i){try{const u=new URL(location.href);if(u.searchParams.get("p")===String(i))return;u.searchParams.set("p",String(i));history.replaceState(null,"",u)}catch(e){}}
-function goPage(i){curPage=i;const p=document.querySelector('.page[data-page="'+i+'"]');if(p){if(isDesktop()){showPageView(i);window.scrollTo({top:0,behavior:"smooth"})}else{$("#pages").scrollTo({left:p.offsetLeft,behavior:"smooth"})}}sizeSwipeSpacer();syncPageUrl(i);renderPager();renderTabs()}
+/* `keepScroll` is for a caller that is not navigation: reordering a card re-enters the page it is
+   already on, and scrolling to the top there would undo the view keepView just restored. */
+function goPage(i,opts){curPage=i;const p=document.querySelector('.page[data-page="'+i+'"]');if(p){if(isDesktop()){showPageView(i);if(!(opts&&opts.keepScroll))window.scrollTo({top:0,behavior:"smooth"})}else{$("#pages").scrollTo({left:p.offsetLeft,behavior:"smooth"})}}sizeSwipeSpacer();syncPageUrl(i);renderPager();renderTabs()}
 addEventListener("popstate",()=>{const q=new URLSearchParams(location.search).get("p");if(q!==null&&/^\d+$/.test(q)&&+q<pageCount()&&+q!==curPage)goPage(+q)});
 $("#pages").addEventListener("scroll",()=>{if(isDesktop())return;const el=$("#pages");const i=Math.round(Math.abs(el.scrollLeft)/el.clientWidth);if(i!==curPage&&i>=0&&i<pageCount()){curPage=i;renderTabs()}renderPager()},{passive:true});
 window.addEventListener("resize",()=>{applyLayoutMode();renderPager();renderTabs();sizeSwipeSpacer()});
@@ -819,11 +822,44 @@ const REFRESHABLE={clock:()=>renderClock(),weather:()=>{loadWeather(o,true)},pra
 function drawQrOn(cv,url){const M=(typeof QR_M_JSON==="string")?JSON.parse(QR_M_JSON):QR_M_JSON;const n=M.length,sc=Math.ceil(600/(n+8)),pad=2;cv.width=(n+pad*2)*sc;cv.height=cv.width;const ctx=cv.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#1e1e22";M.forEach((row,y)=>row.forEach((v,x)=>{if(v)ctx.fillRect((x+pad)*sc,(y+pad)*sc,sc,sc)}));cv.style.width="100%";cv.style.height="auto"}
 function renderQrShare(){const el=$("#wb_qrshare");if(!el)return;el.innerHTML="";const url=CONFIG.APP_URL||location.origin;const hint=document.createElement("div");hint.className="muted";hint.textContent=t("scanHint");el.appendChild(hint);const hold=document.createElement("div");hold.className="qrbox qrinline";el.appendChild(hold);const cv=document.createElement("canvas");hold.appendChild(cv);drawQrOn(cv,url);const row=document.createElement("div");row.className="row";row.style.marginTop="10px";const mk=(label,fn,cls)=>{const b=document.createElement("button");b.className=cls||"btn ghost";b.textContent=label;b.onclick=fn;row.appendChild(b)};mk(t("saveQr"),()=>{cv.toBlob(bl=>{const a=document.createElement("a");a.href=URL.createObjectURL(bl);a.download="dashboard-qr.png";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)},"image/png")},"btn");el.appendChild(row);const row2=document.createElement("div");row2.className="row";const mk2=(label,fn)=>{const b=document.createElement("button");b.className="btn ghost";b.textContent=label;b.onclick=fn;row2.appendChild(b)};const L=shareLinks(url);mk2(t("wa"),()=>window.open(L.whatsapp,"_blank","noopener"));mk2(t("ig"),()=>window.open(L.instagram,"_blank","noopener"));mk2(t("snap"),()=>window.open(L.snapchat,"_blank","noopener"));el.appendChild(row2);const row3=document.createElement("div");row3.className="row";mk2(t("copyLink"),async()=>{try{await navigator.clipboard.writeText(url);toast(t("copied"))}catch(e){toast("✕")}});mk2(t("mail"),()=>{location.href=L.mail});el.appendChild(row3);if(navigator.share){const ns=document.createElement("button");ns.className="btn";ns.style.marginTop="8px";ns.textContent=t("shareApp");ns.onclick=()=>navigator.share({title:L.native.title,text:L.native.text,url}).catch(()=>{});el.appendChild(ns)}}
 function refreshCard(id,s){const f=REFRESHABLE[id];if(!f){toast(t("refresh"));return}if(s){s.style.transition="opacity .25s";s.style.opacity=".55";setTimeout(()=>s.style.opacity="",450)}f();toast((WIDGET_ICONS[id]||"")+" "+t("refresh")+" · "+nameFor(id))}
-function widgetAction(id,a){const p=WIDGET_META[id].p;let o=pageOrder(p);if(a==="hide"){settings.widgets[id]=false;saveSettings();buildPages();return}const i=o.indexOf(id);if(a==="up"&&i>0){const tmp=o[i-1];o[i-1]=o[i];o[i]=tmp}if(a==="down"&&i<o.length-1){const tmp=o[i+1];o[i+1]=o[i];o[i]=tmp}saveOrder(p,o);buildPages();goPage(p)}
+function widgetAction(id,a){const p=WIDGET_META[id].p;let o=pageOrder(p);if(a==="hide"){settings.widgets[id]=false;saveSettings();buildPages();return}const i=o.indexOf(id);if(a==="up"&&i>0){const tmp=o[i-1];o[i-1]=o[i];o[i]=tmp}if(a==="down"&&i<o.length-1){const tmp=o[i+1];o[i+1]=o[i];o[i]=tmp}saveOrder(p,o);buildPages();goPage(p,{keepScroll:true})}
 /* An order is saved with the layout revision it was made in, so a later release can tell a
    deliberate arrangement from one the user never made. */
 function saveOrder(p,o){settings.order=settings.order||{};settings.order[p]=o;settings.orderRev=LAYOUT_REV;saveSettings()}
-function buildPages(){for(let p=0;p<pageCount();p++){const host=$("#page"+p);host.innerHTML="";pageOrder(p).forEach(id=>{host.appendChild(widgetShell(id,nameFor(id)))})}renderTabs();applyLayoutMode();renderAll();paintUpdate()}
+/* ============ a rebuild must not move the page under the reader ============
+   Hiding a card, reordering one, or switching language throws every card away and builds it
+   again, and that is a repaint, not navigation: nothing the user did was about scrolling. Two
+   things did move the view anyway. Clearing the hosts makes the page briefly shorter than the
+   offset it is showing, so the browser clamps the scroll back to the top - and when a card
+   above the viewport disappears, the same offset is left pointing at different content.
+   So keepView records the first card visible under the header (plus a few successors, in case
+   the card being hidden is that one) and the pager's horizontal offset, rebuilds, then puts
+   that card back on the same line. Scroll positions of every scrollable container are saved
+   too, because the vertical scroller is the document on a wide screen but a .page can be the
+   scroller at other breakpoints. The second pass lands after layout, for content that paints
+   from cache on the next frame (a restored calendar, a memoised news list). */
+function scrollers(){const out=[];const se=document.scrollingElement||document.documentElement;out.push({el:se,top:se.scrollTop});const seen=new Set([se]);document.querySelectorAll("#pages,.page").forEach(el=>{if(seen.has(el))return;seen.add(el);out.push({el,top:el.scrollTop,left:el.scrollLeft})});return out}
+function viewAnchor(){const page=document.querySelector('.page[data-page="'+curPage+'"]');if(!page)return[];const bar=document.querySelector(".topbar");const edge=bar?bar.getBoundingClientRect().bottom:0;const out=[];page.querySelectorAll("[data-widget]").forEach(n=>{const r=n.getBoundingClientRect();if(r.height>0&&r.bottom>edge)out.push({id:n.dataset.widget,top:r.top})});return out.slice(0,4)}
+function keepView(fn){
+  const saved=scrollers();
+  const anchors=viewAnchor();
+  fn();
+  const restore=()=>{
+    saved.forEach(s=>{if(s.left!==undefined&&Math.abs(s.el.scrollLeft-s.left)>1)s.el.scrollLeft=s.left;
+      if(Math.abs(s.el.scrollTop-s.top)>1)s.el.scrollTop=s.top});
+    const live=anchors.find(a=>document.getElementById("w_"+a.id));
+    if(!live)return;
+    /* put that card back where it was: the difference is what the page above it gained or lost */
+    const d=document.getElementById("w_"+live.id).getBoundingClientRect().top-live.top;
+    if(Math.abs(d)<=1)return;
+    const se=document.scrollingElement||document.documentElement;
+    if(se.scrollHeight>se.clientHeight+1)window.scrollBy(0,d);
+    else{const pg=document.querySelector('.page[data-page="'+curPage+'"]');if(pg)pg.scrollTop+=d}
+  };
+  restore();
+  requestAnimationFrame(restore);
+}
+function buildPages(){keepView(()=>{for(let p=0;p<pageCount();p++){const host=$("#page"+p);host.innerHTML="";pageOrder(p).forEach(id=>{host.appendChild(widgetShell(id,nameFor(id)))})}renderTabs();applyLayoutMode();renderAll();paintUpdate()})}
 /* The review card's name is the window it is showing, so a name takes that window as an
    argument rather than reading state: `span` is 7, 30 or anything else the card can pick. */
 function titleFor(id,span){const m={qrshare:t("qrShare"),clock:t("clock"),weather:t("weather"),prayer:t("prayer"),quote:t("quote"),nextCd:t("nextCd"),todayTasks:t("todayTasks"),crypto:t("crypto"),fx:t("fx"),metals:t("metals"),chart:t("chart"),auto:t("auto"),ai:t("ai"),gh:t("gh"),gen:t("gen"),fin:t("fin"),cal:t("cal"),tasks:t("tasks"),kanban:t("kanban"),cds:t("cds"),data:t("data"),settings:t("settings"),habits:t("habits"),focus:t("focus"),week:Number(span)===30?t("weekMonth"):t("weekTitle"),notes:t("notes")};return m[id]||id}
