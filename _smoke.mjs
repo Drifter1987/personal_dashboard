@@ -42,6 +42,11 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const PAGE = "index.html";
 const DEPLOY = "deploy";
 
+/* Declared out here because both the full run and the closing message use it. The --page-only
+   guard below is a block, and a const inside it is not visible to the verdict at the bottom -
+   which is exactly how a successful run once crashed on its own success line. */
+let allowedOrigin = null;
+
 /* The published targets. PROD_PAGE is also the origin /api/health must be pinned to, so a
    wrong ALLOWED_ORIGIN in wrangler.toml (which would break the dashboard's own fetches) is
    caught here instead of in the browser console. */
@@ -231,7 +236,7 @@ if (!PAGE_ONLY) {
 
   /* ── 3/3  CORS: the dashboard's origin in, everything else out ─────────────────── */
   const toml = read("wrangler.toml");
-  const allowedOrigin = toml ? (toml.toString("utf8").match(/^\s*ALLOWED_ORIGIN\s*=\s*"([^"]*)"/m) || [])[1] : null;
+  allowedOrigin = toml ? (toml.toString("utf8").match(/^\s*ALLOWED_ORIGIN\s*=\s*"([^"]*)"/m) || [])[1] : null;
 
   check("cors: wrangler.toml pins ALLOWED_ORIGIN to " + PROD_PAGE,
     allowedOrigin === PROD_PAGE,
