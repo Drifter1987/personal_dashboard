@@ -11,6 +11,10 @@ account in different ways. Read the credential section before running anything.
 Target account: **`Drifter_87@live.com`** (`8660293d…`) — the main
 hosting account. Full inventory: [docs/CLOUDFLARE_ACCOUNTS.md](docs/CLOUDFLARE_ACCOUNTS.md).
 
+To stop doing this by hand — a push that publishes itself, with no API token — follow
+[docs/PUBLISHING.html](docs/PUBLISHING.html). It is written for the person clicking, not for
+an agent.
+
 ## 0. Before anything: which account, and is it even alive?
 
 ```bash

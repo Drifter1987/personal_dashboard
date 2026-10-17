@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="How to make one commit publish the dashboard to the live site. 8 short steps, set up once in Cloudflare, then push and refresh." />
+<title>Publish a change — Home Dashboard guide</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23122b24'/%3E%3Crect x='7' y='17' width='4' height='8' rx='1.5' fill='%2352e3b9'/%3E%3Crect x='14' y='10' width='4' height='15' rx='1.5' fill='%23ffbd62'/%3E%3Crect x='21' y='13' width='4' height='12' rx='1.5' fill='%2372a9ff'/%3E%3C/svg%3E" type="image/svg+xml" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #08110f;
+    --surface: #101c19;
+    --surface-2: #14241f;
+    --line: #294039;
+    --text: #edf8f3;
+    --muted: #a5bdb3;
+    --dim: #749286;
+    --green: #52e3b9;
+    --blue: #72a9ff;
+    --orange: #ffbd62;
+    --red: #ff7a6b;
+    --radius: 14px;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.6; }
+  a { color: var(--green); }
+  .wrap { width: min(1120px, calc(100% - 36px)); margin: 0 auto; }
+
+  .topbar { position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--line); background: rgba(8,17,15,.9); backdrop-filter: blur(14px); }
+  .topbar-inner { min-height: 68px; display: flex; align-items: center; gap: 22px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-weight: 800; text-decoration: none; letter-spacing: -.02em; }
+  .mark { width: 27px; height: 27px; display: inline-flex; align-items: end; gap: 2px; padding: 6px 5px; border: 1px solid #397c68; border-radius: 8px; background: #122b24; }
+  .mark i { width: 4px; border-radius: 3px 3px 1px 1px; background: var(--green); }
+  .mark i:nth-child(1) { height: 7px; }
+  .mark i:nth-child(2) { height: 14px; background: var(--orange); }
+  .mark i:nth-child(3) { height: 10px; background: var(--blue); }
+  .topnav { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+  .topnav a { color: var(--muted); font-size: 13px; text-decoration: none; }
+  .topnav a:hover { color: var(--green); }
+  .status { padding: 4px 9px; border: 1px solid #2e6e5c; border-radius: 999px; color: var(--green); font: 700 10px var(--mono); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+  .status.preview { border-color: #7b5b2b; color: var(--orange); }
+
+  .hero { padding: 86px 0 70px; border-bottom: 1px solid var(--line); background: radial-gradient(circle at 82% 15%, rgba(82,227,185,.12), transparent 34%), radial-gradient(circle at 8% 20%, rgba(114,169,255,.09), transparent 30%); }
+  .eyebrow { margin: 0 0 16px; color: var(--green); font: 700 11px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .eyebrow.orange { color: var(--orange); }
+  h1, h2, h3 { margin: 0; line-height: 1.08; letter-spacing: -.045em; }
+  h1 { max-width: 800px; font-size: clamp(2.5rem, 6.4vw, 5.2rem); }
+  h1 span { color: var(--orange); }
+  h2 { font-size: clamp(2rem, 4vw, 3.35rem); }
+  h3 { font-size: 1.12rem; }
+  .lede { max-width: 720px; margin: 24px 0 0; color: var(--muted); font-size: 1.1rem; }
+  .hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: 11px var(--mono); }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .pill.preview::before { background: var(--orange); }
+  .button { display: inline-flex; align-items: center; justify-content: center; min-height: 45px; padding: 10px 16px; border: 1px solid var(--green); border-radius: 8px; background: var(--green); color: #061710; font-size: 13px; font-weight: 800; text-decoration: none; }
+  .button.secondary { border-color: var(--line); background: transparent; color: var(--text); }
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+  .fine { margin: 16px 0 0; color: var(--dim); font: 11px var(--mono); }
+
+  section { padding: 76px 0; border-bottom: 1px solid var(--line); }
+  .section-head { display: grid; grid-template-columns: 1fr minmax(260px, .65fr); gap: 50px; align-items: end; margin-bottom: 34px; }
+  .section-head > p { margin: 0; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .card h3 { margin-bottom: 10px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card .label { display: inline-flex; margin-bottom: 13px; color: var(--green); font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .card .label.orange { color: var(--orange); }
+  .callout { padding: 25px 28px; border: 1px solid #7b5b2b; border-radius: var(--radius); background: rgba(255,189,98,.07); }
+  .callout strong { color: var(--orange); }
+  .callout p { margin: 8px 0 0; color: var(--muted); }
+  .note { padding: 16px 18px; border: 1px solid #3d5e8e; border-radius: 12px; background: rgba(114,169,255,.06); color: var(--muted); font-size: 13px; }
+  .note b { color: var(--blue); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  caption { margin-bottom: 12px; color: var(--dim); font: 11px var(--mono); text-align: left; text-transform: uppercase; letter-spacing: .08em; }
+  th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--dim); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+  td { color: var(--muted); }
+  td strong { color: var(--text); }
+  td code { color: var(--green); font: 11px var(--mono); }
+  .footer { padding: 35px 0 60px; color: var(--dim); font-size: 12px; }
+  .footer-inner { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .footer a { color: var(--muted); }
+
+  .prereqs { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .prereqs li { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: baseline; padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 14px; }
+  .prereqs li::before { content: "✓"; color: var(--green); font: 700 13px var(--mono); }
+  .prereqs .need { color: var(--dim); font: 10px var(--mono); letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+
+  .steps-run { counter-reset: step; }
+  .steps { margin: 0; padding: 0; list-style: none; }
+  .step { position: relative; padding: 24px 0 24px 62px; border-top: 1px solid var(--line); }
+  .step:first-child { border-top: 0; padding-top: 4px; }
+  .step::before { counter-increment: step; content: counter(step, decimal-leading-zero); position: absolute; left: 0; top: 22px; color: var(--orange); font: 700 15px var(--mono); letter-spacing: .02em; }
+  .step:first-child::before { top: 2px; }
+  .step > h3 { font-size: 1.28rem; letter-spacing: -.03em; }
+  .step .why { margin: 7px 0 0; color: var(--dim); font-size: 13px; }
+  .step .when { float: right; margin: 2px 0 0 14px; color: var(--dim); font: 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  .step p.action { margin: 14px 0 0; color: var(--muted); font-size: 14px; }
+  .step p.action b { color: var(--text); }
+  .step ol.clicks { margin: 12px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
+  .step ol.clicks li { margin: 5px 0; }
+  .step ol.clicks b { color: var(--text); }
+
+  pre.cmd { margin: 13px 0 0; padding: 15px 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); overflow-x: auto; }
+  pre.cmd code { color: var(--text); font: 12.5px/1.65 var(--mono); white-space: pre; }
+  pre.cmd .c { color: var(--dim); }
+  pre.cmd .f { color: var(--green); }
+
+  .verify { margin: 13px 0 0; padding: 11px 15px; border-left: 2px solid var(--green); border-radius: 0 10px 10px 0; background: rgba(82,227,185,.05); color: var(--muted); font-size: 13px; }
+  .verify b { color: var(--green); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+  .verify code { color: var(--green); font: 12px var(--mono); }
+
+  .fallback { margin-top: 13px; border: 1px solid #3d5e8e; border-radius: 10px; background: rgba(114,169,255,.05); }
+  .fallback > summary { padding: 11px 15px; color: var(--blue); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+  .fallback > summary::after { color: var(--blue); font-size: 15px; content: "+"; float: right; }
+  .fallback[open] > summary::after { content: "−"; }
+  .fallback > p { max-width: none; margin: 0 15px 14px; color: var(--muted); font-size: 13px; }
+  .fallback > p code { color: var(--green); font: 12px var(--mono); }
+
+  .checkpoint { display: flex; align-items: center; gap: 16px; margin: 46px 0 30px; color: var(--dim); font: 700 10px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .checkpoint::before, .checkpoint::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+
+  .fastpath { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .fastpath li { display: grid; grid-template-columns: 20px 1fr; gap: 12px; align-items: baseline; color: var(--muted); font-size: 14px; }
+  .fastpath li::before { content: "→"; color: var(--green); font-family: var(--mono); }
+  .fastpath code { color: var(--green); font: 12.5px var(--mono); }
+
+  @media (max-width: 850px) {
+    .grid, .section-head { grid-template-columns: 1fr; gap: 22px; }
+    .step { padding-left: 46px; }
+  }
+  @media (max-width: 560px) {
+    .topbar-inner { flex-wrap: wrap; padding: 10px 0; }
+    .topnav { order: 3; width: 100%; margin: 0; padding-top: 7px; border-top: 1px solid var(--line); }
+    .topnav a { font-size: 11px; }
+    .hero { padding-top: 60px; }
+    .step { padding-left: 38px; }
+    .step .when { float: none; display: block; margin: 6px 0 0; }
+    .prereqs li { grid-template-columns: 22px 1fr; }
+    .prereqs .need { grid-column: 2; }
+  }
+  @media print {
+    :root { color-scheme: light; --bg: #fff; --surface: #fff; --surface-2: #f5f8f6; --line: #ccd8d2; --text: #10221c; --muted: #526860; --dim: #6b7d76; }
+    .topbar { position: static; background: #fff; }
+    .topnav { display: none !important; }
+    a { color: #087a59; }
+    .hero { background: #f4faf7; }
+    section { padding: 18px 0; break-inside: avoid; }
+    .step, pre.cmd, .verify, .card, tr { break-inside: avoid; }
+    .fallback[open] { break-inside: avoid; }
+    .step::before { color: #b45309; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Home Dashboard docs</a>
+    <span class="status">Guide · set up once</span>
+    <nav class="topnav" aria-label="Guide sections">
+      <a href="#before">Before</a>
+      <a href="#steps">Steps</a>
+      <a href="#fast">Short version</a>
+      <a href="#wrong">When it fails</a>
+      <a href="#not">Limits</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Guide · publishing the dashboard</p>
+      <h1>One push, and the site <span>updates itself.</span></h1>
+      <p class="lede">Right now a commit stays on your computer. The live site is still on <strong>v2.10.0</strong> because nothing connects the two. This guide connects them once, in Cloudflare, in about fifteen minutes. After that every change is: commit, push, wait a minute, refresh.</p>
+      <div class="hero-meta">
+        <span class="pill">8 steps</span>
+        <span class="pill">About 15 minutes, once</span>
+        <span class="pill preview">No API key needed</span>
+        <span class="pill">Then ~2 minutes per change</span>
+      </div>
+      <div class="hero-actions">
+        <a class="button" href="#steps">Start at step 1</a>
+        <a class="button secondary" href="#fast">Just the short version</a>
+      </div>
+      <p class="fine">Steps 1 and 2 were checked on this machine on 2026-10-17. Steps 3 to 6 follow Cloudflare's own documentation and need your Cloudflare login - they are marked as such, not presented as tested here.</p>
+    </div>
+  </section>
+
+  <section id="before">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Before you start</p>
+          <h2>What you need.</h2>
+        </div>
+        <p>Three things. If one is missing, the step that needs it will not work, so check now rather than halfway through.</p>
+      </div>
+      <ul class="prereqs">
+        <li><span>GitHub Desktop installed and signed in as <strong>Drifter1987</strong>. It is already on this machine.</span><span class="need">installed</span></li>
+        <li><span>A Cloudflare login that can open <strong>Workers &amp; Pages</strong>. Use the main account, <strong>Drifter_87@live.com</strong>.</span><span class="need">your login</span></li>
+        <li><span>The project folder on this machine: <code>Ghazi_Tools/personal_dashboard</code>. It already has the 4 waiting commits.</span><span class="need">local</span></li>
+      </ul>
+      <div class="callout" style="margin-top: 20px">
+        <strong>Which tool does what — they are not alternatives.</strong>
+        <p>Think of GitHub Desktop as <em>the pen</em> and Cloudflare as <em>the printer</em>. The pen writes the change and sends it to GitHub. Cloudflare watches GitHub and prints whatever it receives. You need both, but you only ever touch one of them: after setup, committing and pushing is the whole job.</p>
+        <p>Cloudflare is the safer half: it needs <strong>no API token</strong>, and it can only read the one repository you pick. Nothing secret is copied anywhere.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="steps">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow orange">The procedure</p>
+          <h2>Eight steps, in order.</h2>
+        </div>
+        <p>Steps 1 to 2 are one minute each. Steps 3 to 6 are the setup you only do once. Steps 7 and 8 are what you will actually repeat.</p>
+      </div>
+
+      <div class="steps-run">
+      <ol class="steps">
+        <li class="step" id="s1">
+          <span class="when">2 min</span>
+          <h3>Push the changes that are already waiting</h3>
+          <p class="why">There are 4 finished commits on this machine that GitHub has never seen. Nothing can publish them until they are there.</p>
+          <p class="action">Open <b>GitHub Desktop</b>, select the <b>personal_dashboard</b> repository, then click <b>Push origin</b> in the top bar.</p>
+          <p class="verify"><b>You should see</b> "Last fetched just now" and no more "Push origin" button with a number. On github.com, the newest commit on <code>main</code> reads <code>Release 2.17.0: settings that open in place, cards that carry files</code>.</p>
+          <details class="fallback">
+            <summary>If the repo is not in the list</summary>
+            <p>Use <b>File → Add local repository</b> and point it at <code>Documents/AI_Workspace/02_Projects/Ghazi_Tools/personal_dashboard</code>. If the push is refused, click <b>Pull origin</b> first, then push again.</p>
+          </details>
+        </li>
+
+        <li class="step" id="s2">
+          <span class="when">1 min</span>
+          <h3>Look at what Cloudflare has today</h3>
+          <p class="why">The existing project was made by uploading files, not by connecting a repository. That kind of project can never be switched to automatic publishing, so it is worth seeing that now instead of hunting for a button that does not exist.</p>
+          <p class="action">In the Cloudflare dashboard open <b>Workers &amp; Pages</b> → <b>home-dashboard</b>. Look at the address: <b>home-dashboard-5ma.pages.dev</b>, currently serving <b>v2.10.0</b>.</p>
+          <p class="verify"><b>You should see</b> no Git connection anywhere on that project's settings page. Cloudflare's documentation says it plainly: a direct-upload project "cannot switch to Git integration later". So step 3 creates a new, separate project.</p>
+        </li>
+
+        <li class="step" id="s3">
+          <span class="when">3 min</span>
+          <h3>Let Cloudflare read your repository</h3>
+          <p class="why">This is the permission step. Cloudflare gets read access to one repository, and nothing else.</p>
+          <p class="action">Still in <b>Workers &amp; Pages</b>:</p>
+          <ol class="clicks">
+            <li>Click <b>Create application</b>, then the <b>Pages</b> tab, then <b>Connect to Git</b>.</li>
+            <li>Choose <b>GitHub</b> and sign in if it asks.</li>
+            <li>When GitHub asks which repositories, choose <b>Only select repositories</b> and tick <b>personal_dashboard</b>.</li>
+            <li>Click <b>Install &amp; Authorize</b>.</li>
+          </ol>
+          <p class="verify"><b>You should see</b> <code>Drifter1987/personal_dashboard</code> in the repository list, and a <b>Begin setup</b> button next to it.</p>
+          <details class="fallback">
+            <summary>If the repository is missing</summary>
+            <p>Open <code>github.com/settings/installations</code>, find <b>Cloudflare Pages</b>, click <b>Configure</b>, and add the repository to its allowed list. Then come back and refresh.</p>
+          </details>
+        </li>
+
+        <li class="step" id="s4">
+          <span class="when">2 min</span>
+          <h3>Create the new Pages project</h3>
+          <p class="why">The name you choose becomes the address, so pick it deliberately. <code>home-dashboard</code> is already taken by the old project, so this one needs a different name.</p>
+          <p class="action">Set <b>Project name</b> to <code>home-dashboard-live</code>, set <b>Production branch</b> to <code>main</code>, then click <b>Begin setup</b>.</p>
+          <p class="verify"><b>You should see</b> a <b>Set up builds and deployments</b> screen with the project name filled in and branch <code>main</code> selected.</p>
+          <details class="fallback">
+            <summary>If the name is rejected</summary>
+            <p>Any unused name works; the address simply follows it. The branch dropdown only lists branches GitHub already has, which is why step 1 comes first.</p>
+          </details>
+        </li>
+
+        <li class="step" id="s5">
+          <span class="when">2 min</span>
+          <h3>Fill in the build settings</h3>
+          <p class="why">Nothing is compiled here: the finished site already sits in the <code>deploy/</code> folder. The build command is a lock, not a compiler - it refuses to publish if that folder and the page ever disagree.</p>
+          <p class="action">Use exactly these three values:</p>
+          <ol class="clicks">
+            <li><b>Framework preset</b>: <b>None</b>.</li>
+            <li><b>Build command</b>: <code>node _deploy.mjs --artifacts-only</code></li>
+            <li><b>Build output directory</b>: <code>deploy</code></li>
+          </ol>
+          <p class="action">Leave <b>Root directory</b> empty. You do not need any environment variables.</p>
+          <p class="verify"><b>You should see</b> the project summary above the button list that same command and the word <code>deploy</code>.</p>
+          <details class="fallback">
+            <summary>If the build complains about npm or dependencies</summary>
+            <p>Add one environment variable under <b>Environment variables</b>: <code>SKIP_DEPENDENCY_INSTALL</code> set to <code>1</code>. There is no <code>package.json</code> in this repository, so there is nothing to install.</p>
+          </details>
+        </li>
+
+        <li class="step" id="s6">
+          <span class="when">2 min</span>
+          <h3>Save, deploy, and check the version</h3>
+          <p class="why">This is the moment the live site finally becomes 2.17.0. If the build fails here, nothing changes and the old site keeps working - so this step is safe to try.</p>
+          <p class="action">Click <b>Save and Deploy</b>, watch the log, then open the new <code>.pages.dev</code> address it gives you.</p>
+          <p class="verify"><b>You should see</b> the log end with <code>Success: Your site was deployed!</code>. Then open the dashboard's 6th tab, <b>Settings</b>, and the <b>About</b> card reads <code>v2.17.0</code>.</p>
+          <details class="fallback">
+            <summary>If the build fails</summary>
+            <p>Click the failed build to read its log. The most likely line is <code>deploy/index.html is byte-identical</code> failing, which means the folder on GitHub is older than <code>index.html</code>. Fix it on the computer with <code>node _deploy.mjs --sync</code>, commit, push, and Cloudflare tries again by itself.</p>
+          </details>
+        </li>
+      </ol>
+
+      <p class="checkpoint">Setup done · now the everyday part</p>
+
+      <ol class="steps">
+        <li class="step" id="s7">
+          <span class="when">2 min</span>
+          <h3>Change something, and publish it</h3>
+          <p class="why">This is the whole routine from now on. No Cloudflare dashboard, no commands, no tokens.</p>
+          <p class="action">In <b>GitHub Desktop</b>: open the <b>Changes</b> tab, type a short summary, click <b>Commit to main</b>, then <b>Push origin</b>. Wait about a minute. Refresh the site.</p>
+          <p class="verify"><b>You should see</b> your commit message in Cloudflare under the project's <b>Deployments</b> tab, and the new version number in the dashboard's <b>Settings → About</b> card.</p>
+          <details class="fallback">
+            <summary>If the site still shows the old version</summary>
+            <p>Check <b>Deployments</b> first: if the newest deployment is still building, wait. If it failed, the old version stays live on purpose. A normal refresh is enough - the service worker deliberately caches nothing.</p>
+          </details>
+        </li>
+
+        <li class="step" id="s8">
+          <span class="when">1 min</span>
+          <h3>Decide what happens to the old address</h3>
+          <p class="why">The new site has a new address. The old one keeps serving 2.10.0 forever unless you do something about it, and any QR code or bookmark you have points at the old one.</p>
+          <p class="action">Keep the old <b>home-dashboard</b> project for now, and start using the new address. When you are happy with it, delete the old project in its own <b>Settings → Delete project</b> page — that is permanent, so do it last.</p>
+          <p class="verify"><b>You should see</b> the new address opening correctly on your phone, and the dashboard showing 2.17.0 there too.</p>
+          <details class="fallback">
+            <summary>If you reuse the QR code inside the app</summary>
+            <p>Open the app's QR &amp; Share card after the move and check which address it encodes. If it still points at the old project, that is worth fixing before you print or share it again.</p>
+          </details>
+        </li>
+      </ol>
+      </div>
+    </div>
+  </section>
+
+  <section id="fast">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Short version</p>
+          <h2>If you only want the order.</h2>
+        </div>
+        <p>Same procedure with the explaining removed. Not a summary — every step still has to happen.</p>
+      </div>
+      <ul class="fastpath">
+        <li><span>GitHub Desktop → <strong>Push origin</strong>, so the 4 waiting commits exist on GitHub.</span></li>
+        <li><span>Remember the old project is <strong>direct upload</strong> and cannot be converted; a new project is required.</span></li>
+        <li><span>Cloudflare → <strong>Workers &amp; Pages → Create application → Pages → Connect to Git</strong> → allow only <strong>personal_dashboard</strong>.</span></li>
+        <li><span>Name it <code>home-dashboard-live</code>, branch <code>main</code>.</span></li>
+        <li><span>Framework <strong>None</strong>, build command <code>node _deploy.mjs --artifacts-only</code>, output <code>deploy</code>.</span></li>
+        <li><span><strong>Save and Deploy</strong>, then confirm <code>v2.17.0</code> in the app's About card.</span></li>
+        <li><span>From now on: commit, push, wait a minute, refresh.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="wrong">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Recovery</p>
+          <h2>When it goes wrong.</h2>
+        </div>
+        <p>The failures this setup actually produces, in the order they are likely to appear.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see → why → what to do</caption>
+          <thead>
+            <tr><th>What you see</th><th>Why</th><th>Do this</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>The old project has no Git option</td><td>It was created by direct upload, and Cloudflare does not allow converting one.</td><td>Create a new project (step 3). Do not delete the old one until the new one works.</td></tr>
+            <tr><td>Cloudflare's repository list is empty</td><td>The GitHub app was installed for a different account, or only for "all repositories" of another login.</td><td>Open <code>github.com/settings/installations</code> → Cloudflare Pages → Configure → add the repository.</td></tr>
+            <tr><td>The production branch dropdown is empty</td><td>The branch does not exist on GitHub yet.</td><td>Push first (step 1), then reload the setup page.</td></tr>
+            <tr><td>Build fails at <code>deploy/index.html</code></td><td>The published folder is older than <code>index.html</code>.</td><td><code>node _deploy.mjs --sync</code>, then commit and push the rebuilt <code>deploy/</code> and zip.</td></tr>
+            <tr><td>Build fails looking for npm or a lockfile</td><td>Cloudflare tried to install dependencies in a repository that has none.</td><td>Add <code>SKIP_DEPENDENCY_INSTALL=1</code> as an environment variable and redeploy.</td></tr>
+            <tr><td>The site loads but shows an old version</td><td>The newest deployment is still building, or the last build failed and Cloudflare kept the previous one.</td><td>Open <b>Deployments</b> and read the newest entry's status before changing anything.</td></tr>
+            <tr><td>Reminders or the metals API stop working</td><td>Those live in the Worker, which is a separate deployment from the page.</td><td>The page moving does not affect them. If the Worker itself changed, it needs its own deploy — ask for it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout" style="margin-top: 20px">
+        <strong>A failed build never breaks the live site.</strong>
+        <p>Cloudflare only switches the live version after a build succeeds. That is why the lock in step 5 is safe to keep: a disagreement between the page and the published folder stops the publish instead of shipping it.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="not">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Boundaries</p>
+          <h2>What this does not do.</h2>
+        </div>
+        <p>Read this before assuming the setup covers more than it does.</p>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <span class="label orange">Not covered</span>
+          <h3>The Worker API</h3>
+          <p>Reminders, push notifications and the metals endpoint run in a Worker, and Cloudflare's Git connection publishes Pages only. When <code>worker.js</code> changes, that deploy is still a separate, deliberate action.</p>
+        </article>
+        <article class="card">
+          <span class="label orange">Not covered</span>
+          <h3>Your current address</h3>
+          <p>The new project gets a new <code>.pages.dev</code> address. Keeping the exact old one would need a custom domain attached to the new project, which is a separate piece of setup.</p>
+        </article>
+        <article class="card">
+          <span class="label">Deliberate</span>
+          <h3>No API token anywhere</h3>
+          <p>This route never asks you to create or paste a Cloudflare token, and no secret is stored in the repository. That is the main reason it is the safer of the two options.</p>
+        </article>
+        <article class="card">
+          <span class="label">Deliberate</span>
+          <h3>The tests still run on GitHub</h3>
+          <p>The full check suite already runs on every push in GitHub Actions. The Cloudflare build only checks the published folder, which keeps a push-to-live loop down to about a minute instead of several.</p>
+        </article>
+      </div>
+      <div class="note" style="margin-top: 16px">
+        <b>How current is this?</b>
+        <p style="margin: 6px 0 0">Written 2026-10-17. Checked here: the 4 unpushed commits, the old project being direct upload with no Git provider, the live site serving v2.10.0, and the build tools Cloudflare's image provides (Node 22.16, Python 3.13). Taken from Cloudflare's documentation rather than executed here: the dashboard click paths in steps 3 to 6, which need your login. If a button name has changed since, the docs at <a href="https://developers.cloudflare.com/pages/get-started/git-integration/">developers.cloudflare.com/pages/get-started/git-integration</a> are the source of truth.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span>Publishing guide — 2026-10-17 · setup checked against this machine, dashboard steps against Cloudflare's docs</span>
+    <a href="../DEPLOY.md">Deploy runbook</a>
+    <a href="repo-audit-executive-summary.html">Repo audit</a>
+  </div>
+</footer>
+</body>
+</html>
