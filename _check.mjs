@@ -618,6 +618,154 @@ check("page: the newest changelog entry is the version the page runs, in both la
   newest ? "v" + newest.v + " (" + newest.d + ") · en " + newest.en.length + " / ar " + newest.ar.length + " chars · running v" + running
     : "CHANGELOG not parseable");
 
+/* ── palette contrast ───────────────────────────────────────────────────────────
+   Four themes x five accents are all selectable in Settings, so "readable" is a property
+   of every combination, not just the default one. Each ratio below is computed from the
+   shipped custom properties at the AA threshold for that pair's role - 4.5:1 for text,
+   which includes the ink painted on an accent fill, because that is a button or tab label.
+   Nothing is pinned: change a colour and the check measures the new one, so a palette nudge
+   that would ship unreadable text fails here instead of in someone's browser. */
+const styleSrc = (pageSrc.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || "";
+const wcLin = (c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const wcLum = (hex) => {
+  const h = hex.length === 4 ? hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3] : hex.slice(1);
+  const p = [0, 2, 4].map((i) => wcLin(parseInt(h.slice(i, i + 2), 16) / 255));
+  return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+};
+const wcRatio = (a, b) => { const [x, y] = [wcLum(a), wcLum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const wc2 = (n) => Math.round(n * 100) / 100;
+const THEME_VARS = {};
+for (const m of styleSrc.matchAll(/\[data-theme="([a-z]+)"\]\{([^}]*)\}/g)) {
+  const v = {};
+  for (const d of m[2].split(";")) { const kv = d.match(/--([a-z0-9-]+):\s*(#[0-9a-f]{3,8})\b/i); if (kv) v[kv[1]] = kv[2]; }
+  THEME_VARS[m[1]] = v;
+}
+const ACCENT_VARS = {};
+for (const m of styleSrc.matchAll(/\[data-accent="([a-z]+)"\]\{--ac:(#[0-9a-f]{3,8})\b/gi)) ACCENT_VARS[m[1]] = m[2];
+/* The ink on an accent fill: the base .btn rule, unless a theme overrides it (the dark theme
+   does). Read rather than assumed, so changing the ink is a measured change. */
+const inkOnAccent = (t) => {
+  const from = (s) => ((s || "").match(/color:\s*(#[0-9a-f]{3,8})\b/i) || [])[1];
+  const override = styleSrc.match(new RegExp('\\[data-theme="' + t + '"\\][^{]*#editBtn\\.on\\{([^}]*)\\}'));
+  return from((override || [])[1]) || from((styleSrc.match(/\.btn\{([^}]*)\}/) || [])[1]);
+};
+const THEME_NAMES = Object.keys(THEME_VARS);
+check("contrast: the stylesheet declares its themes and accents in a form this check can read",
+  THEME_NAMES.length >= 4 && Object.keys(ACCENT_VARS).length >= 5
+  && THEME_NAMES.every((t) => ["text", "text2", "muted", "bg", "bg2", "card", "ok", "bad"].every((k) => THEME_VARS[t][k])),
+  THEME_NAMES.join(",") + " themes · " + Object.keys(ACCENT_VARS).join(",") + " accents");
+const WC_PAIRS = [
+  ["body copy on every surface it is painted on", [["text", "bg"], ["text", "card"], ["text", "bg2"]]],
+  ["the secondary and muted inks above 12px", [["text2", "bg2"], ["text2", "card"], ["muted", "card"], ["muted", "bg2"], ["muted", "bg"]]],
+  ["the up/down market figures (.up/.down)", [["ok", "card"], ["ok", "bg"], ["bad", "card"], ["bad", "bg"]]],
+];
+for (const [label, pairs] of WC_PAIRS) {
+  const off = [];
+  let worst = { r: 99 };
+  for (const t of THEME_NAMES) for (const [fg, bgn] of pairs) {
+    const r = wcRatio(THEME_VARS[t][fg], THEME_VARS[t][bgn]);
+    if (r < worst.r) worst = { r, t, fg, bgn };
+    if (r < 4.5) off.push(t + " " + fg + " on " + bgn + " = " + wc2(r));
+  }
+  check("contrast: " + label + " clears 4.5:1 in every theme", off.length === 0,
+    off.length ? off.join(" · ") : "worst " + wc2(worst.r) + " (" + worst.t + " " + worst.fg + " on " + worst.bgn + ")");
+}
+{
+  const off = [];
+  let worst = { r: 99 };
+  for (const t of THEME_NAMES) {
+    const ink = inkOnAccent(t);
+    for (const a of Object.keys(ACCENT_VARS)) {
+      const r = ink ? wcRatio(ink, ACCENT_VARS[a]) : 0;
+      if (r < worst.r) worst = { r, t, a, ink };
+      if (r < 4.5) off.push(t + "/" + a + " = " + wc2(r));
+    }
+  }
+  check("contrast: the label on an accent fill (.btn, the active tab, the edit pill) clears 4.5:1 for all five accents in all four themes",
+    off.length === 0 && worst.r < 99,
+    off.length ? off.join(" · ") : "worst " + wc2(worst.r) + " (" + worst.t + "/" + worst.a + ", ink " + worst.ink + ")");
+}
+
+/* ── desktop + phone geometry ───────────────────────────────────────────────────
+   The layout is one breakpoint away from looking broken: at and above it the page becomes a
+   two-then-three column grid with a real tab bar over one section at a time, and below it a
+   horizontal pager. These checks read the stylesheet's own numbers rather than pinning them,
+   so raising a gap, widening a padding or dropping a rule fails here instead of squeezing a
+   card to a sliver on a real screen. */
+const cssBlocks = (query) => {
+  const out = [];
+  let i = styleSrc.indexOf(query);
+  while (i >= 0) {
+    const start = styleSrc.indexOf("{", i);
+    let depth = 0;
+    let k = start;
+    for (; k < styleSrc.length; k++) { if (styleSrc[k] === "{") depth++; else if (styleSrc[k] === "}") { depth--; if (!depth) break; } }
+    out.push(styleSrc.slice(start + 1, k));
+    i = styleSrc.indexOf(query, k);
+  }
+  return out.join("\n");
+};
+/* isDesktop() is the single source of the number: the two media queries must complement it. */
+const DESK_AT = Number((pageSrc.match(/matchMedia\("\(min-width: (\d+)px\)"\)/) || [])[1]);
+const deskCss = Number.isFinite(DESK_AT) && DESK_AT > 0 ? cssBlocks("@media(min-width:" + DESK_AT + "px)") : "";
+const phoneCss = Number.isFinite(DESK_AT) && DESK_AT > 0 ? cssBlocks("@media(max-width:" + (DESK_AT - 1) + "px)") : "";
+const wideCss = cssBlocks("@media(min-width:1300px)");
+const pageInner = (styleSrc.match(/\.page-inner\{([^}]*)\}/) || [])[1] || "";
+const maxW = Number((pageInner.match(/max-width:(\d+)px/) || [])[1]) || 0;
+const gridGap = Number((pageInner.match(/gap:(\d+)px/) || [])[1]) || 0;
+const pagePad = Number((((deskCss.match(/\.page\{([^}]*)\}/) || [])[1] || "").match(/padding:\S+\s+(\d+)px/) || [])[1]) || 0;
+/* the tightest a grid column ever gets: three columns at the moment the third one appears */
+const WIDE_AT = Number((styleSrc.match(/@media\(min-width:(\d+)px\)\{\.page-inner\{grid-template-columns:repeat\(3/) || [])[1]) || 1300;
+const contentAt = Math.max(0, Math.min(WIDE_AT, maxW) - 2 * pagePad);
+const colAt3 = contentAt > 0 ? Math.floor((contentAt - 2 * gridGap) / 3) : 0;
+
+check("desktop geometry: the breakpoint the JS tests is the one the stylesheet flips the layout on, and the two queries are complements",
+  Number.isFinite(DESK_AT) && DESK_AT > 0 && deskCss.length > 0 && phoneCss.length > 0
+  && styleSrc.indexOf("@media(max-width:" + (DESK_AT - 1) + "px)") >= 0
+  && /\.page\{display:none/.test(deskCss) && /\.page\.active\{display:block\}/.test(deskCss),
+  "isDesktop " + DESK_AT + "px · desktop block " + deskCss.length + " chars · phone block " + phoneCss.length + " chars · one section at a time: "
+  + (/\.page\{display:none/.test(deskCss) && /\.page\.active\{display:block\}/.test(deskCss) ? "yes" : "NOT declared"));
+check("desktop geometry: two columns at the breakpoint, three when there is room, and the columns keep a usable width",
+  /grid-template-columns:repeat\(2,1fr\)/.test(deskCss) && /grid-template-columns:repeat\(3,1fr\)/.test(wideCss)
+  && maxW > 0 && gridGap > 0 && pagePad > 0 && colAt3 >= 300,
+  "2 columns at " + DESK_AT + "px, 3 at " + WIDE_AT + "px · content " + contentAt + "px (max " + maxW + ", padding " + pagePad + " each side), gap " + gridGap
+  + " · narrowest column " + colAt3 + "px" + (colAt3 >= 300 ? "" : " (below the 300px floor)"));
+check("desktop geometry: the kanban board spans the whole row instead of one cell",
+  /#w_kanban\{grid-column:1\/-1\}/.test(deskCss),
+  /#w_kanban\{grid-column:1\/-1\}/.test(deskCss) ? "in the " + DESK_AT + "px block" : "missing - its three columns would squeeze into one grid cell");
+check("kanban geometry: the board's columns are minmax(0,1fr) and stack on a narrow screen, so long card text cannot widen the grid past its card",
+  /\.kb\{[^}]*repeat\(3,minmax\(0,1fr\)\)/.test(styleSrc) && !/\.kb\{[^}]*repeat\(3,1fr\)/.test(styleSrc)
+  && /@media\(max-width:640px\)\{\.kb\{grid-template-columns:minmax\(0,1fr\)\}\}/.test(styleSrc),
+  ((styleSrc.match(/\.kb\{([^}]*)\}/) || ["", ""])[1].match(/grid-template-columns:[^;}]*/) || [])[0] || "no board grid"
+  + " · " + (/@media\(max-width:640px\)\{\.kb\{/.test(styleSrc) ? "single column at <=640px" : "no narrow-screen stack"));
+const fixedWidths = [...styleSrc.matchAll(/(?:^|[;{\s])width:\s*(\d{2,})px/g)].map((m) => Number(m[1]));
+const tooWide = fixedWidths.filter((w) => colAt3 > 0 && w > colAt3);
+check("desktop geometry: no fixed pixel width in the stylesheet is wider than the narrowest desktop column",
+  tooWide.length === 0,
+  tooWide.length ? tooWide.join(", ") + "px vs a " + colAt3 + "px column" : (fixedWidths.length + " fixed width(s), widest " + (fixedWidths.length ? Math.max.apply(null, fixedWidths) : 0) + "px vs a " + colAt3 + "px column"));
+
+check("phone geometry: the pager bar and the tab strip stay out of the desktop layout and live inside the phone one",
+  /\.pbar\{display:none/.test(styleSrc) && /\.pbar\{display:block\}/.test(phoneCss)
+  && /\.tabbar\{display:none\}/.test(styleSrc) && /\.tabbar\{display:flex/.test(phoneCss) && /\.tabbar\{display:flex/.test(deskCss)
+  && /\.pagelabel/.test(deskCss) && /display:none/.test((deskCss.match(/\.pagelabel,[^}]*\}/) || [""])[0]),
+  "bar: none by default, block at <=" + (DESK_AT - 1) + "px · tabs: none by default, flex in both layouts · page label hidden on desktop: "
+  + (/display:none/.test((deskCss.match(/\.pagelabel,[^}]*\}/) || [""])[0]) ? "yes" : "NOT hidden"));
+check("phone geometry: a section tab is never smaller than a finger can hit (44px) in the phone layout",
+  /\.tabbar button\{[^}]*min-height:44px/.test(phoneCss),
+  (phoneCss.match(/\.tabbar button\{[^}]*?min-height:(\d+)px/) || [])[1] ? "min-height " + (phoneCss.match(/\.tabbar button\{[^}]*?min-height:(\d+)px/) || [])[1] + "px in the <=" + (DESK_AT - 1) + "px block" : "no min-height on .tabbar button in the phone block");
+check("phone geometry: the pager fill is anchored with a logical inset, so it grows from the reading edge in Arabic too",
+  /\.pfill\{[^}]*inset-inline-start:0/.test(styleSrc) && !/\.pfill\{[^}]*[^-]left:0/.test(styleSrc),
+  (styleSrc.match(/\.pfill\{([^}]*)\}/) || ["", ""])[1].match(/(inset-inline-start|[^-]left|right):[^;}]*/g) ? "anchors: " + ((styleSrc.match(/\.pfill\{([^}]*)\}/) || ["", ""])[1].match(/(inset-inline-start|left|right):[^;}]*/g) || []).join(", ") : "no anchor found");
+const scrollHandler = (pageSrc.match(/\$\("#pages"\)\.addEventListener\("scroll",[\s\S]{0,400}?\{passive:true\}\)/) || [])[0] || "";
+check("phone geometry: section tracking reads the scroll offset direction-agnostically (an RTL pager reports negative scrollLeft)",
+  /Math\.abs\(\s*el\.scrollLeft\s*\)/.test(scrollHandler) && !/Math\.round\(el\.scrollLeft\s*\//.test(scrollHandler) && scrollHandler.indexOf("renderPager()") >= 0,
+  scrollHandler ? ((scrollHandler.match(/Math\.[a-z]+\([^)]*scrollLeft[^)]*\)/) || [])[0] || "no scrollLeft read") + (scrollHandler.indexOf("renderPager()") >= 0 ? " · repaints the bar on every scroll" : " · bar not repainted on scroll") : "pages scroll handler not found");
+check("phone geometry: the progress bar is a labelled progressbar whose value the renderer keeps in step with the section",
+  /<div class="pbar" id="pbar" role="progressbar"[^>]*aria-valuemax="5"/.test(pageSrc)
+  && /setAttribute\("aria-valuenow",String\(curPage\+1\)\)/.test(pageSrc)
+  && /aria-valuetext/.test(pageSrc),
+  ((pageSrc.match(/<div class="pbar"[^>]*>/) || [])[0] || "pbar markup missing").slice(0, 96));
+
 const emptyBranch = (pageSrc.match(/\}else\{[\s\S]{0,320}?chartData\.note=t\(kind==="metal"\?"chartNeedWorker":"chartNoSeries"\);/) || [])[0] || "";
 check("chart: an empty result states why (Worker-only series) instead of drawing a blank card",
   !!emptyBranch && (pageSrc.match(/chartNoSeries:"[^"]+"/g) || []).length === 2
