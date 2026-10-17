@@ -46,6 +46,48 @@ HIDE_TOP_CARD = (
 
 CHECKS = []
 
+# A card carrying three files, with the bytes in the page's own store. The viewer reads a file
+# back from IndexedDB, so the seed has to put real bytes there; the canvas gives the case a known
+# natural size to measure a crop against, and the spreadsheet is the one type that cannot be
+# shown here at all.
+SEED_FILES = """
+async () => {
+  const db = await new Promise((res, rej) => {
+    const r = indexedDB.open('pd_files', 1);
+    r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'}); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  const c = document.createElement('canvas'); c.width = 800; c.height = 520;
+  const x = c.getContext('2d'); x.fillStyle = '#3aa'; x.fillRect(0, 0, 800, 520);
+  x.fillStyle = '#fff'; x.font = '64px sans-serif'; x.fillText('INVOICE', 60, 280);
+  const png = await new Promise(r => c.toBlob(r, 'image/png'));
+  const txt = new Blob(['line one\\nline two\\n'], {type: 'text/plain'});
+  const book = new Blob([new Uint8Array([80, 75, 3, 4, 0, 0, 0, 0])], {type: 'application/vnd.ms-excel'});
+  const put = (rec) => new Promise((res, rej) => {
+    const t = db.transaction('files', 'readwrite');
+    t.objectStore('files').put(rec); t.oncomplete = res; t.onerror = () => rej(t.error);
+  });
+  await put({id: 'aSeed1', name: 'Q3 invoice.png', type: 'image/png', size: png.size, blob: png});
+  await put({id: 'aSeed2', name: 'meeting notes.txt', type: 'text/plain', size: txt.size, blob: txt});
+  await put({id: 'aSeed3', name: 'plan.xlsx', type: 'application/vnd.ms-excel', size: book.size, blob: book});
+  tasks.push({id: 'tSeed1', text: 'Send the invoice pack', done: false, due: '', status: 'todo',
+    att: [{id: 'aSeed1', name: 'Q3 invoice.png', type: 'image/png', size: png.size},
+          {id: 'aSeed2', name: 'meeting notes.txt', type: 'text/plain', size: txt.size},
+          {id: 'aSeed3', name: 'plan.xlsx', type: 'application/vnd.ms-excel', size: book.size}]});
+  store.set('pd_tasks', tasks); renderTasks(true); renderTasks(false); renderKanban();
+  return {png: png.size};
+}
+"""
+
+
+def open_file(page, name):
+    """Open one attachment of the seeded card, straight through the viewer's own entry point."""
+    page.evaluate(
+        "(() => {const c=tasks.find(x=>x.id==='tSeed1');const a=(c.att||[]).find(v=>v.name===%s);"
+        "attView(c,a)})()" % json.dumps(name)
+    )
+    page.wait_for_selector("#viewBox h3", timeout=3000)
+
 
 def check(name, ok, detail=""):
     CHECKS.append((name, bool(ok), detail))
@@ -71,11 +113,18 @@ def serve():
     return httpd, "http://127.0.0.1:%d/index.html" % port
 
 
-def boot(browser, base, width, height, tasks=0):
+def boot(browser, base, width, height, tasks=0, clipboard=False):
     ctx = browser.new_context(viewport={"width": width, "height": height})
+    if clipboard:
+        # a clipboard needs permission even in a headless run, and "the copy holds the picture
+        # you are looking at" is only worth asserting if the browser will hand it back
+        ctx.grant_permissions(["clipboard-read", "clipboard-write"])
     page = ctx.new_page()
-    # only this machine answers: a card waiting on the network cannot move the measurements
-    page.route("**/*", lambda r: r.continue_() if r.request.url.startswith(base.rsplit("/", 1)[0]) else r.abort())
+    # only this machine answers: a card waiting on the network cannot move the measurements. A
+    # blob: URL is excluded from the guard on purpose - that is the page's own file bytes coming
+    # back out of IndexedDB, not an external host, and intercepting it makes every image fail.
+    page.route(lambda url: not url.startswith("blob:"),
+               lambda r: r.continue_() if r.request.url.startswith(base.rsplit("/", 1)[0]) else r.abort())
     if tasks:
         # a page long enough that removing a card above the fold still leaves a reachable offset
         seeded = [{"id": "t%d" % i, "text": "Seeded task %d" % i, "done": False, "due": "", "status": "todo"}
@@ -129,6 +178,48 @@ def settle(page, expr, quiet=250, limit=3000):
             return now
         last = now
     return last
+
+
+def click_text(page, scope, text):
+    """Press a button by its label inside a scope, dispatched in the page.
+
+    A pointer click would scroll the control into view first, which is noise for a case that is
+    about what the control does. Returns True when a button with that exact label was found.
+    """
+    return page.evaluate(
+        """([scope, text]) => {
+          // painted, not merely un-hidden: a class of control here is '.' + 'mini' with its own
+          // display, which quietly outranks the [hidden] attribute
+          const b = [...document.querySelectorAll(scope + ' button')]
+            .find(n => n.textContent === text && n.getClientRects().length);
+          if (!b) return false;
+          b.click();
+          return true;
+        }""",
+        [scope, text],
+    )
+
+
+FOOT_VISIBLE = (
+    "[...document.querySelectorAll('#viewBox .fvfoot button')]"
+    ".filter(b=>b.getClientRects().length).map(b=>b.textContent)"
+)
+
+
+def clipboard_image(page):
+    """What is on the clipboard, as pixels: size plus the top-left pixel's colour."""
+    return page.evaluate(
+        """async () => {
+          const items = await navigator.clipboard.read();
+          const type = items[0].types.find(s => s.indexOf('image/') === 0);
+          if (!type) return null;
+          const bmp = await createImageBitmap(await items[0].getType(type));
+          const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+          const cx = c.getContext('2d'); cx.drawImage(bmp, 0, 0);
+          const d = cx.getImageData(0, 0, 1, 1).data;
+          return {type: type, w: bmp.width, h: bmp.height, px: [d[0], d[1], d[2]]};
+        }"""
+    )
 
 
 def click_in_view(page, locator, settle=250):
@@ -495,13 +586,186 @@ def cases(browser, base):
         finally:
             ctx.close()
 
+    # ── 6. a file a card carries: findable by its name, and openable where it lives ───────────
+    def a_file_name_is_a_search_result():
+        ctx, page = boot(browser, base, 941, 760)
+        try:
+            if not check("contract: the card can be given files to open", bool(page.evaluate(SEED_FILES))):
+                return
+            page.fill("#search", "invoice")
+            page.wait_for_selector("#searchResults button", timeout=3000)
+            hit = page.evaluate(
+                "(() => {const b=[...document.querySelectorAll('#searchResults button')]"
+                ".find(x=>x.textContent.indexOf('Q3 invoice.png')>=0);if(!b)return null;b.click();return b.textContent})()"
+            )
+            check("a file's name is a search result, named with the card it belongs to",
+                  bool(hit) and "Send the invoice pack" in hit, repr(hit))
+            page.wait_for_selector("#fvImg", timeout=3000)
+            st = page.evaluate(
+                "({open:document.querySelector('#viewBack').classList.contains('open'),"
+                " nw:document.querySelector('#fvImg').naturalWidth, page:curPage,"
+                " bar:[...document.querySelectorAll('#viewBox .fvbar button')].map(b=>b.textContent)})"
+            )
+            check("pressing it opens the file in a viewer over the section that owns the card",
+                  st["open"] and st["nw"] == 800 and st["page"] == 3,
+                  "open=%s · %spx wide · section %s" % (st["open"], st["nw"], st["page"]))
+            chips = [c for c in st["bar"] if c in ("Original", "Grey", "Sepia", "Warm", "Invert")]
+            check("the viewer opens with zoom, Fit, Crop and the colour chips",
+                  all(x in st["bar"] for x in ("\u2212", "+", "Fit", "Crop")) and len(chips) == 5,
+                  " · ".join(st["bar"]))
+            foot = page.evaluate(FOOT_VISIBLE)
+            check("…and the crop's own two buttons stay off the bar until there is a crop",
+                  "Save a copy" not in foot and "Original" not in foot and "Download" in foot,
+                  " · ".join(foot))
+            # the card's own list is the other door into a file, and it must not close under it
+            page.evaluate("fvClose(); attModal(tasks.find(x=>x.id==='tSeed1'))")
+            page.wait_for_selector("#attBody .attrow", timeout=3000)
+            opened = page.evaluate(
+                "(() => {const b=[...document.querySelectorAll('#attBody .attopen')]"
+                ".find(n=>n.textContent==='meeting notes.txt');if(!b)return false;b.click();return true})()"
+            )
+            page.wait_for_selector("#fvPre", timeout=3000)
+            both = page.evaluate(
+                "({view:document.querySelector('#viewBack').classList.contains('open'),"
+                " list:document.querySelector('#modalBack').classList.contains('open')})"
+            )
+            check("…and a file in the card's own list opens over it, leaving the list underneath",
+                  opened and both["view"] and both["list"],
+                  "opened=%s · viewer=%s · list still open=%s" % (opened, both["view"], both["list"]))
+        finally:
+            ctx.close()
+
+    # ── 7. the four things a document photo needs: zoom, colour, crop, and a copy of it ───────
+    def the_file_viewer_zooms_filters_crops_and_copies():
+        ctx, page = boot(browser, base, 941, 760, clipboard=True)
+        try:
+            seeded = page.evaluate(SEED_FILES)
+            open_file(page, "Q3 invoice.png")
+            page.wait_for_function(
+                "() => {const i=document.querySelector('#fvImg');return !!i && i.naturalWidth === 800}", timeout=3000)
+            page.wait_for_timeout(150)
+            w0 = page.evaluate("Math.round(document.querySelector('#fvImg').getBoundingClientRect().width)")
+            click_text(page, "#viewBox .fvbar", "+")
+            page.wait_for_timeout(150)
+            w1 = page.evaluate("Math.round(document.querySelector('#fvImg').getBoundingClientRect().width)")
+            lab = page.evaluate("document.querySelector('.fvzlab').textContent")
+            # the picture opens fitted, so one press is a quarter again on top of the fit rather
+            # than a jump to 125%: the label has to name the scale the picture actually has
+            check("zoom in makes the picture bigger, and the label names the scale it is at",
+                  w1 > w0 and 1.2 < w1 / w0 < 1.3 and lab == "%d%%" % round(w1 / 800 * 100),
+                  "%dpx -> %dpx, and the label says %s" % (w0, w1, lab))
+            click_text(page, "#viewBox .fvbar", "Grey")
+            page.wait_for_timeout(120)
+            filt = page.evaluate("getComputedStyle(document.querySelector('#fvImg')).filter")
+            check("a colour chip filters the picture where it stands", "grayscale" in filt, filt)
+            # a drag on the visible picture, applied at the file's own resolution
+            armed = click_text(page, "#viewBox .fvbar", "Crop")
+            page.wait_for_timeout(150)
+            overlay = page.evaluate("!!document.querySelector('.fvcrop')")
+            check("Crop arms a drag on the picture itself",
+                  armed and overlay, "crop pressed=%s · overlay=%s" % (armed, overlay))
+            box = page.locator("#fvStage").bounding_box()
+            page.mouse.move(box["x"] + 40, box["y"] + 40)
+            page.mouse.down()
+            page.mouse.move(box["x"] + 200, box["y"] + 140, steps=6)
+            page.mouse.up()
+            page.wait_for_timeout(150)
+            marked = page.evaluate("fvState.crop ? [Math.round(fvState.crop.w), Math.round(fvState.crop.h)] : null")
+            applied = click_text(page, "#viewBox .fvbar", "Apply")
+            if not check("…the drag picks 160x100 of the screen, and Apply takes it",
+                         applied and marked == [160, 100], "drag=%s · applied=%s" % (marked, applied)):
+                return
+            page.wait_for_function(
+                "() => {const i=document.querySelector('#fvImg');return !!i && i.naturalWidth < 800}", timeout=3000)
+            page.wait_for_timeout(250)
+            crop = page.evaluate(
+                "({nw:document.querySelector('#fvImg').naturalWidth,"
+                " nh:document.querySelector('#fvImg').naturalHeight,"
+                " foot:" + FOOT_VISIBLE + "})"
+            )
+            check("a drag on the picture crops it, at full resolution rather than what is on screen",
+                  100 < crop["nw"] < 800 and 80 < crop["nh"] < 520,
+                  "160x100 of the screen came out %dx%d" % (crop["nw"], crop["nh"]))
+            check("…and a crop offers a copy and a way back to the original",
+                  "Save a copy" in crop["foot"] and "Original" in crop["foot"], " · ".join(crop["foot"]))
+            click_text(page, "#viewBox .fvfoot", "Copy")
+            page.wait_for_timeout(500)
+            clip = clipboard_image(page)
+            grey = clip and clip["px"][0] == clip["px"][1] == clip["px"][2]
+            check("Copy takes the picture you are looking at - cropped, and in the grey it was filtered to",
+                  bool(clip) and clip["w"] == crop["nw"] and clip["h"] == crop["nh"] and grey,
+                  ("%s %dx%d pixel %s" % (clip["type"], clip["w"], clip["h"], clip["px"])) if clip else "nothing on the clipboard")
+            click_text(page, "#viewBox .fvfoot", "Save a copy")
+            page.wait_for_timeout(600)
+            saved = page.evaluate(
+                """async () => {
+                  const c = tasks.find(x => x.id === 'tSeed1');
+                  const rec = await fileGet('aSeed1');
+                  const n = await new Promise(res => { const r = indexedDB.open('pd_files', 1);
+                    r.onsuccess = () => { const q = r.result.transaction('files', 'readonly').objectStore('files').getAllKeys();
+                      q.onsuccess = () => res(q.result.length); }; });
+                  return {att: (c.att || []).length, keys: n, orig: rec.blob.size, name: c.att[c.att.length - 1].name};
+                }"""
+            )
+            check("a crop can be kept as a copy on the card, and the file it came from is untouched",
+                  saved["att"] == 4 and saved["keys"] == 4 and saved["orig"] == seeded["png"],
+                  "4th file %r · %d records in the store · original still %d bytes"
+                  % (saved["name"], saved["keys"], saved["orig"]))
+        finally:
+            ctx.close()
+
+    # ── 8. the other two kinds of file, and the two honest failures ────────────────────────────
+    def the_file_viewer_shows_text_and_says_what_it_cannot_show():
+        ctx, page = boot(browser, base, 941, 760, clipboard=True)
+        try:
+            page.evaluate(SEED_FILES)
+            open_file(page, "meeting notes.txt")
+            page.wait_for_selector("#fvPre", timeout=3000)
+            f0 = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#fvPre')).fontSize)")
+            click_text(page, "#viewBox .fvbar", "+")
+            page.wait_for_timeout(150)
+            f1 = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#fvPre')).fontSize)")
+            words = page.evaluate("document.querySelector('#fvPre').textContent")
+            check("a text file opens as its own words, and zoom is the size of its type",
+                  f1 > f0 and words.splitlines()[0] == "line one", "%.1fpx -> %.1fpx · %r" % (f0, f1, words))
+            click_text(page, "#viewBox .fvfoot", "Copy")
+            page.wait_for_timeout(400)
+            got = page.evaluate("navigator.clipboard.readText()")
+            # the clipboard belongs to the platform, and Windows hands text back with CRLF endings
+            check("…and Copy takes the text itself, not a picture of it",
+                  (got or "").replace("\r\n", "\n") == "line one\nline two\n", repr(got))
+            # a spreadsheet cannot be painted here: the viewer has to say so, not show an empty box
+            open_file(page, "plan.xlsx")
+            page.wait_for_timeout(500)
+            spread = page.evaluate(
+                "({img:!!document.querySelector('#fvImg'), pre:!!document.querySelector('#fvPre'),"
+                " note:(document.querySelector('#fvStage .setnote')||{}).textContent,"
+                " copy:[...document.querySelectorAll('#viewBox .fvfoot button')].some(b=>b.textContent===t('fvCopy'))})"
+            )
+            check("a file this page cannot paint says so, rather than showing an empty stage",
+                  not spread["img"] and not spread["pre"]
+                  and spread["note"] == page.evaluate("t('fvNoShow')"), repr(spread["note"]))
+            check("…and offers no Copy, because there is nothing there to copy", not spread["copy"])
+            # a record whose bytes are gone is the other honest failure
+            page.evaluate(
+                "attView(tasks.find(x=>x.id==='tSeed1'), {id:'aGone', name:'gone.pdf', type:'application/pdf', size:1024})"
+            )
+            page.wait_for_timeout(500)
+            missing = page.evaluate("(document.querySelector('#fvStage .setnote')||{}).textContent")
+            check("…and a file whose bytes are gone says that too",
+                  missing == page.evaluate("t('attMissing')"), repr(missing))
+        finally:
+            ctx.close()
+
     return [rebuild_keeps_offset, reorder_keeps_offset, hiding_a_card_above_holds_the_card_below,
             shortening_page_clamps_but_never_snaps_to_the_top,
             section_change_starts_at_the_top, phone_keeps_section_and_offset,
             only_two_scrollers_exist, a_card_is_only_as_tall_as_its_content,
             a_loading_card_keeps_its_frame, opening_lands_on_home,
             a_shortcut_link_opens_its_section,
-            buttons_do_not_move_the_view, today_button, search_suggestion_marks_the_word]
+            buttons_do_not_move_the_view, today_button, search_suggestion_marks_the_word,
+            a_file_name_is_a_search_result, the_file_viewer_zooms_filters_crops_and_copies,
+            the_file_viewer_shows_text_and_says_what_it_cannot_show]
 
 
 def main():

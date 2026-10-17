@@ -1220,6 +1220,30 @@ check("attachments: a card takes files, the bytes live in IndexedDB, and the rec
   && /attChip\(x\)/.test(pageSrc)
   && (pageSrc.match(/const gone=\(x\.att\|\|\[\]\)\.map\(a=>a\.id\)/g) || []).length >= 2,
   "file input · pd_files store · metadata on the card · chip in the list and on the board · delete removes the bytes");
+/* The viewer is the half of the attachment feature nobody could see before: a name that is a
+   search result, and a file that opens as something you can actually read. Each control is
+   asserted where it would break quietly - the crop has to write a new picture rather than
+   overwrite the stored one, and the copy has to be an image of what is on screen. */
+check("file viewer: a file opens as a picture you can zoom, filter, crop and copy",
+  /async function attView\(x,a,blob\)\{/.test(pageSrc)
+  && /const FV_FILTERS=\[\["fvOrig"/.test(pageSrc)
+  && /function fvSetZoom\(z,pdfFit\)\{/.test(pageSrc) && /function fvFit\(\)\{/.test(pageSrc)
+  && /async function fvCropApply\(\)\{/.test(pageSrc)
+  && /ctx\.drawImage\(s\.img,sx,sy,sw,sh,0,0,sw,sh\)/.test(pageSrc)
+  && /new ClipboardItem\(\{"image\/png":blob\}\)/.test(pageSrc)
+  && /async function fvSaveCopy\(\)\{/.test(pageSrc) && /s\.task\.att=\(s\.task\.att\|\|\[\]\)\.concat/.test(pageSrc)
+  && /attView\(x,a\);/.test(pageSrc) && /attView\(src,a\)/.test(pageSrc)
+  && /attView\(x,a\),420\)/.test(pageSrc)
+  && /tasks\.forEach\(x=>\(x\.att\|\|\[\]\)\.forEach\(a=>out\.push\(\{ic:"\u{1F4CE}",label:a\.name/u.test(pageSrc),
+  "zoom + fit · 5 colour filters · a drag cropped at the file's own resolution · copy as PNG · a crop kept as a copy · opened from the list, the card form and the search box");
+/* The viewer paints from blob: URLs, and the page's own CSP decides whether that is allowed at
+   all. A CSP without blob: in img-src leaves every file rendering as nothing, silently - and the
+   header is written by hand, so it is exactly the kind of line that drifts away from the code. */
+const cspSrc = (pageSrc.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || "";
+check("file viewer: the page's own CSP allows the file it is holding to be painted",
+  /img-src[^;]*\bblob:/.test(cspSrc) && /frame-src[^;]*\bblob:/.test(cspSrc),
+  cspSrc ? "img-src " + (/img-src[^;]*\bblob:/.test(cspSrc) ? "allows" : "blocks") + " blob: · frame-src "
+    + (/frame-src[^;]*\bblob:/.test(cspSrc) ? "allows" : "blocks") + " blob:" : "no CSP on the page");
 check("storage: every change is written, the page flushes when it hides, and a refused write is reported",
   /set\(k,v\)\{try\{localStorage\.setItem\(k,JSON\.stringify\(v\)\);this\.ok=true;return true\}/.test(pageSrc)
   && /addEventListener\("pagehide",flushState\)/.test(pageSrc)
