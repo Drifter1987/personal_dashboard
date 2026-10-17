@@ -71,9 +71,31 @@ jobs:
           node --check _tasks.test.mjs
           node --check _smoke.mjs
           PY=$(command -v python3 || command -v python)
-          "$PY" -c "import py_compile; py_compile.compile('_zip.py', cfile='_zip.pyc', doraise=True)"
+          "$PY" -c "import py_compile; py_compile.compile('_zip.py', cfile='_zip.pyc', doraise=True); py_compile.compile('_ui.test.py', cfile='_uitest.pyc', doraise=True)"
       - name: Deploy gate
         run: node _deploy.mjs
+
+  # The harness reads sources and the Worker; it cannot see layout. This job drives the real page
+  # in Chromium with the same contract a release is checked against by hand (python _ui.test.py):
+  # a rebuild keeps the reader's place, a card holds its frame while it loads, a section change
+  # starts at the top, and reopening lands on Home. Publishing waits for it, so a scroll or
+  # layout regression cannot go live just because the sources still look right.
+  layout:
+    name: browser contract (real layout)
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the browser the contract drives
+        run: |
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+      - name: Browser contract
+        run: python _ui.test.py
 
   bundle:
     name: release bundle (gate green)
@@ -91,7 +113,7 @@ jobs:
 
   publish:
     name: publish the page (main only)
-    needs: gate
+    needs: [gate, layout]
     # main, and only main: a pull request, a scratch branch or a tag must never reach the
     # live address. Neither does a cancelled or failed gate, because of `needs` above.
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')

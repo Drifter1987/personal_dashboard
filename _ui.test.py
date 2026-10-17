@@ -279,7 +279,81 @@ def cases(browser, base):
         check("only the document and the phone pager ever scroll, at any width", ok,
               "; ".join(detail) or "4 widths × 6 sections")
 
-    # ── 7. the calendar's Today button still behaves ─────────────────────────────────────────
+    # ── 7. a card that is loading keeps its frame ───────────────────────────────────────────
+    def a_loading_card_keeps_its_frame():
+        ctx, page = boot(browser, base, 941, 620)
+        try:
+            page.evaluate("goPage(0)")
+            wait_for(page, "curPage", 0)
+            page.wait_for_timeout(300)
+            r = page.evaluate(
+                "(async () => {const bd=document.querySelector('#wb_quote');"
+                "const before=Math.round(bd.getBoundingClientRect().height);"
+                "bd.innerHTML='';await new Promise(r=>setTimeout(r,0));"
+                "const held=Math.round(bd.getBoundingClientRect().height);"
+                "bd.innerHTML='<div style=\"height:'+(before+80)+'px\"></div>';"
+                "await new Promise(r=>setTimeout(r,150));"
+                "return {before, held, after:Math.round(bd.getBoundingClientRect().height), min:bd.style.minHeight}})()"
+            )
+            check("an emptied card holds the height it had, so the page below does not move",
+                  r["before"] > 10 and abs(r["held"] - r["before"]) <= 1,
+                  "%dpx -> %dpx while loading" % (r["before"], r["held"]))
+            check("\u2026and releases the frame once the new content is at least that tall",
+                  r["after"] >= r["before"] + 70 and r["min"] == "",
+                  "%dpx, min-height %r" % (r["after"], r["min"]))
+        finally:
+            ctx.close()
+
+    # ── 8. opening the dashboard lands on Home, whatever you were reading ───────────────────
+    def opening_lands_on_home():
+        ctx, page = boot(browser, base, 941, 620)
+        try:
+            page.evaluate("goPage(5)")
+            wait_for(page, "curPage", 5)
+            page.evaluate("scrollTo(0, 500)")
+            page.wait_for_timeout(150)
+            left_at = page.evaluate("({p:curPage, y:Math.round(scrollY)})")
+            page.reload()
+            page.wait_for_function("window.buildPages && document.querySelectorAll('[data-widget]').length > 20")
+            page.wait_for_timeout(200)
+            now = page.evaluate("({p:curPage, y:Math.round(scrollY), q:location.search})")
+            check("reopening the dashboard lands on Home, not the section you left",
+                  left_at["p"] == 5 and now["p"] == 0 and now["y"] == 0 and now["q"] == "",
+                  "left at section %d · reopened at %d, y=%d, url=%r" % (
+                      left_at["p"], now["p"], now["y"], now["q"]))
+        finally:
+            ctx.close()
+
+    # ── 9. a burst of app buttons leaves section and offset alone ───────────────────────────
+    def buttons_do_not_move_the_view():
+        ctx, page = boot(browser, base, 941, 620, tasks=24)
+        try:
+            page.evaluate("goPage(3)")
+            wait_for(page, "curPage", 3)
+            page.evaluate("scrollTo(0, 700)")
+            page.wait_for_timeout(150)
+            before = page.evaluate("({p:curPage, y:Math.round(scrollY)})")
+            if not check("contract: the Planner page can be scrolled for the button sweep",
+                         before["y"] >= 700, "y=" + str(before["y"])):
+                return
+            # Dispatched in the page so the harness cannot scroll first: the point of the case is
+            # what the handler does to the view, not what a click does to reach the control.
+            for label, js in (
+                ("the theme button", "document.querySelector('#themeBtn').click()"),
+                ("a card's refresh", "document.querySelector('#w_cal h2 .mini').click()"),
+                ("a month arrow", "[...document.querySelectorAll('#w_cal button')].find(b=>b.textContent==='‹').click()"),
+            ):
+                before = {"p": page.evaluate("curPage"), "y": y(page)}
+                page.evaluate(js)
+                page.wait_for_timeout(300)
+                if not check("a button press leaves the section and the offset alone (%s)" % label,
+                             page.evaluate("curPage") == before["p"] and abs(y(page) - before["y"]) <= 2,
+                             "section %s · y %d -> %d" % (before["p"], before["y"], y(page))):
+                    return
+        finally:
+            ctx.close()
+
+    # ── 10. the calendar's Today button still behaves ────────────────────────────────────────
     def today_button():
         ctx, page = boot(browser, base, 941, 620)
         try:
@@ -303,7 +377,8 @@ def cases(browser, base):
     return [rebuild_keeps_offset, reorder_keeps_offset, hiding_a_card_above_holds_the_card_below,
             shortening_page_clamps_but_never_snaps_to_the_top,
             section_change_starts_at_the_top, phone_keeps_section_and_offset,
-            only_two_scrollers_exist, today_button]
+            only_two_scrollers_exist, a_loading_card_keeps_its_frame, opening_lands_on_home,
+            buttons_do_not_move_the_view, today_button]
 
 
 def main():

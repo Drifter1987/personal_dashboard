@@ -534,7 +534,7 @@ check("chart: the card asks the Worker for 1990 onward for all three kinds, with
   /\/api\/history\?kind="\+kind\+"&symbol="\+encodeURIComponent\(s\)\+"&base="\+encodeURIComponent\(b0\)\+"&from=1990-01-01"/.test(pageSrc)
   && /cg\?".*cg="\+encodeURIComponent\(cg\)/.test(pageSrc), "kind/symbol/base(from the picker)/from + cg");
 check("chart: the card's ⟳ bypasses the edge cache rather than re-reading it",
-  /chart:\(\)=>renderChart\(true\)/.test(pageSrc) && /renderChart\(bypass\)/.test(pageSrc));
+  /chart:\{[^\n]*refresh:\(\)=>renderChart\(true\)/.test(pageSrc) && /renderChart\(bypass\)/.test(pageSrc));
 check("chart: every currency the ECB publishes can be charted, not just the majors",
   /function fxList\(cb\)/.test(pageSrc) && /api\.frankfurter\.dev\/v1\/currencies/.test(pageSrc) && /pd_fx_list/.test(pageSrc));
 check("chart: a log scale exists for series that span orders of magnitude, and one-point series still draw",
@@ -975,17 +975,20 @@ if (genSpanSrc && genAllowSrc) {
     const whySrc = (pageSrc.match(/function whyText\(w\)\{[^\n\r]*\}/) || [])[0] || "";
     const { whyText } = new Function("t", "WHY_KEY", whySrc + "\nreturn { whyText };")(
       t, new Function("return {" + whyInner + "};")());
-    const WIDGET_META = new Function("return " + (pageSrc.match(/const WIDGET_META=([^\n\r]*);/) || [])[1] + ";")();
-    const titleForSrc = (pageSrc.match(/function titleFor\(id[^)]*\)\{[\s\S]*?return m\[id\]\|\|id\}/) || [])[0];
-    const { titleFor } = new Function("t", titleForSrc + "\nreturn { titleFor };")(t);
-    /* A card's name can now depend on what the card is showing, so the harness lifts the page's
-       own naming function out as well and binds the one piece of state it reads: the window. */
+    /* The card registry, as shipped. Its rows are plain data plus painter thunks, and nothing
+       here calls a painter, so evaluating the literal gives the harness the same section and
+       search-word table the page itself uses - one table, not a copy that can drift. */
+    const CARDS_SRC = (pageSrc.match(/const CARDS=\{([\s\S]*?)\n\};/) || [])[1];
+    const CARDS_X = CARDS_SRC ? new Function("return {" + CARDS_SRC + "\n};")() : null;
+    /* A card's name can depend on what the card is showing, so the harness lifts the page's own
+       naming function out and binds the one piece of state it reads: the window. */
     const nameForSrc = (pageSrc.match(/function nameFor\(id\)\{[^\n\r]*\}/) || [])[0];
-    const { nameFor } = new Function("titleFor", "weekSpan", nameForSrc + "\nreturn { nameFor };")(titleFor, () => 7);
-    /* A rename or a deletion of either naming function would leave the search rows unnamed, so
-       their extraction is asserted before anything runs through them. */
-    check("search: the page's card-naming functions are extractable from the shipped page",
-      !!titleForSrc && !!nameForSrc, (titleForSrc || "").length + " + " + (nameForSrc || "").length + " chars");
+    const { nameFor } = new Function("CARDS", "t", "weekSpan", nameForSrc + "\nreturn { nameFor };")(
+      CARDS_X || {}, t, () => 7);
+    /* A rename or a deletion of either would leave the search rows unnamed, so their extraction
+       is asserted before anything runs through them. */
+    check("search: the page's card registry and naming function are extractable from the shipped page",
+      !!CARDS_X && !!nameForSrc, (CARDS_SRC || "").length + " + " + (nameForSrc || "").length + " chars");
     const { pageNames } = new Function("t", (pageSrc.match(/function pageNames\(\)\{[^\n\r]*\}/) || [])[0] + "\nreturn { pageNames };")(t);
     const PAGE_GEN = new Function(pGen + "\nreturn { GEN_TOOLS };")();
     const jumps = [];
@@ -1000,13 +1003,13 @@ if (genSpanSrc && genAllowSrc) {
       "#search": { value: "" },
       "#searchResults": { innerHTML: "", style: {}, appendChild: (b) => rows.push(b) }
     };
-    const handler = new Function("$", "store", "CONFIG", "WIDGET_META", "nameFor", "pageNames", "jumpTo",
+    const handler = new Function("$", "store", "CONFIG", "CARDS", "nameFor", "pageNames", "jumpTo",
       "GEN_TOOLS", "genAllowText", "quotaText", "whyText", "tasks", "events", "coinCache", "num", "document",
       "return (" + arrow + ");")(
       (s) => els[s],
       { get: (k, d) => (k === "test_news" ? genRec : d) },
       { NEWS_CACHE_KEY: "test_news" },
-      WIDGET_META, nameFor, pageNames, (id) => jumps.push(id),
+      CARDS_X, nameFor, pageNames, (id) => jumps.push(id),
       PAGE_GEN.GEN_TOOLS, allow, quotaText, whyText,
       [{ text: "buy milk" }], [{ title: "team sync" }], { data: [] }, String,
       { createElement: () => ({ textContent: "", onclick: null }) });
@@ -1021,7 +1024,7 @@ if (genSpanSrc && genAllowSrc) {
     const r1 = run("free image tools");
     check('search: "free image tools" opens on the Generators card with its image tools beside it',
       r1.display === "block"
-      && r1.labels.indexOf(t("gen") + " — " + pageNames()[WIDGET_META.gen.p]) >= 0
+      && r1.labels.indexOf(t("gen") + " — " + pageNames()[CARDS_X.gen.p]) >= 0
       && r1.labels.filter((l) => l.indexOf("🎞️ ") === 0).length >= 1
       && r1.labels.some((l) => /fast tokens\/day|creations\/day|images\/3h|credits\/day|units\/day|stamina\/day/.test(l)),
       r1.labels.slice(0, 3).join(" | ") + (r1.labels.length > 3 ? " | +" + (r1.labels.length - 3) + " more" : ""));
@@ -1031,7 +1034,7 @@ if (genSpanSrc && genAllowSrc) {
     const aiRows2 = r2.labels.filter((l) => l.indexOf("🤖 ") === 0);
     check('search: "daily limit" finds the daily tools with their figures, the card, and a quota headline',
       r2.display === "block"
-      && r2.labels.indexOf(t("gen") + " — " + pageNames()[WIDGET_META.gen.p]) >= 0
+      && r2.labels.indexOf(t("gen") + " — " + pageNames()[CARDS_X.gen.p]) >= 0
       && genRows2.length >= 3 && genRows2.length <= 5
       && aiRows2.length === 1 && /50 images\/day/.test(aiRows2[0]),
       genRows2.length + " tools · " + aiRows2.length + " headline | " + r2.labels.slice(0, 2).join(" | "));
@@ -1144,28 +1147,36 @@ check("arabic: the shell's tooltips, the install name and the tab title come fro
   /\[\["#langBtn","lang"\],\["#themeBtn","theme"\],\["#installBtn","install"\],\["#qrBtn","qr"\],\["#editBtn","editLayout"\]\]/.test(pageSrc)
   && /apple-mobile-web-app-title/.test(pageSrc) && /document\.title=t\("brand"\)\+" v"\+CONFIG\.VERSION/.test(pageSrc));
 /* ── the six sections, and the card that is named for its window ────────────────────
-   PAGES is the only list that decides where a card lives, and WIDGET_META.p has to agree
-   with it: a mismatch would leave a card's own up/down/hide buttons moving it on a page it
-   is not on. Home is a promise about what is read first, so it is asserted literally. */
-const pagesInner = (pageSrc.match(/const PAGES=\[([\s\S]*?)\];/) || [])[1];
-const PAGES_X = pagesInner ? new Function("return [" + pagesInner + "];")() : null;
-const META_X = (() => {
-  const inner = (pageSrc.match(/const WIDGET_META=([^\n\r]*);/) || [])[1];
-  try { return inner ? new Function("return " + inner + ";")() : null; } catch (e) { return null; }
+   The registry is the only place a card is described: its row says which section it lives on,
+   and PAGES - the order - is derived from those rows. A card therefore cannot be listed on a
+   section it does not declare, and the check below asserts each row is complete rather than
+   that two hand-written tables agree. Home is a promise about what is read first, so it is
+   still asserted literally. */
+const CARDS_L = (() => {
+  const inner = (pageSrc.match(/const CARDS=\{([\s\S]*?)\n\};/) || [])[1];
+  try { return inner ? new Function("return {" + inner + "\n};")() : null; } catch (e) { return null; }
 })();
-if (PAGES_X && META_X) {
-  const homes = {};
-  PAGES_X.forEach((ids, p) => ids.forEach((id) => { homes[id] = (homes[id] || []).concat(p); }));
-  const metaIds = Object.keys(META_X);
-  const twice = Object.keys(homes).filter((id) => homes[id].length > 1);
-  const missing = metaIds.filter((id) => !homes[id]);
-  const misplaced = metaIds.filter((id) => homes[id] && homes[id][0] !== META_X[id].p);
-  check("layout: every card has exactly one home, and the section it is listed under is the page it reports",
-    twice.length === 0 && missing.length === 0 && misplaced.length === 0,
-    PAGES_X.length + " sections · " + metaIds.length + " cards"
-    + (twice.length ? " · listed twice: " + twice.join(",") : "")
-    + (missing.length ? " · not listed: " + missing.join(",") : "")
-    + (misplaced.length ? " · page disagrees: " + misplaced.join(",") : ""));
+const PAGES_X = (() => {
+  if (!CARDS_L) return null;
+  const out = [];
+  Object.keys(CARDS_L).forEach((id) => { const p = CARDS_L[id].p; (out[p] = out[p] || []).push(id); });
+  return out;
+})();
+if (PAGES_X) {
+  const ids = Object.keys(CARDS_L);
+  const incomplete = ids.filter((id) => {
+    const c = CARDS_L[id];
+    return typeof c.p !== "number" || c.p < 0 || c.p >= pageSections
+      || !c.icon || !c.name || !c.keys || typeof c.draw !== "function" || typeof c.refresh !== "function";
+  });
+  check("layout: every card is one complete registry row, and its section is a real one",
+    incomplete.length === 0,
+    PAGES_X.length + " sections · " + ids.length + " cards"
+    + (incomplete.length ? " · incomplete: " + incomplete.join(",") : ""));
+  check("layout: the page order is derived from the registry rather than kept in a second list",
+    /const PAGES=\[\];Object\.keys\(CARDS\)\.forEach/.test(pageSrc)
+    && /function pageCount\(\)\{return PAGES\.length\}/.test(pageSrc),
+    "PAGES built from CARDS · pageCount reads it");
   check("layout: Home opens with the clock, the weather, prayer, the quote and the week's review, in that order",
     PAGES_X[0].slice(0, 5).join(",") === "clock,weather,prayer,quote,week"
     && PAGES_X[0].indexOf("todayTasks") > 4 && PAGES_X[0].indexOf("nextCd") > 4,
@@ -1209,15 +1220,18 @@ check("storage: every change is written, the page flushes when it hides, and a r
   && /function storageLine\(\)\{/.test(pageSrc),
   "store.set returns and reports · pagehide + visibility flush · storage line in About");
 /* The review card answers to two names, and which one it uses is the window it is showing. */
-const tfSrc = (pageSrc.match(/function titleFor\(id[^)]*\)\{[\s\S]*?return m\[id\]\|\|id\}/) || [])[0];
-if (tfSrc && PAGE_I18N) {
+const nameSrcR = (pageSrc.match(/function nameFor\(id\)\{[^\n\r]*\}/) || [])[0];
+if (nameSrcR && PAGE_I18N) {
   const tX = (k) => (PAGE_I18N.en[k] !== undefined ? PAGE_I18N.en[k] : k);
-  const { titleFor } = new Function("t", tfSrc + "\nreturn { titleFor };")(tX);
+  let span = 7;
+  const { nameFor } = new Function("CARDS", "t", "weekSpan", nameSrcR + "\nreturn { nameFor };")(
+    { week: { name: "week" } }, tX, () => span);
+  const week7 = nameFor("week"); span = 30; const week30 = nameFor("week");
   check("review card: the title is the window it is showing - This Week over seven days, This Month over thirty",
-    titleFor("week", 7) === tX("weekTitle") && titleFor("week", 30) === tX("weekMonth")
+    week7 === tX("weekTitle") && week30 === tX("weekMonth")
     && tX("weekTitle") === "This Week" && tX("weekMonth") === "This Month"
     && !!PAGE_I18N.ar.weekTitle && !!PAGE_I18N.ar.weekMonth,
-    titleFor("week", 7) + " / " + titleFor("week", 30) + " · ar: " + PAGE_I18N.ar.weekTitle + " / " + PAGE_I18N.ar.weekMonth);
+    week7 + " / " + week30 + " · ar: " + PAGE_I18N.ar.weekTitle + " / " + PAGE_I18N.ar.weekMonth);
   check("review card: the header is repainted when the window changes, and the timeline carries the chart's crosshair",
     /function paintWeekTitle\(\)\{[^\n\r]*h2 \.wtitle/.test(pageSrc)
     && /function renderWeek\(\)\{\s*const el=\$\("#wb_week"\);if\(!el\)return;el\.innerHTML="";paintWeekTitle\(\)/.test(pageSrc)

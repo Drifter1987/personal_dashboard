@@ -50,8 +50,9 @@ The harness reads sources; it cannot see layout. The browser contract does, and 
 run after touching a card's structure, the pager or the calendar:
 
 ```bash
-python _ui.test.py             # Chromium: scroll survives a rebuild, a section change starts at
-                               # the top, Today rests on the current month; 15 checks
+python _ui.test.py             # Chromium: scroll survives a rebuild, a hidden card moves nothing,
+                               # a loading card holds its frame, a reload opens Home, Today
+                               # rests on the current month; 22 checks
 python _ui.test.py -v          # same run, with every measurement printed
 ```
 
@@ -347,15 +348,16 @@ a log, and let it expire.
 
 ## CI publishing
 
-`.github/workflows/checks.yml` has three jobs. GitHub only reads `.github/workflows` at the
+`.github/workflows/checks.yml` has four jobs. GitHub only reads `.github/workflows` at the
 **repository root**, so this project must be its own repository with its own remote — otherwise
 the workflow never runs at all.
 
 | Job | Runs when | What it settles |
 |---|---|---|
 | `gate` | every push and pull request | `node _deploy.mjs` — the harness against the real sources, then that the bundle is the thing the harness tested. A red gate stops everything after it. |
+| `layout` | after a green gate | `python _ui.test.py` in Chromium: the browser contract for scroll, section, card frames and Today. Publishing waits for it, so a layout regression cannot ride a green source harness to production. |
 | `bundle` | after a green gate, never on a pull request | Uploads `dashboard-site.zip` as a build artifact, so a release is downloadable even when publishing was skipped. |
-| `publish` | after a green gate, **only on `main`** | Uploads `deploy/` to Pages on the production branch, then runs `node _smoke.mjs --page-only`. |
+| `publish` | after a green gate **and a green layout job**, **only on `main`** | Uploads `deploy/` to Pages on the production branch, then runs `node _smoke.mjs --page-only`. |
 
 The job finishes with the smoke test because a `wrangler` exit code says the upload was
 accepted, not that the edge is serving it. `--page-only` is what the job runs rather than the
