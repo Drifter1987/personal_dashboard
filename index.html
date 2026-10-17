@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.22.2</title>
+<title>Home Dashboard v2.23.0</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -104,9 +104,28 @@ h1.brand{margin:0;font-size:inherit;line-height:1.25;letter-spacing:inherit}
 /* The AI card's free-allowance column: each row is a two-column grid, so every figure
    lines up on one edge, and tabular numerals keep the digits in step down the column. */
 .list li.qrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start}
+/* The GitHub card's column is a fixed width, because each row is its own grid: an auto column is
+   measured per row, so a five-digit count would start further left than a three-digit one. */
+.list li.qrow.starcol{grid-template-columns:minmax(0,1fr) 86px}
 .qta{font-size:11.5px;font-variant-numeric:tabular-nums;text-align:end;white-space:nowrap;border:1px solid var(--line);border-radius:10px;padding:3px 8px;background:var(--bg2);color:var(--text2);min-width:66px}
-.qta.none{color:var(--muted);border-style:dashed;background:transparent}
 .qta.once{color:var(--muted)}
+/* The GitHub card's star column, and the rule the AI card's column follows too: a row with no
+   stated allowance draws no cell at all. The dashed empty oval it used to draw read as a figure
+   that went missing rather than one that was never published. */
+.qta.stars{text-align:start;min-width:0}
+/* The word a search suggestion landed on. Filled with the accent so it is unmistakable in every
+   palette, and taken off again after three seconds - the point is to be found, not to stay. */
+mark.hit{background:var(--ac);color:#17171a;border-radius:5px;padding:0 3px;box-shadow:0 0 0 2px var(--ac)}
+/* Share & QR: one grid of labelled marks. Five loose text buttons made the reader read five
+   words; a logo per service is what makes the row recognisable at a glance. */
+.sharegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(134px,1fr));gap:8px;margin-top:10px}
+.sharebtn{display:flex;align-items:center;gap:9px;text-align:start;font-size:13px;font-weight:600}
+.shlogo{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;flex:none}
+.shlogo svg{width:17px;height:17px;display:block}
+.shlogo.wa{background:#25d366;color:#0b2e18}
+.shlogo.ig{background:linear-gradient(135deg,#f9ce34,#ee2a7b 55%,#6228d7);color:#fff}
+.shlogo.sc{background:#fffc00;color:#17171a}
+.shlogo.ml,.shlogo.cp{background:var(--line);color:var(--text)}
 .up{color:var(--ok)}.down{color:var(--bad)}
 input[type=text],input[type=date],input[type=time],input[type=number],select,textarea{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;width:100%;color:var(--text)}
 textarea{min-height:70px;resize:vertical}
@@ -455,7 +474,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.22.2",
+  VERSION: "2.23.0",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -480,6 +499,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.23.0", d:"2026-10-17", en:"Searching now lands on the word, not just the card. Picking a suggestion used to outline the whole card and leave you to find the keyword inside it; the matched word is now marked in the accent colour for three seconds - long enough to catch the eye, short enough to leave the page as it was - and a shut Settings group holding it opens first, so searching \"language\" opens Appearance and marks Language on screen. A phrase that is not in the card falls back to its first long word that is, and a card with no visible match still outlines as before. Three smaller reads are fixed with it: the GitHub card's star and count moved out of the headline into a right-hand column of fixed width, so every row's star starts on the same edge instead of drifting with the digit count; a news row that states no free allowance draws no chip at all, where it used to draw an empty dashed oval holding a dash; and the QR card's share buttons are a grid of labelled brand tiles - WhatsApp, Instagram, Snapchat, Email, Copy link - drawn as inline marks so they still exist offline, instead of five loose text buttons wrapping over three rows.", ar:"البحث الآن يهبط على الكلمة نفسها لا على البطاقة وحدها. كان اختيار اقتراح يرسم إطارًا حول البطاقة كلها ويترك لك البحث عن الكلمة داخلها؛ والآن تُوسم الكلمة المطابقة بلون التمييز ثلاث ثوانٍ — كافية للفت النظر، وقصيرة بحيث تُترك الصفحة كما كانت — ويُفتح أولًا قسم «الإعدادات» المغلق الذي يحتويها، فالبحث عن \"language\" يفتح «المظهر» ويوسم Language على الشاشة. وإذا لم تكن العبارة في البطاقة يعود إلى أول كلمة طويلة منها موجودة فعلًا، وبطاقة بلا تطابق ظاهر تُحاط كما كانت. وثلاث قراءات أصغر تُصلح معها: نجم بطاقة GitHub وعدده خرجا من العنوان إلى عمود يميني ثابت العرض، فيبدأ نجم كل سطر من الحد نفسه بدل أن يتزحلق مع عدد الأرقام؛ وسطر إخباري لا يذكر حصة مجانية لا يرسم شرطة ولا شكلها البيضاوي المتقطع؛ وأزرار المشاركة في بطاقة الرمز صارت شبكة بلاطات موسومة — واتساب وإنستغرام وسنابشات والبريد ونسخ الرابط — مرسومة داخل الصفحة لتبقى بلا إنترنت، بدل خمسة أزرار نصية تتكسر على ثلاثة أسطر."},
 {v:"2.22.2", d:"2026-10-17", en:"A card is now as tall as what it holds. The page's two columns are a grid, and a grid stretches every item to the tallest in its row - so the clock, a one-line quote or the metals list drew a few hundred pixels of empty card below its last line, next to a full-height neighbour. Cards size to their own content now, and the layout contract measures it: it walks all six sections and fails if any card ends more than a line of spacing below its last child, so a stretched card cannot come back unnoticed. One consequence is handled rather than hidden: when hiding a card leaves the page shorter than your offset, you land at the page's end instead of being carried back up toward the card under the header. The case that hides a card above the fold now hides one that is genuinely above it - the old one picked whatever reached past the header, which was a different card once the layout stopped stretching.", ar:"صارت البطاقة بطول محتواها. عمودا الصفحة شبكة، والشبكة تمدّد كل عنصر إلى أطول عنصر في صفه — فكانت بطاقة الساعة أو اقتباس من سطر واحد أو قائمة المعادن ترسم مئات البكسلات من البطاقة الفارغة تحت آخر سطر، بجوار جار ممتلئ. الآن تُقاس البطاقة على محتواها، ويقيسها عقد التخطيط: يمرّ على الأقسام الستة ويفشل إن تجاوزت بطاقة ما مسافة سطر واحد بعد آخر عنصر فيها، فلا تعود بطاقة ممدّدة دون أن يلاحظها أحد. وهناك نتيجة واحدة مُعالجة لا مخفية: إذا أبقى إخفاء بطاقة الصفحة أقصر من موضعك، تهبط على نهاية الصفحة بدل أن تُعاد إلى أعلى نحو البطاقة التي تحت الشريط. وحالة إخفاء بطاقة «فوق الشاشة» صارت تخفي بطاقة فوقها فعلًا — القديمة كانت تختار أول بطاقة تلامس الشريط، وهي بطاقة أخرى بعد أن توقف التمدّد."},
 {v:"2.22.1", d:"2026-10-17", en:"Opening the dashboard is opening it, not resuming the document. With the section no longer remembered, the browser still restored its own scroll offset, so Home could open halfway down the page - and it did so only on a slower machine, which is how the layout contract caught it in CI after passing locally. The page now owns its scroll restoration and starts at the top, while a ?p= link still opens its section at that section's top. The contract also stopped reading the phone's pager mid-scroll: it waits for the settled position, so a slow runner measures where the pager came to rest instead of reporting an animation as a bug.", ar:"فتح اللوحة صار فتحًا لا استئنافًا لموضعك. مع إلغاء تذكّر القسم، كان المتصفح لا يزال يعيد موضع التمرير الخاص به، فقد تفتح «الرئيسية» في منتصف الصفحة — ولم يحدث ذلك إلا على جهاز أبطأ، وهكذا التقط عقد التخطيط في CI ما مرّ محليًا. صارت الصفحة تتولّى تمريرها بنفسها وتبدأ من الأعلى، والرابط الذي يحمل ?p لا يزال يفتح قسمه من أعلى ذلك القسم. وتوقّف العقد عن قراءة شريط الهاتف أثناء حركته: ينتظر الموضع المستقر، فيقيس المشغّل البطيء أين استقر الشريط بدل أن يبلّغ عن حركة كأنها عيب."},
 {v:"2.22.0", d:"2026-10-17", en:"Reopening the dashboard lands on Home, and only Home. The address used to record the section you were reading (?p=), which meant a closed app came back to Markets or Settings days later; a section is now a place you go, not a memory the app keeps for you, so the address is never rewritten as you move around. A link that names a section still opens it - the manifest's shortcuts and a shared link carry ?p= and keep working - because that is someone handing you a page, not the app remembering. The layout contract grew to match: it now proves a reload opens Home whatever section you left, that a card body holds the height it had while its next batch of data is loading (a bounded wait releases the frame if the new content really is shorter, so a card cannot leave a hole), and that pressing the theme button, a card's refresh or a calendar arrow leaves the section and the offset exactly where they were. That contract is a CI job of its own now, and publishing waits for it. And the page's five parallel card tables - section and search words, icons, names, painters and refresh actions - are one registry, so adding a card is a single entry instead of five edits that could disagree.", ar:"إعادة فتح اللوحة تهبط على «الرئيسية» وحدها. كان العنوان يسجّل القسم الذي تقرأه (?p)، فيعود التطبيق المغلق بعد أيام إلى «الأسواق» أو «الإعدادات»؛ وصار القسم مكانًا تذهب إليه لا ذكرى يحفظها التطبيق لك، فلا يُعاد كتابة العنوان أثناء تنقّلك. والرابط الذي يسمّي قسمًا ما زال يفتحه — اختصارات التطبيق المثبَّت والرابط المشارَك يحملان ?p ويعملان كما كانا — لأن هذا صفحة يسلّمها لك أحدهم، لا ذاكرة للتطبيق. وكبر عقد التخطيط ليطابق ذلك: يثبت الآن أن إعادة التحميل تفتح الرئيسية أيًّا كان القسم الذي تركته، وأن جسم البطاقة يحتفظ بارتفاعه بينما تُحمّل دفعته التالية من البيانات (بانتظار محدود يُحرّر الإطار إذا كان الجديد أقصر فعلًا، فلا تترك البطاقة فراغًا)، وأن ضغط زر المظهر أو تحديث بطاقة أو سهم في التقويم يترك القسم وموضع التمرير كما هما بالضبط. وهذا العقد صار مهمة CI مستقلة، والنشر ينتظرها. وجداول البطاقات الخمسة المتوازية في الصفحة — القسم وكلمات البحث والأيقونات والأسماء والرسّامون وإجراءات التحديث — صارت سجلًا واحدًا، فإضافة بطاقة سطر واحد بدل خمسة تعديلات قد تتناقض."},
@@ -898,7 +918,37 @@ function widgetShell(id,title){const s=document.createElement("section");s.class
 const rfr=document.createElement("button");rfr.className="mini";rfr.textContent="⟳";rfr.title=t("refresh");rfr.setAttribute("aria-label",t("refresh")+": "+title);rfr.onclick=()=>refreshCard(id,s);h.appendChild(rfr);
 [["up",t("up")],["down",t("down")],["hide",t("hide")]].forEach(([a,l])=>{const b=document.createElement("button");b.className="mini wctl";b.textContent=l;b.onclick=()=>widgetAction(id,a);h.appendChild(b)});const dh=document.createElement("span");dh.className="drag-handle";dh.textContent="⋮⋮";dh.title=t("reorder");h.appendChild(dh);s.appendChild(h);const body=document.createElement("div");body.id="wb_"+id;holdFrame(body,id);s.appendChild(body);bindLongPress(h);bindDrag(dh,s);return s}
 function drawQrOn(cv,url){const M=(typeof QR_M_JSON==="string")?JSON.parse(QR_M_JSON):QR_M_JSON;const n=M.length,sc=Math.ceil(600/(n+8)),pad=2;cv.width=(n+pad*2)*sc;cv.height=cv.width;const ctx=cv.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle="#1e1e22";M.forEach((row,y)=>row.forEach((v,x)=>{if(v)ctx.fillRect((x+pad)*sc,(y+pad)*sc,sc,sc)}));cv.style.width="100%";cv.style.height="auto"}
-function renderQrShare(){const el=$("#wb_qrshare");if(!el)return;el.innerHTML="";const url=CONFIG.APP_URL||location.origin;const hint=document.createElement("div");hint.className="muted";hint.textContent=t("scanHint");el.appendChild(hint);const hold=document.createElement("div");hold.className="qrbox qrinline";el.appendChild(hold);const cv=document.createElement("canvas");hold.appendChild(cv);drawQrOn(cv,url);const row=document.createElement("div");row.className="row";row.style.marginTop="10px";const mk=(label,fn,cls)=>{const b=document.createElement("button");b.className=cls||"btn ghost";b.textContent=label;b.onclick=fn;row.appendChild(b)};mk(t("saveQr"),()=>{cv.toBlob(bl=>{const a=document.createElement("a");a.href=URL.createObjectURL(bl);a.download="dashboard-qr.png";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)},"image/png")},"btn");el.appendChild(row);const row2=document.createElement("div");row2.className="row";const mk2=(label,fn)=>{const b=document.createElement("button");b.className="btn ghost";b.textContent=label;b.onclick=fn;row2.appendChild(b)};const L=shareLinks(url);mk2(t("wa"),()=>window.open(L.whatsapp,"_blank","noopener"));mk2(t("ig"),()=>window.open(L.instagram,"_blank","noopener"));mk2(t("snap"),()=>window.open(L.snapchat,"_blank","noopener"));el.appendChild(row2);const row3=document.createElement("div");row3.className="row";mk2(t("copyLink"),async()=>{try{await navigator.clipboard.writeText(url);toast(t("copied"))}catch(e){toast("✕")}});mk2(t("mail"),()=>{location.href=L.mail});el.appendChild(row3);if(navigator.share){const ns=document.createElement("button");ns.className="btn";ns.style.marginTop="8px";ns.textContent=t("shareApp");ns.onclick=()=>navigator.share({title:L.native.title,text:L.native.text,url}).catch(()=>{});el.appendChild(ns)}}
+/* Brand marks, drawn here rather than fetched: the app has to work offline, and an icon is
+   exactly the thing that would be missing. Each is a 24x24 glyph in the service's own colour
+   tile, recognisable next to its own label without an image request. */
+const SHARE_MARK={
+ wa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4a8.6 8.6 0 0 0-7.3 13.1L3.4 20.6l4.2-1.3A8.6 8.6 0 1 0 12 3.4z"/><path d="M9.1 8.4c-.5.9.1 2.9 1.8 4.6s3.7 2.3 4.6 1.8"/><path d="M9.1 8.4l1.4 1.7-1 1.3"/></svg>',
+ ig:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.4" y="3.4" width="17.2" height="17.2" rx="5.1"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.1" cy="6.9" r="1.15" fill="currentColor" stroke="none"/></svg>',
+ sc:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.3c3 0 5 2.2 5 5.1 0 1.1-.2 2-.4 2.8.5.2 1.1.4 1.5.7.3.2.3.6 0 .8-.4.4-1.4.7-2.1 1-.1.5-.3 1.1-.6 1.3-.4.3-1.3-.1-2 .1-.5.2-.8 1.2-1.9 1.2s-1.5-1-2-1.2c-.6-.2-1.5.2-1.9-.1-.3-.2-.5-.8-.6-1.3-.7-.3-1.7-.6-2.1-1-.3-.2-.3-.6 0-.8.4-.3 1-.5 1.5-.7-.2-.8-.4-1.7-.4-2.8 0-2.9 2-5.1 5-5.1z"/></svg>',
+ ml:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="2.9" y="5" width="18.2" height="14" rx="2.6"/><path d="m3.6 6.5 8.4 6 8.4-6"/></svg>',
+ cp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="9.2" y="9.2" width="11.6" height="11.6" rx="2.6"/><path d="M15 5.8A2.8 2.8 0 0 0 12.2 3H5.8A2.8 2.8 0 0 0 3 5.8v6.4A2.8 2.8 0 0 0 5.8 15"/></svg>'
+};
+/* One tile per service: the mark, then the word, then the smallest gap that reads as one button.
+   The whole set is a grid, so five buttons line up in two or three columns instead of wrapping
+   into three ragged rows of loose text. */
+function shareTile(mark,label,fn){const b=document.createElement("button");b.type="button";b.className="btn ghost sharebtn";
+  const i=document.createElement("span");i.className="shlogo "+mark;i.innerHTML=SHARE_MARK[mark];
+  const s=document.createElement("span");s.textContent=label;b.appendChild(i);b.appendChild(s);b.onclick=fn;return b}
+function renderQrShare(){const el=$("#wb_qrshare");if(!el)return;el.innerHTML="";const url=CONFIG.APP_URL||location.origin;
+  const hint=document.createElement("div");hint.className="muted";hint.textContent=t("scanHint");el.appendChild(hint);
+  const hold=document.createElement("div");hold.className="qrbox qrinline";el.appendChild(hold);const cv=document.createElement("canvas");hold.appendChild(cv);drawQrOn(cv,url);
+  const save=document.createElement("button");save.type="button";save.className="btn";save.style.marginTop="10px";save.textContent=t("saveQr");
+  save.onclick=()=>{cv.toBlob(bl=>{const a=document.createElement("a");a.href=URL.createObjectURL(bl);a.download="dashboard-qr.png";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)},"image/png")};
+  el.appendChild(save);
+  const L=shareLinks(url);const grid=document.createElement("div");grid.className="sharegrid";
+  grid.appendChild(shareTile("wa",t("wa"),()=>window.open(L.whatsapp,"_blank","noopener")));
+  grid.appendChild(shareTile("ig",t("ig"),()=>window.open(L.instagram,"_blank","noopener")));
+  grid.appendChild(shareTile("sc",t("snap"),()=>window.open(L.snapchat,"_blank","noopener")));
+  grid.appendChild(shareTile("ml",t("mail"),()=>{location.href=L.mail}));
+  grid.appendChild(shareTile("cp",t("copyLink"),async()=>{try{await navigator.clipboard.writeText(url);toast(t("copied"))}catch(e){toast("\u2715")}}));
+  el.appendChild(grid);
+  if(navigator.share){const ns=document.createElement("button");ns.type="button";ns.className="btn";ns.style.marginTop="8px";ns.textContent=t("shareApp");
+    ns.onclick=()=>navigator.share({title:L.native.title,text:L.native.text,url}).catch(()=>{});el.appendChild(ns)}}
 function refreshCard(id,s){const c=CARDS[id];if(!c||!c.refresh){toast(t("refresh"));return}if(s){s.style.transition="opacity .25s";s.style.opacity=".55";setTimeout(()=>s.style.opacity="",450)}c.refresh();toast((c.icon||"")+" "+t("refresh")+" · "+nameFor(id))}
 function widgetAction(id,a){const p=CARDS[id].p;let o=pageOrder(p);if(a==="hide"){settings.widgets[id]=false;saveSettings();buildPages();return}const i=o.indexOf(id);if(a==="up"&&i>0){const tmp=o[i-1];o[i-1]=o[i];o[i]=tmp}if(a==="down"&&i<o.length-1){const tmp=o[i+1];o[i+1]=o[i];o[i]=tmp}saveOrder(p,o);buildPages();goPage(p,{keepScroll:true})}
 /* An order is saved with the layout revision it was made in, so a later release can tell a
@@ -1354,7 +1404,7 @@ async function loadNewsAI(ul,all){
 /* GitHub is read straight from the browser — api.github.com is already allowed by the
    CSP — so there is no Worker hop and no token; the 1h card cache keeps it at roughly
    one search per visitor per hour, well inside the keyless 10/min search limit. */
-async function loadNewsGitHub(ul,all){try{const d=new Date();d.setDate(d.getDate()-7);const ds=d.toISOString().slice(0,10);const r=await fetch("https://api.github.com/search/repositories?q=created:%3E"+ds+"&sort=stars&order=desc&per_page=5",{headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw 0;const j=await r.json();const arr=(j.items||[]).map(x=>({title:x.full_name+" ★ "+x.stargazers_count,link:x.html_url,desc:x.description||"",time:x.created_at,source:"GitHub"}));if(!arr.length)throw 0;newsSave({gh:arr},["gh"]);paintNews(ul,arr)}catch(e){const prev=(all.data&&all.data.gh)||[];if(prev.length){paintNews(ul,prev);return}ul.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p)}}
+async function loadNewsGitHub(ul,all){try{const d=new Date();d.setDate(d.getDate()-7);const ds=d.toISOString().slice(0,10);const r=await fetch("https://api.github.com/search/repositories?q=created:%3E"+ds+"&sort=stars&order=desc&per_page=5",{headers:{Accept:"application/vnd.github+json"}});if(!r.ok)throw 0;const j=await r.json();const arr=(j.items||[]).map(x=>({title:x.full_name,stars:x.stargazers_count,link:x.html_url,desc:x.description||"",time:x.created_at,source:"GitHub"}));if(!arr.length)throw 0;newsSave({gh:arr},["gh"]);paintNews(ul,arr)}catch(e){const prev=(all.data&&all.data.gh)||[];if(prev.length){paintNews(ul,prev);return}ul.innerHTML="";const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p)}}
 /* The AI card explains itself: items come back with the labels of the ranking rules that
    matched them, shown as small chips and repeated in the reader, so the order is visible. */
 const WHY_KEY={"open weights":"wOpen","runs locally":"wLocal","free daily limit":"wDaily","trending model":"wTrend","free":"wFree","just released":"wNew","model":"wModel","image/video":"wMedia","API access":"wApi"};
@@ -1366,6 +1416,7 @@ function whyLine(n){return (n&&n.why&&n.why.length)?n.why.map(whyText).join(" ·
 const QUOTA_KEY={images:"quImages",videos:"quVideos",generations:"quGenerations",prompts:"quPrompts",requests:"quRequests",tokens:"quTokens",words:"quWords",characters:"quCharacters",messages:"quMessages",hours:"quHours",minutes:"quMinutes",seconds:"quSeconds",credits:"quCredits",jobs:"quJobs",GB:"quGB",unlimited:"quUnlimited"};
 function quotaText(q){if(!q)return "";if(q.unit==="unlimited")return t("quUnlimited");const v=q.perDay!=null?q.perDay:q.n;const n=digits(String(v>=10?Math.round(v):Math.round(v*10)/10));const u=t(QUOTA_KEY[q.unit]||q.unit);return q.perDay!=null?n+" "+u+t("quPerDay"):n+" "+u+" · "+t("quOnce")}
 function isAiList(ul){const c=ul&&ul.closest?ul.closest("[data-widget]"):null;return !!(c&&c.dataset.widget==="ai")}
+function isGhList(ul){const c=ul&&ul.closest?ul.closest("[data-widget]"):null;return !!(c&&c.dataset.widget==="gh")}
 /* ── free-tier quota: mirrored from worker.js ──
    The Worker parses and normalises every allowance, so the page only words it — except
    when the Worker cannot be reached and the fallback below builds the card from the
@@ -1485,7 +1536,12 @@ function aiQuota(it) {
   return null;
 }
 /* ── end of the mirrored free-tier quota parser ── */
-function paintNews(ul,arr){ul.innerHTML="";if(!arr||!arr.length){const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p);return}const ai=isAiList(ul);arr.slice(0,5).forEach(n=>{const li=document.createElement("li");if(ai)li.className="qrow";const col=document.createElement("div");col.style.flex="1";col.style.minWidth="0";const b2=document.createElement("button");b2.className="mini";b2.style.textAlign="start";b2.style.width="100%";b2.style.fontSize="14px";b2.textContent=n.title||"(untitled)";const why=whyLine(n),qt=quotaText(n.quota);b2.onclick=()=>openReader(n.title||"",((why?why+" — ":"")+(qt?qt+" · ":"")+(n.source||"")+" · "+(n.time||"")).trim(),n.desc||"",n.link);col.appendChild(b2);if(n.why&&n.why.length){const w=document.createElement("div");w.className="why";n.why.forEach(k=>{const c=document.createElement("span");c.textContent=whyText(k);w.appendChild(c)});col.appendChild(w)}li.appendChild(col);if(ai){const q=document.createElement("div");q.className="qta"+(n.quota?(n.quota.per==="total"?" once":""):" none");q.textContent=qt||"—";q.title=(n.quota&&n.quota.raw)||t("quNone");li.appendChild(q)}ul.appendChild(li)})}
+/* One row shape for the two cards that carry a right-hand column: the AI card's free allowance
+   and the GitHub card's stars. A row with no stated allowance draws no cell at all, and the
+   star cell is left-aligned in its own column so every star in the card starts on one edge.
+   A cached row from before this release carries its star inside the title; both are read. */
+function starsOf(n){if(n&&n.stars!=null&&isFinite(n.stars))return Math.round(+n.stars);const m=/★\s*([\d ,.]+)\s*$/.exec(String((n&&n.title)||""));return m?parseInt(m[1].replace(/[^\d]/g,""),10):null}
+function paintNews(ul,arr){ul.innerHTML="";if(!arr||!arr.length){const p=document.createElement("p");p.className="muted";p.textContent=t("noData");ul.appendChild(p);return}const ai=isAiList(ul),gh=isGhList(ul);arr.slice(0,5).forEach(n=>{const li=document.createElement("li");if(ai||gh)li.className=ai?"qrow":"qrow starcol";const col=document.createElement("div");col.style.flex="1";col.style.minWidth="0";const b2=document.createElement("button");b2.className="mini";b2.style.textAlign="start";b2.style.width="100%";b2.style.fontSize="14px";const title=gh?String(n.title||"").replace(/\s*★\s*[\d ,.]+\s*$/,""):(n.title||"");b2.textContent=title||"(untitled)";const why=whyLine(n),qt=quotaText(n.quota);b2.onclick=()=>openReader(title||"",((why?why+" — ":"")+(qt?qt+" · ":"")+(n.source||"")+" · "+(n.time||"")).trim(),n.desc||"",n.link);col.appendChild(b2);if(n.why&&n.why.length){const w=document.createElement("div");w.className="why";n.why.forEach(k=>{const c=document.createElement("span");c.textContent=whyText(k);w.appendChild(c)});col.appendChild(w)}li.appendChild(col);if(ai&&qt){const q=document.createElement("div");q.className="qta"+(n.quota.per==="total"?" once":"");q.textContent=qt;q.title=(n.quota&&n.quota.raw)||t("quNone");li.appendChild(q)}if(gh){const st=starsOf(n);if(st!=null){const q=document.createElement("div");q.className="qta stars";q.textContent="★ "+digits(st.toLocaleString("en-US"));li.appendChild(q)}}ul.appendChild(li)})}
 /* ============ Generators card: the free allowances, item by item ============
    The dataset is MIRRORED verbatim from worker.js (same GEN-DATA markers): the Worker owns it
    and serves it at /api/generators, and this copy exists so the card — and the search index
@@ -2211,8 +2267,40 @@ $("#qrBtn").onclick=qrModal;
    free-allowance figures are indexed as first-class results — each generator, with the number
    it grants, and each cached AI headline that states a quota — so "daily limit" finds the
    figure itself rather than only the card that holds it. */
-$("#search").addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();const box=$("#searchResults");box.innerHTML="";if(!q){box.style.display="none";return}const ws=q.split(/\s+/).filter(Boolean);const hit=h=>ws.every(w=>h.includes(w));const out=[];Object.keys(CARDS).forEach(id=>{const c=CARDS[id];const hay=(nameFor(id)+" "+c.keys+" "+id).toLowerCase();if(hit(hay))out.push({l:nameFor(id)+" — "+pageNames()[c.p],fn:()=>jumpTo(id)})});let genHits=0;GEN_TOOLS.forEach(g=>{if(genHits>=5)return;const hay=(g.tool+" "+g.kind+" "+g.unit+" "+g.span+" "+(g.span==="day"?"daily":"")+" free tools limit allowance "+genAllowText(g)).toLowerCase();if(hit(hay)){genHits++;out.push({l:"🎞️ "+g.tool+" — "+genAllowText(g),fn:()=>jumpTo("gen")})}});const allNews=store.get(CONFIG.NEWS_CACHE_KEY,null)||{};let aiHits=0;((allNews.data&&allNews.data.ai)||[]).forEach(n=>{if(!n.quota||aiHits>=5)return;const hay=(n.title+" "+((n.why||[]).map(k=>whyText(k)).join(" "))+" "+(n.quota.raw||"")+" "+(n.quota.unit||"")).toLowerCase();if(hit(hay)){aiHits++;out.push({l:"🤖 "+(n.title||"").slice(0,44)+" — "+quotaText(n.quota),fn:()=>jumpTo("ai")})}});tasks.slice(0,5).forEach(x=>{if(hit(x.text.toLowerCase()))out.push({l:"✓ "+x.text,fn:()=>jumpTo("tasks")})});events.slice(0,5).forEach(x=>{if(hit(x.title.toLowerCase()))out.push({l:"📅 "+x.title,fn:()=>jumpTo("cal")})});(coinCache&&coinCache.data||[]).forEach(c=>{if(hit(c.symbol.toLowerCase())||hit(c.name.toLowerCase()))out.push({l:c.symbol.toUpperCase()+" $"+num(c.current_price),fn:()=>jumpTo("crypto")})});if(!out.length){box.style.display="none";return}out.slice(0,10).forEach(o=>{const b=document.createElement("button");b.textContent=o.l;b.onclick=()=>{box.style.display="none";$("#search").value="";o.fn()};box.appendChild(b)});box.style.display="block"});
-function jumpTo(id){const p=CARDS[id].p;if(isDesktop()){curPage=p;showPageView(p);renderPager();renderTabs();window.scrollTo({top:0});setTimeout(()=>{const n=document.getElementById("w_"+id);if(n){n.scrollIntoView({behavior:"smooth",block:"center"});n.classList.add("flash");setTimeout(()=>n.classList.remove("flash"),1600)}},60)}else{goPage(p);setTimeout(()=>{const n=document.getElementById("w_"+id);if(n){n.scrollIntoView({behavior:"smooth",block:"start"});n.classList.add("flash");setTimeout(()=>n.classList.remove("flash"),1600)}},350)}}
+$("#search").addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();const box=$("#searchResults");box.innerHTML="";if(!q){box.style.display="none";return}const ws=q.split(/\s+/).filter(Boolean);const hit=h=>ws.every(w=>h.includes(w));const out=[];Object.keys(CARDS).forEach(id=>{const c=CARDS[id];const hay=(nameFor(id)+" "+c.keys+" "+id).toLowerCase();if(hit(hay))out.push({l:nameFor(id)+" — "+pageNames()[c.p],fn:()=>jumpTo(id,q)})});let genHits=0;GEN_TOOLS.forEach(g=>{if(genHits>=5)return;const hay=(g.tool+" "+g.kind+" "+g.unit+" "+g.span+" "+(g.span==="day"?"daily":"")+" free tools limit allowance "+genAllowText(g)).toLowerCase();if(hit(hay)){genHits++;out.push({l:"🎞️ "+g.tool+" — "+genAllowText(g),fn:()=>jumpTo("gen",g.tool)})}});const allNews=store.get(CONFIG.NEWS_CACHE_KEY,null)||{};let aiHits=0;((allNews.data&&allNews.data.ai)||[]).forEach(n=>{if(!n.quota||aiHits>=5)return;const hay=(n.title+" "+((n.why||[]).map(k=>whyText(k)).join(" "))+" "+(n.quota.raw||"")+" "+(n.quota.unit||"")).toLowerCase();if(hit(hay)){aiHits++;out.push({l:"🤖 "+(n.title||"").slice(0,44)+" — "+quotaText(n.quota),fn:()=>jumpTo("ai",(n.title||"").slice(0,60))})}});tasks.slice(0,5).forEach(x=>{if(hit(x.text.toLowerCase()))out.push({l:"✓ "+x.text,fn:()=>jumpTo("tasks",x.text)})});events.slice(0,5).forEach(x=>{if(hit(x.title.toLowerCase()))out.push({l:"📅 "+x.title,fn:()=>jumpTo("cal",x.title)})});(coinCache&&coinCache.data||[]).forEach(c=>{if(hit(c.symbol.toLowerCase())||hit(c.name.toLowerCase()))out.push({l:c.symbol.toUpperCase()+" $"+num(c.current_price),fn:()=>jumpTo("crypto",c.symbol)})});if(!out.length){box.style.display="none";return}out.slice(0,10).forEach(o=>{const b=document.createElement("button");b.textContent=o.l;b.onclick=()=>{box.style.display="none";$("#search").value="";o.fn()};box.appendChild(b)});box.style.display="block"});
+/* ── landing on the word, not just the card ────────────────────────────────────────────────
+   A suggestion used to outline the whole card, which answers "which card" but not "where". The
+   matched word is wrapped in a mark for three seconds - long enough to catch the eye, short
+   enough to leave the page as it was - and a shut settings group holding the match opens first,
+   so the word is on screen when it is marked. A phrase that is not in the card falls back to
+   its first long word that is; if nothing matches, the card still outlines as before. */
+let hitTimer=0;
+function clearHit(){const m=document.querySelector("mark.hit");if(!m)return;const p=m.parentNode;if(p){p.replaceChild(document.createTextNode(m.textContent),m);p.normalize()}}
+function markIn(root,word){if(!root||!word)return null;
+  const want=word.toLowerCase();
+  const walk=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode(n){const p=n.parentNode;if(!p)return NodeFilter.FILTER_REJECT;
+    const tag=p.nodeName;if(tag==="SCRIPT"||tag==="STYLE"||tag==="TEXTAREA"||tag==="INPUT"||tag==="OPTION"||tag==="SELECT"||tag==="MARK")return NodeFilter.FILTER_REJECT;
+    return n.nodeValue&&n.nodeValue.toLowerCase().indexOf(want)>=0?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT}});
+  const n=walk.nextNode();if(!n)return null;
+  const i=n.nodeValue.toLowerCase().indexOf(want);
+  const after=n.splitText(i),hit=after.nodeValue.slice(0,word.length),m=document.createElement("mark");
+  after.nodeValue=after.nodeValue.slice(word.length);m.className="hit";m.textContent=hit;after.parentNode.insertBefore(m,after);
+  /* a match inside a shut settings group is off screen until the group holding it opens */
+  const groups=[];let a=m.parentNode;while(a&&a!==document){if(a.tagName==="DETAILS")groups.push(a);a=a.parentNode}
+  groups.reverse().forEach(d=>{if(!d.open)d.open=true});
+  clearTimeout(hitTimer);hitTimer=setTimeout(clearHit,3000);
+  return m}
+function markWord(root,needle){const s=String(needle||"").trim();if(!s)return null;
+  const words=s.split(/\s+/).filter(w=>w.length>1&&w.toLowerCase()!==s.toLowerCase());
+  for(const w of [s].concat(words)){const m=markIn(root,w);if(m)return m}
+  return null}
+function jumpTo(id,needle){const p=CARDS[id].p;
+  const land=()=>{const n=document.getElementById("w_"+id);if(!n)return;
+    const m=markWord(n,needle);
+    if(m){requestAnimationFrame(()=>m.scrollIntoView({behavior:"smooth",block:"center"}));return}
+    n.scrollIntoView({behavior:"smooth",block:"center"});n.classList.add("flash");setTimeout(()=>n.classList.remove("flash"),1600)};
+  if(isDesktop()){curPage=p;showPageView(p);renderPager();renderTabs();window.scrollTo({top:0});setTimeout(land,60)}
+  else{goPage(p);setTimeout(land,350)}}
 /* ============ command palette (⌘K) ============
    One chord opens a keyboard-first launcher - the pattern every 2026 dashboard has. It filters
    actions, sections, cards and your own data in one list; arrows move, Enter runs, Esc closes.

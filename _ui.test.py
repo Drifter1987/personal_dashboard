@@ -448,13 +448,60 @@ def cases(browser, base):
         finally:
             ctx.close()
 
+    # ── 11. a search suggestion lands on the word, and marks it for three seconds ───────────
+    def search_suggestion_marks_the_word():
+        ctx, page = boot(browser, base, 941, 620)
+        try:
+            # shut the group holding the word first: the point of the case is that landing on a
+            # word opens what hides it, not that it happened to be open already
+            page.evaluate("goPage(5)")
+            wait_for(page, "curPage", 5)
+            page.evaluate("(() => {const d=document.querySelector('details[data-set=\"look\"]');"
+                          "if(d&&d.open)d.querySelector('summary').click()})()")
+            page.wait_for_timeout(150)
+            shut = page.evaluate("document.querySelector('details[data-set=\"look\"]').open")
+            page.evaluate("goPage(0)")
+            wait_for(page, "curPage", 0)
+            page.fill("#search", "language")
+            page.wait_for_selector("#searchResults button", timeout=3000)
+            hit = page.evaluate(
+                "(() => {const b=[...document.querySelectorAll('#searchResults button')]"
+                ".find(x=>/settings/i.test(x.textContent));if(!b)return null;b.click();return b.textContent})()"
+            )
+            if not check("contract: a settings word in the search box offers a suggestion", bool(hit) and not shut,
+                         "shut=%s · %s" % (shut, hit)):
+                return
+            page.wait_for_timeout(450)
+            st = page.evaluate(
+                "({p:curPage, mark:(document.querySelector('mark.hit')||{}).textContent||null,"
+                " open:!!(document.querySelector('details[data-set=\"look\"]')||{}).open,"
+                " word:(document.querySelector('mark.hit')||{}).getBoundingClientRect&&document.querySelector('mark.hit')?Math.round(document.querySelector('mark.hit').getBoundingClientRect().top):null})"
+            )
+            check("a suggestion opens the section that owns the word", st["p"] == 5,
+                  "section %s (%s)" % (st["p"], hit))
+            check("\u2026opens the group hiding it and marks the word itself",
+                  st["open"] and (st["mark"] or "").lower() == "language",
+                  "look open=%s · mark=%r" % (st["open"], st["mark"]))
+            check("\u2026and the mark is on screen, not left off the bottom",
+                  st["word"] is not None and -50 <= st["word"] <= 700, "mark top=%s" % st["word"])
+            page.wait_for_timeout(3200)
+            after = page.evaluate(
+                "({mark:!!document.querySelector('mark.hit'),"
+                " label:document.querySelector('#wb_settings').textContent.indexOf('Language') >= 0})"
+            )
+            check("\u2026and the mark is taken off again, leaving the label in place",
+                  not after["mark"] and after["label"],
+                  "mark gone=%s · label intact=%s" % (not after["mark"], after["label"]))
+        finally:
+            ctx.close()
+
     return [rebuild_keeps_offset, reorder_keeps_offset, hiding_a_card_above_holds_the_card_below,
             shortening_page_clamps_but_never_snaps_to_the_top,
             section_change_starts_at_the_top, phone_keeps_section_and_offset,
             only_two_scrollers_exist, a_card_is_only_as_tall_as_its_content,
             a_loading_card_keeps_its_frame, opening_lands_on_home,
             a_shortcut_link_opens_its_section,
-            buttons_do_not_move_the_view, today_button]
+            buttons_do_not_move_the_view, today_button, search_suggestion_marks_the_word]
 
 
 def main():

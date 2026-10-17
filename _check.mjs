@@ -433,10 +433,18 @@ if (qtextSrc) {
     QUOTA_UNITS.every((u) => { const s = quotaText({ n: 7, unit: u, per: "day", perDay: null }); return s.length > 0 && s.indexOf("undefined") < 0 && s.indexOf("NaN") < 0; }),
     QUOTA_UNITS.map((u) => u + "=" + quotaText({ n: 7, unit: u, per: "day", perDay: u === "unlimited" ? null : 7 })).join(" "));
 }
-check("page quota: the column is styled and drawn only on the AI card",
-  /\.list li\.qrow\{/.test(pageSrc) && /\.qta\{/.test(pageSrc) && /\.qta\.none\{/.test(pageSrc) && /font-variant-numeric:tabular-nums/.test(pageSrc)
-  && /const ai=isAiList\(ul\)/.test(pageSrc) && /className="qta"/.test(pageSrc) && /dataset\.widget==="ai"/.test(pageSrc),
-  "css + isAiList + .qta cell");
+/* The right-hand cell exists only where there is a figure. It used to fall back to a dashed oval
+   holding a dash, which reads as a figure that went missing rather than one never published - so
+   the fallback is gone and this check now fails if it comes back, or if a star cell stops being
+   the fixed width that makes every star in the GitHub card start on one edge. */
+check("page quota: a cell is drawn only when there is a figure, and the star column is fixed",
+  /\.list li\.qrow\{/.test(pageSrc) && /\.qta\{/.test(pageSrc) && /font-variant-numeric:tabular-nums/.test(pageSrc)
+  && /const ai=isAiList\(ul\),gh=isGhList\(ul\)/.test(pageSrc) && /className="qta"/.test(pageSrc)
+  && /dataset\.widget==="ai"/.test(pageSrc) && /dataset\.widget==="gh"/.test(pageSrc)
+  && /if\(ai&&qt\)\{/.test(pageSrc) && /if\(gh\)\{const st=starsOf\(n\);/.test(pageSrc)
+  && /\.list li\.qrow\.starcol\{grid-template-columns:minmax\(0,1fr\) 86px\}/.test(pageSrc)
+  && !/className="qta"\+\(n\.quota\?/.test(pageSrc) && !/q\.textContent=qt\|\|/.test(pageSrc),
+  "css + isAiList/isGhList + a cell only when there is a figure");
 check("page quota: the cited wording travels with the figure (tooltip) and stays out of the reader title",
   /q\.title=\(n\.quota&&n\.quota\.raw\)\|\|t\("quNone"\)/.test(pageSrc) && /const why=whyLine\(n\),qt=quotaText\(n\.quota\)/.test(pageSrc));
 
