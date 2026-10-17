@@ -50,7 +50,7 @@
  * cache put.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-const VERSION = "1.12.0";
+const VERSION = "1.13.0";
 const UA = "dashboard-worker/" + VERSION;
 const METALS = ["XAU", "XAG", "XPT", "XPD"];
 const MNAME = { XAU: "gold", XAG: "silver", XPT: "platinum", XPD: "palladium" };
@@ -1019,7 +1019,7 @@ function cors(origin, allowed) {
   const ok = a === "*" || a === origin;
   return {
     "Access-Control-Allow-Origin": ok ? (a === "*" ? "*" : origin) : "null",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, X-Provider",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
@@ -1272,6 +1272,191 @@ async function newsPayload() {
   };
 }
 
+/* ─────────────── Due-date reminders (Web Push) ───────────────
+ * The dashboard keeps its cards in the browser, and a browser that is closed cannot decide
+ * anything — so the schedule lives here and a cron tick turns it into notifications:
+ *   GET  /api/push/key        the VAPID public key the browser subscribes with
+ *   POST /api/push/register   one record per device: subscription, local time, due cards
+ *   POST /api/push/test       an immediate push, so the setup can be proven
+ *   POST /api/push/off        forget this device
+ * What is stored is only what a reminder needs: the endpoint, its two keys, the local time
+ * and the titles of open cards that carry a due date. Nothing about the rest of the app.
+ *
+ * The crypto is RFC 8291 (aes128gcm) and RFC 8292 (VAPID) on WebCrypto alone: a fresh ECDH
+ * key per message, HKDF-SHA256 with the "WebPush: info" mix-in, AES-128-GCM with a 0x02 last-
+ * record delimiter, and an ES256 JWT signed with the account's VAPID key. The payload is
+ * verified against http_ece (the decryptor web-push itself uses) in the repo's test harness.
+ */
+const enc8 = new TextEncoder();   /* the file already has `enc` for encodeURIComponent */
+const PUSH_PREFIX = "p:";
+const PUSH_MAX_ITEMS = 200;
+const PUSH_TEXT_MAX = 120;
+const PUSH_KEEP_DAYS = 120;
+
+const b64u = (bytes) => {
+  const b = new Uint8Array(bytes);
+  let s = "";
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+function unb64u(str) {
+  const s = String(str).replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(s + "=".repeat((4 - (s.length % 4)) % 4));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+/* HKDF-SHA256: extract is HMAC(key = salt, message = ikm) — getting that order backwards
+ * still yields a plausible-looking key, and then every push service silently fails to
+ * decrypt the payload. Expand is a single block (both callers ask for <= 32 bytes). */
+async function hkdf(ikm, salt, info, len) {
+  const k = await crypto.subtle.importKey("raw", salt, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const prk = new Uint8Array(await crypto.subtle.sign("HMAC", k, ikm));
+  const pk = await crypto.subtle.importKey("raw", prk, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const t = new Uint8Array(await crypto.subtle.sign("HMAC", pk, new Uint8Array([...info, 1])));
+  return t.slice(0, len);
+}
+async function encryptPush(text, p256dh, authSecret) {
+  const uaPub = unb64u(p256dh), auth = unb64u(authSecret);
+  const eph = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const asPub = new Uint8Array(await crypto.subtle.exportKey("raw", eph.publicKey));
+  const uaKey = await crypto.subtle.importKey("raw", uaPub, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, eph.privateKey, 256));
+  const info = new Uint8Array([...enc8.encode("WebPush: info"), 0, ...uaPub, ...asPub]);
+  const ikm = await hkdf(ecdh, auth, info, 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(ikm, salt, new Uint8Array([...enc8.encode("Content-Encoding: aes128gcm"), 0]), 16);
+  const nonce = await hkdf(ikm, salt, new Uint8Array([...enc8.encode("Content-Encoding: nonce"), 0]), 12);
+  const aes = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
+  const plain = new Uint8Array([...enc8.encode(text), 2]);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, aes, plain));
+  const rec = new Uint8Array(16 + 4 + 1 + 65 + ct.length);
+  rec.set(salt, 0);
+  new DataView(rec.buffer).setUint32(16, 4096, false);
+  rec[20] = 65;
+  rec.set(asPub, 21);
+  rec.set(ct, 86);
+  return rec;
+}
+function vapidJwk(env) {
+  const raw = env.VAPID_JWK;
+  if (!raw) return null;
+  if (typeof raw === "object" && typeof raw.get === "function") return null;  /* secrets store: not used here */
+  try {
+    const jwk = JSON.parse(typeof raw === "string" ? raw : "");
+    return jwk && jwk.d && jwk.x && jwk.y ? jwk : null;
+  } catch (e) { return null; }
+}
+function vapidPublic(jwk) { return b64u(new Uint8Array([4, ...unb64u(jwk.x), ...unb64u(jwk.y)])); }
+async function vapidAuth(endpoint, env) {
+  const jwk = vapidJwk(env);
+  if (!jwk) return null;
+  const key = await crypto.subtle.importKey("jwk", { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, d: jwk.d, ext: true }, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const head = b64u(enc8.encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
+  const claims = b64u(enc8.encode(JSON.stringify({
+    aud: new URL(endpoint).origin,
+    exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+    sub: env.VAPID_SUBJECT || "mailto:reminders@dashboard.local"
+  })));
+  const signed = head + "." + claims;
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, enc8.encode(signed)));
+  return "vapid t=" + signed + "." + b64u(sig) + ", k=" + vapidPublic(jwk);
+}
+async function sendPush(rec, payload, env) {
+  const auth = await vapidAuth(rec.endpoint, env);
+  if (!auth) return { ok: false, status: 503, error: "no vapid key" };
+  const body = await encryptPush(JSON.stringify(payload), rec.keys.p256dh, rec.keys.auth);
+  const res = await fetch(rec.endpoint, {
+    method: "POST",
+    headers: {
+      TTL: "86400",
+      "Content-Encoding": "aes128gcm",
+      "Content-Type": "application/octet-stream",
+      Authorization: auth,
+      Urgency: payload.urgency || "normal"
+    },
+    body
+  });
+  return { ok: res.ok, status: res.status };
+}
+const dayUTC = (ms) => new Date(ms).toISOString().slice(0, 10);
+/* The record says when the user wants the digest in their own timezone, so the tick asks the
+ * runtime what that clock reads rather than guessing an offset that shifts twice a year. */
+function localParts(now, tz) {
+  try {
+    const f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(now));
+    const g = (k) => { const p = f.find((x) => x.type === k); return p ? p.value : ""; };
+    return { date: g("year") + "-" + g("month") + "-" + g("day"), min: (Number(g("hour")) % 24) * 60 + Number(g("minute")) };
+  } catch (e) {
+    const d = new Date(now);
+    return { date: dayUTC(now), min: d.getUTCHours() * 60 + d.getUTCMinutes() };
+  }
+}
+function minutesOf(at) { const m = /^(\d{1,2}):(\d{2})$/.exec(String(at || "")); return m ? Math.min(1439, Number(m[1]) * 60 + Number(m[2])) : 8 * 60; }
+function dueDigest(items, lang) {
+  const ar = lang === "ar";
+  const n = items.length;
+  const title = n === 1
+    ? (ar ? "بطاقة مستحقة اليوم" : "A card is due today")
+    : (ar ? n + " بطاقات مستحقة اليوم" : n + " cards due today");
+  const names = items.slice(0, 4).map((it) => it.text).join(" · ");
+  const body = n > 4 ? names + (ar ? " +" + (n - 4) + " أخرى" : " +" + (n - 4) + " more") : names;
+  return { title, body, tag: "pd-due", url: "/?p=3" };
+}
+async function pushStoreKey(endpoint) {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", enc8.encode(endpoint)));
+  return PUSH_PREFIX + [...d].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function validSub(sub) {
+  if (!sub || typeof sub.endpoint !== "string" || !sub.keys) return false;
+  if (sub.endpoint.length > 2048) return false;
+  try { if (new URL(sub.endpoint).protocol !== "https:") return false; } catch (e) { return false; }
+  try {
+    return unb64u(sub.keys.p256dh).length === 65 && unb64u(sub.keys.auth).length === 16;
+  } catch (e) { return false; }
+}
+/* One digest per device per day. The tick runs every 15 minutes and fires on the first tick
+ * at or after the chosen minute, so a late or missed tick still delivers; `lastSent` stops it
+ * repeating, and a 404/410 from the push service means the subscription is gone for good. */
+async function runPushDigests(env, now) {
+  const out = { scanned: 0, sent: 0, pruned: 0, failed: 0 };
+  if (!env.PUSH) return out;
+  let cursor;
+  do {
+    const page = await env.PUSH.list({ prefix: PUSH_PREFIX, cursor, limit: 500 });
+    for (const k of page.keys) {
+      out.scanned++;
+      const rec = await env.PUSH.get(k.name, "json");
+      if (!rec || !rec.endpoint || !rec.keys) { await env.PUSH.delete(k.name); out.pruned++; continue; }
+      if (now - (rec.updated || 0) > PUSH_KEEP_DAYS * 86400000) { await env.PUSH.delete(k.name); out.pruned++; continue; }
+      const local = localParts(now, rec.tz);
+      if (local.min < minutesOf(rec.at)) continue;
+      if (rec.lastSent === local.date) continue;
+      const due = (rec.items || []).filter((it) => it && it.due && it.due <= local.date);
+      rec.updated = now;
+      if (!due.length) { rec.lastSent = local.date; await env.PUSH.put(k.name, JSON.stringify(rec)); continue; }
+      const res = await sendPush(rec, dueDigest(due, rec.lang), env);
+      if (res.status === 404 || res.status === 410) { await env.PUSH.delete(k.name); out.pruned++; continue; }
+      rec.lastStatus = res.status;
+      if (res.ok) { rec.lastSent = local.date; rec.sentAt = now; rec.tries = 0; out.sent++; }
+      else { rec.tries = (rec.tries || 0) + 1; if (rec.tries >= 6) rec.lastSent = local.date; out.failed++; }
+      await env.PUSH.put(k.name, JSON.stringify(rec));
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+  return out;
+}
+
+const MAX_BODY = 65536;
+async function readJson(request) {
+  try {
+    const txt = await request.text();
+    if (txt.length > MAX_BODY) return { error: "body too large" };
+    const json = JSON.parse(txt);
+    return json && typeof json === "object" ? { json } : { error: "bad json" };
+  } catch (e) { return { error: "bad json" }; }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -1389,11 +1574,90 @@ export default {
       });
     }
 
+    /* ── reminders ──────────────────────────────────────────────────────────────
+     * A write from a foreign page is refused outright rather than merely hidden by CORS:
+     * the browser would block that page from reading the answer, but the push would still
+     * be registered. */
+    if (path.startsWith("/api/push")) {
+      const origin = request.headers.get("Origin") || "";
+      if (request.method === "POST" && allowed !== "*" && origin !== allowed) {
+        return J({ error: "origin not allowed" }, H, 403);
+      }
+      const jwk = vapidJwk(env);
+      if (path === "/api/push/key") {
+        if (!jwk) return J({ error: "reminders are not configured on this Worker" }, H, 503);
+        return J({ ok: true, key: vapidPublic(jwk), subject: env.VAPID_SUBJECT || "", version: VERSION }, H);
+      }
+      if (path === "/api/push/register" && request.method === "POST") {
+        if (!jwk) return J({ error: "reminders are not configured on this Worker" }, H, 503);
+        if (!env.PUSH) return J({ error: "this Worker has no PUSH store bound" }, H, 503);
+        const { json, error } = await readJson(request);
+        if (error) return J({ error }, H, 400);
+        const sub = json.sub;
+        if (!validSub(sub)) return J({ error: "invalid subscription" }, H, 400);
+        const items = (Array.isArray(json.items) ? json.items : []).slice(0, PUSH_MAX_ITEMS).map((it) => ({
+          id: String(it && it.id != null ? it.id : "").slice(0, 40),
+          text: String((it && it.text) || "").slice(0, PUSH_TEXT_MAX),
+          due: /^\d{4}-\d{2}-\d{2}$/.test(it && it.due) ? it.due : ""
+        })).filter((it) => it.due);
+        const at = /^\d{1,2}:\d{2}$/.test(json.at) ? json.at : "08:00";
+        const key = await pushStoreKey(sub.endpoint);
+        const prev = (await env.PUSH.get(key, "json")) || {};
+        const rec = {
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+          tz: typeof json.tz === "string" ? json.tz.slice(0, 64) : "UTC",
+          at,
+          lang: json.lang === "ar" ? "ar" : "en",
+          items,
+          updated: Date.now(),
+          created: prev.created || Date.now(),
+          lastSent: prev.lastSent || "",
+          lastStatus: prev.lastStatus || 0
+        };
+        await env.PUSH.put(key, JSON.stringify(rec));
+        return J({ ok: true, at: rec.at, tz: rec.tz, items: items.length, version: VERSION }, H);
+      }
+      if (path === "/api/push/test" && request.method === "POST") {
+        const { json, error } = await readJson(request);
+        if (error) return J({ error }, H, 400);
+        if (!validSub(json.sub)) return J({ error: "invalid subscription" }, H, 400);
+        const ar = json.lang === "ar";
+        const payload = {
+          title: ar ? "تذكير تجريبي" : "Test reminder",
+          body: ar ? "التذكيرات تعمل على هذا الجهاز." : "Reminders work on this device.",
+          tag: "pd-test",
+          url: "/?p=3"
+        };
+        const res = await sendPush(json.sub, payload, env);
+        if (res.status === 503) return J({ error: "reminders are not configured on this Worker" }, H, 503);
+        if (res.status === 404 || res.status === 410) return J({ error: "this device is no longer subscribed", status: res.status }, H, 410);
+        return J({ ok: res.ok, status: res.status }, H, res.ok ? 200 : 502);
+      }
+      if (path === "/api/push/off" && request.method === "POST") {
+        const { json, error } = await readJson(request);
+        if (error) return J({ error }, H, 400);
+        if (!json || typeof json.endpoint !== "string") return J({ error: "endpoint required" }, H, 400);
+        if (!env.PUSH) return J({ ok: true, removed: 0 }, H);
+        await env.PUSH.delete(await pushStoreKey(json.endpoint));
+        return J({ ok: true, removed: 1 }, H);
+      }
+      return J({ error: "unknown push route" }, H, 404);
+    }
+
     return J({
       ok: true,
       v: VERSION,
-      routes: ["/api/health", "/api/metals", "/api/metals/history", "/api/history", "/api/rates", "/api/news", "/api/repos", "/api/generators"],
+      routes: ["/api/health", "/api/metals", "/api/metals/history", "/api/history", "/api/rates", "/api/news", "/api/repos", "/api/generators", "/api/push/key", "/api/push/register", "/api/push/test", "/api/push/off"],
       providers: PROVIDER_IDS
     }, H);
+  },
+  /* The cron tick. Wrangler declares the schedule; the handler is deliberately dull - scan,
+   * decide, send, record - so a failure is one device's problem and never the run's. */
+  async scheduled(event, env) {
+    const out = await runPushDigests(env, Date.now());
+    console.log("push digest " + JSON.stringify(out) + " cron=" + (event && event.cron ? event.cron : ""));
+    /* Returned rather than discarded: the runtime ignores it, and the test harness reads it. */
+    return out;
   }
 };

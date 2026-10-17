@@ -26,6 +26,8 @@ preview_urls = false
 [vars]
 # The only origin allowed to read this API. Must match the page's own host.
 ALLOWED_ORIGIN = "https://home-dashboard-5ma.pages.dev"
+# Contact URI VAPID asks for; a mailto is what push services expect in the JWT.
+VAPID_SUBJECT = "mailto:drifter_87@live.com"
 
 # The Worker's metals provider key, held in the account's default secrets store
 # (secret named personal_dashboard). worker.js reads this with
@@ -39,3 +41,26 @@ ALLOWED_ORIGIN = "https://home-dashboard-5ma.pages.dev"
 binding = "METALS_API_KEY"
 store_id = "511d1a675636417c88acb05c68f401e9"
 secret_name = "personal_dashboard"
+
+# Due-date reminders. One KV namespace holds one record per device - the push subscription,
+# the local hour and the titles of open cards that carry a date - and nothing else.
+#
+# The id below is the real namespace in this account (created 2026-10-17). A namespace id is
+# an account-scoped identifier rather than a secret: it grants nothing without the account
+# credential. `wrangler dev` keys its local store by this same string, so local runs and
+# production read the same config.
+#
+#   npx wrangler kv namespace create PUSH     # a second namespace would print a new id
+#   npx wrangler secret put VAPID_JWK         # the private VAPID key, never in this file
+#
+# Use a recent wrangler for the create step: 4.127.1 answered "Authentication error
+# [code: 10000]" for an account whose token plainly had workers_kv (write); 4.151.1 created
+# the namespace on the first try.
+[[kv_namespaces]]
+binding = "PUSH"
+id = "b06e13f1ee2347559cf87635d5fd6393"
+
+# The reminder tick. Every 15 minutes, so the first tick at or after the hour a device chose
+# is the one that fires - a missed tick delays a reminder by minutes instead of a day.
+[triggers]
+crons = ["*/15 * * * *"]

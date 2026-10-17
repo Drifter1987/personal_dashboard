@@ -1248,6 +1248,62 @@ check("worker cache: the router streams a cached payload, and no longer decodes 
   /new Response\(got\.res\.body, \{/.test(wsrc) && /new Response\(res\.body, \{/.test(wsrc) && !/await (?:got\.)?res\.text\(\)/.test(wsrc),
   (wsrc.match(/new Response\((?:got\.)?res\.body, \{/g) || []).length + " streamed routes · old re-encode gone");
 
+/* ── offline: the worker's cache is versioned with the page ──────────────────────
+   The prompt-and-reload design rests on one pairing: a release installs a *new* worker, and a
+   new worker is what tells the tab an update exists. If deploy/sw.js and the page drift apart,
+   a release ships that nobody is ever offered - so the pairing is a gate failure, not a habit.
+   The worker's actual behaviour (what is cached, what is passed straight through, what an
+   offline navigation receives) is executed in _sw.test.mjs rather than pattern-matched here. */
+const { spawnSync } = await import("node:child_process");
+const { fileURLToPath } = await import("node:url");
+const ROOT = fileURLToPath(new URL(".", import.meta.url));
+const swSrc = readFileSync(new URL("./deploy/sw.js", import.meta.url), "utf8");
+const pageVer = (pageSrc.match(/VERSION:\s*"([0-9.]+)"/) || [])[1];
+const swVer = (swSrc.match(/const VERSION\s*=\s*"([0-9.]+)"/) || [])[1];
+check("offline: the worker's cache version is the page's version, so a release is offered by name",
+  !!pageVer && pageVer === swVer, "page " + pageVer + " / worker " + swVer);
+check("offline: the shell is required at install - a 404 cannot pose as an offline app",
+  /if \(!res \|\| !res\.ok\) throw new Error\("shell /.test(swSrc));
+check("offline: the new worker waits; skipping waiting only ever comes from the page's Reload",
+  (swSrc.match(/skipWaiting\(/g) || []).length === 1 && /data\.type === "SKIP_WAITING"\) self\.skipWaiting\(\)/.test(swSrc),
+  (swSrc.match(/skipWaiting\(/g) || []).length + " call site(s)");
+check("offline: the API and every other origin are passed straight through, never cached",
+  /url\.origin !== self\.location\.origin\) return;/.test(swSrc) && !/caches\.default/.test(swSrc));
+check("page: the worker is registered at boot, not only when reminders are switched on",
+  /function swBoot[\s\S]{0,400}swEnsure\(\)/.test(pageSrc) && /pushResume\(\);\nswBoot\(\);/.test(pageSrc));
+check("page: Reload swaps the waiting worker, then reloads on controllerchange",
+  /postMessage\(\{type:"SKIP_WAITING"\}\)/.test(pageSrc) && /addEventListener\("controllerchange",go\)/.test(pageSrc));
+check("page: the update bar and the offline chip are worded in both languages",
+  ["updReady", "updGo", "updLater", "offChip"].every((k) => new RegExp("\\b" + k + ":").test(pageSrc)));
+/* The offline worker installs by copying the shell, so an install that cannot complete never
+   activates. Awaiting `ready` unbounded would leave the reminder switch spinning with no answer
+   at all, which is worse than the honest failure it has a string for. */
+check("reminders: switching them on cannot hang on a worker that never activates",
+  /if\(!reg\.active\) await Promise\.race\(\[navigator\.serviceWorker\.ready/.test(pageSrc),
+  /if\(!reg\.active\) await Promise\.race/.test(pageSrc) ? "bounded wait" : "unbounded navigator.serviceWorker.ready");
+const swRun = spawnSync(process.execPath, ["_sw.test.mjs"], { encoding: "utf8", cwd: ROOT });
+const swTail = String(swRun.stderr || swRun.stdout || "").trim().split("\n").filter(Boolean).pop();
+check("offline: the worker's behaviour, executed - install, shells, updates, reminders",
+  swRun.status === 0, swRun.status === 0 ? ((swRun.stdout.match(/^\d+\/\d+ checks passed$/m) || ["passed"])[0]) : swTail);
+
+/* ── the plan: repeat, successor and rollover, executed ─────────────────────
+   Three rules that look identical in a screenshot whether they work or not: a finished repeat
+   card must produce exactly one future copy, a card completed twice must not produce two, and
+   an overdue card must move to today once a day and never rewrite a finished one. _tasks.test.mjs
+   lifts the real functions out of index.html and runs them against a pinned clock, so the
+   arithmetic (setMonth overflow, the guard loop, the once-a-day stamp) is exercised rather
+   than pattern-matched. */
+const taskRun = spawnSync(process.execPath, ["_tasks.test.mjs"], { encoding: "utf8", cwd: ROOT });
+const taskTail = String(taskRun.stderr || taskRun.stdout || "").trim().split("\n").filter(Boolean).pop();
+check("plan: repeats, successors and rollover, executed - one copy, dated forward, once a day",
+  taskRun.status === 0, taskRun.status === 0 ? ((taskRun.stdout.match(/^\d+\/\d+ checks passed$/m) || ["passed"])[0]) : taskTail);
+/* A repeated card and a carried one are the only places the user sees these rules holding, so
+   they have to survive a refactor of the card and of the CSV export. */
+check("plan: a repeating card and a carried one still say so - a chip on the card, a repeat column in the CSV",
+  /className="rep"[^\n]{0,120}REP_KEY\[x\.rep\]/.test(pageSrc) && /className="carried"[^\n]{0,120}t\("carried"\)/.test(pageSrc)
+  && /priority,repeat,/.test(pageSrc) && /q\(x\.rep\)/.test(pageSrc),
+  "repeat chip · carried chip · csv repeat column");
+
 console.log("\n-- sample payload --");
 for (const card of ["auto", "ai", "fin"]) {
   console.log("  --- " + card + " ---");

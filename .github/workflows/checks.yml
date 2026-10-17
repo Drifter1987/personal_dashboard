@@ -58,6 +58,7 @@ jobs:
           node --check worker.js
           node --check _check.mjs
           node --check _deploy.mjs
+          node --check _tasks.test.mjs
           PY=$(command -v python3 || command -v python)
           "$PY" -c "import py_compile; py_compile.compile('_zip.py', cfile='_zip.pyc', doraise=True)"
       - name: Deploy gate
