@@ -1,19 +1,21 @@
 # Deploying the dashboard
 
 Two things get published, to **different Cloudflare products**, and they are pinned to the
-account in different ways. Read the credential section before running anything.
+account in different ways. The page publishes itself on a push to `main`; the Worker does not.
+Read the credential section before running anything by hand.
 
-| What | Command | Where it lands |
+| What | How | Where it lands |
 |---|---|---|
-| Worker API | `wrangler deploy` | `home-dashboard-api.drifter-87.workers.dev` |
-| Static page | `wrangler pages deploy deploy/ --project-name home-dashboard` | `home-dashboard-5ma.pages.dev` |
+| Worker API | `wrangler deploy` — by hand, section 2 | `home-dashboard-api.drifter-87.workers.dev` |
+| Static page | **automatic**: a push to `main` that passes the gate, section 3 (or `wrangler pages deploy deploy/ --project-name home-dashboard` by hand) | `home-dashboard-5ma.pages.dev` |
 
 Target account: **`Drifter_87@live.com`** (`8660293d…`) — the main
 hosting account. Full inventory: [docs/CLOUDFLARE_ACCOUNTS.md](docs/CLOUDFLARE_ACCOUNTS.md).
 
-To stop doing this by hand — a push that publishes itself, with no API token — follow
-[docs/PUBLISHING.html](docs/PUBLISHING.html). It is written for the person clicking, not for
-an agent.
+The pipeline is wired but it needs a credential this file cannot hold: the click path for
+creating the Cloudflare token and adding the two repository secrets is
+[docs/PUBLISHING.html](docs/PUBLISHING.html), written for the person clicking rather than for an
+agent. Until both secrets exist the publish job skips and says so.
 
 ## 0. Before anything: which account, and is it even alive?
 
@@ -189,12 +191,36 @@ python -m http.server 8099 --bind 127.0.0.1 --directory deploy
 
 ## 3. Publish the page
 
+**On `main`, a push does this for you.** `.github/workflows/checks.yml` has a `publish` job that
+runs only after the gate on that commit has passed, only for a push to `main` (or a manual run of
+the workflow on `main`), and it uploads `deploy/` to the project below before proving the live
+site serves it. Nothing needs doing by hand for a normal release.
+
+The job needs two repository secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Value |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | A Custom token with **Account → Cloudflare Pages → Edit**. Nothing else is required. |
+| `CLOUDFLARE_ACCOUNT_ID` | `8660293d5a5646d0131b5edad05d7910` |
+
+Until both exist the job emits a warning naming them and **skips** the publish rather than
+failing: a red X that only means "nobody added the secret" is a red X people learn to ignore.
+A skipped publish is visible in the run summary — never read "the workflow was green" as "the
+site was updated".
+
+A Pages credential carries **no account binding** of its own, so the token *is* the account
+selector, exactly as in step 0. The job records the account it targets in its own log.
+
+### The manual path, unchanged and still first-class
+
 ```bash
 wrangler pages deploy deploy/ --project-name home-dashboard
 ```
 
-Uploads the bundle produced by the gate. This is the step with no account binding, so it is the
-step where `whoami` has to be right.
+Use this when the pipeline is wrong rather than the page — a skipped publish, a missing secret,
+a red gate — or to publish a commit that is not on `main`. It is the same project and the same
+production branch as the job, so the address never moves between the two. This is the step with
+no account binding, so it is the step where `whoami` has to be right.
 
 ## 4. Verify — always, against the live site
 
@@ -205,6 +231,7 @@ is not done until it exits 0:
 ```bash
 node _smoke.mjs               # the whole check, exit 0 only if the live site matches
 node _smoke.mjs --once        # one fetch per URL: no edge-staleness re-fetch
+node _smoke.mjs --page-only   # the page only - what the CI publish job runs
 node _smoke.mjs --timeout=20000
 ```
 
@@ -307,12 +334,26 @@ a log, and let it expire.
 
 ## CI publishing
 
-`.github/workflows/checks.yml` runs the gate on every push and pull request, and produces the
-upload bundle in a second job. GitHub only reads `.github/workflows` at the **repository root**,
-so for CI publishing to work this project must be its own repository with its own remote (see
-the mission notes) — otherwise the workflow never runs at all.
+`.github/workflows/checks.yml` has three jobs. GitHub only reads `.github/workflows` at the
+**repository root**, so this project must be its own repository with its own remote — otherwise
+the workflow never runs at all.
 
-Publishing from CI is not wired yet; until it is, releases are manual and start at step 0.
-Whenever it is wired, the publish job must finish with `node _smoke.mjs` (plus the two repository
-secrets above), because a `wrangler` exit code says the upload was accepted, not that the edge is
-serving it — that is the difference the script exists to catch.
+| Job | Runs when | What it settles |
+|---|---|---|
+| `gate` | every push and pull request | `node _deploy.mjs` — the harness against the real sources, then that the bundle is the thing the harness tested. A red gate stops everything after it. |
+| `bundle` | after a green gate, never on a pull request | Uploads `dashboard-site.zip` as a build artifact, so a release is downloadable even when publishing was skipped. |
+| `publish` | after a green gate, **only on `main`** | Uploads `deploy/` to Pages on the production branch, then runs `node _smoke.mjs --page-only`. |
+
+The job finishes with the smoke test because a `wrangler` exit code says the upload was
+accepted, not that the edge is serving it. `--page-only` is what the job runs rather than the
+whole script: this job publishes the page and nothing else, so on a commit that also edits
+`worker.js` the Worker's own checks would fail a job whose work — the page — landed correctly.
+The page comparison is not reduced by the flag: every published file is still fetched and hashed
+against `deploy/`. The Worker and CORS checks belong to the Worker's release (section 2), and
+`node _smoke.mjs` runs them all.
+
+The Worker is deliberately not in this job: it carries the push keys, the KV namespace and the
+cron, it is pinned by `wrangler.toml` rather than by a token, and it changes rarely.
+
+**A green run of `publish` is a claim about the live site**, and it is allowed to be no stronger
+than `--page-only` makes it: the page is proven live, the Worker is not.
