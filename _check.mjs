@@ -1466,6 +1466,71 @@ check("page: the update bar and the offline chip are worded in both languages",
 check("reminders: switching them on cannot hang on a worker that never activates",
   /if\(!reg\.active\) await Promise\.race\(\[navigator\.serviceWorker\.ready/.test(pageSrc),
   /if\(!reg\.active\) await Promise\.race/.test(pageSrc) ? "bounded wait" : "unbounded navigator.serviceWorker.ready");
+/* Three answers look alike and are not: a host may report a permission it never granted, may
+   show no prompt at all so the request never settles, or may drop a notification it permitted.
+   One sentence for all three sent the user back to a button that could not change anything - and
+   on a host whose prompt never appears, "the prompt was dismissed" was simply untrue. Executed
+   here against stubs, because the host that produced the complaint is exactly one of them. */
+const askSrc = (pageSrc.match(/async function askNotif\(\)\{[\s\S]*?return after \|\| before \}/) || [])[0];
+const deviceSrc = (pageSrc.match(/async function notifyLocal\(title,body\)\{[\s\S]*?why\.join\(" · "\)\} \}/) || [])[0];
+function notifHost({ state, ask, swError, pageEvent }) {
+  function FakeNotification() {
+    const self = this;
+    this.close = () => {};
+    /* the event lands after the caller has attached its handler - a microtask is the only
+       ordering that is the same in every runtime, since a 0ms timer is clamped to 1ms */
+    if (pageEvent) queueMicrotask(() => { const h = self["on" + pageEvent]; if (h) h() });
+  }
+  FakeNotification.permission = state;
+  FakeNotification.requestPermission = ask === "pending" ? () => new Promise(() => {}) : () => Promise.resolve(ask);
+  const reg = { showNotification: () => (swError ? Promise.reject(swError) : Promise.resolve()) };
+  const scope = {
+    /* the feature is probed with `"Notification" in window`, so the stub has to be on it too */
+    window: { Notification: FakeNotification }, Notification: FakeNotification, t: (k) => k, swReg: reg,
+    navigator: { serviceWorker: { getRegistration: () => Promise.resolve(reg) } },
+    /* the page waits 15s for a prompt that may never come, and 2.5s for a show event; here those
+       become 1ms - long enough to keep their place behind an immediate event, short enough that
+       a hanging host is tested rather than waited out */
+    setTimeout: (fn, ms) => setTimeout(fn, ms >= 1000 ? 1 : 0),
+  };
+  const boot = new Function("window", "Notification", "navigator", "swReg", "t", "setTimeout",
+    askSrc + "\n" + deviceSrc + "\nreturn {askNotif,notifyLocal};");
+  return boot(scope.window, scope.Notification, scope.navigator, scope.swReg, scope.t, scope.setTimeout);
+}
+if (askSrc && deviceSrc) {
+  const silentHost = notifHost({ state: "default", ask: "pending" });
+  const deniedHost = notifHost({ state: "denied", ask: "denied" });
+  const unpersisted = notifHost({ state: "denied", ask: "granted" });
+  const permRejected = notifHost({
+    state: "denied", ask: "granted", pageEvent: "error",
+    swError: new TypeError("No notification permission has been granted for this origin."),
+  });
+  const dropped = notifHost({ state: "granted", ask: "granted", pageEvent: "error", swError: new Error("boom") });
+  const shown = notifHost({ state: "granted", ask: "granted", pageEvent: "show" });
+  const got = {
+    silent: await silentHost.askNotif(),
+    denied: await deniedHost.askNotif(),
+    unpersisted: await unpersisted.askNotif(),
+    permRejected: await permRejected.notifyLocal("t", "b"),
+    dropped: await dropped.notifyLocal("t", "b"),
+    shown: await shown.notifyLocal("t", "b"),
+  };
+  const bad = [];
+  if (got.silent !== "silent") bad.push("silent prompt answered " + JSON.stringify(got.silent));
+  if (got.denied !== "denied") bad.push("refused prompt answered " + JSON.stringify(got.denied));
+  if (got.unpersisted !== "granted") bad.push("granted-but-unpersisted answered " + JSON.stringify(got.unpersisted));
+  if (!(got.permRejected.ok === false && got.permRejected.blocked === true && /worker/.test(got.permRejected.why)))
+    bad.push("permission rejection: " + JSON.stringify(got.permRejected));
+  if (!(got.dropped.ok === false && got.dropped.blocked === false && /constructor/.test(got.dropped.why)))
+    bad.push("dropped notification: " + JSON.stringify(got.dropped));
+  if (!(got.shown.ok === true)) bad.push("a shown notification: " + JSON.stringify(got.shown));
+  if (!/dev\.blocked\?pushBlockedMsg\(\):t\("pushDeviceNo"\)/.test(pageSrc)) bad.push("pushTest does not read the refusal kind");
+  if (!/pushDiag = dev\.why/.test(pageSrc)) bad.push("the refusal reason is not kept for the settings card");
+  check("reminders: a silent prompt, a blocked permission and a dropped notification are told apart",
+    bad.length === 0,
+    bad.length ? bad.join(" | ")
+      : ["silent", "denied", "granted", got.permRejected.blocked ? "blocked" : "?", got.dropped.why].join(" · "));
+}
 const swRun = spawnSync(process.execPath, ["_sw.test.mjs"], { encoding: "utf8", cwd: ROOT });
 const swTail = String(swRun.stderr || swRun.stdout || "").trim().split("\n").filter(Boolean).pop();
 check("offline: the worker's behaviour, executed - install, shells, updates, reminders",
@@ -1488,6 +1553,35 @@ check("plan: a repeating card and a carried one still say so - a chip on the car
   /className="rep"[^\n]{0,120}REP_KEY\[x\.rep\]/.test(pageSrc) && /className="carried"[^\n]{0,120}t\("carried"\)/.test(pageSrc)
   && /priority,repeat,/.test(pageSrc) && /q\(x\.rep\)/.test(pageSrc),
   "repeat chip · carried chip · csv repeat column");
+
+/* ── two card behaviours that are only correct if they hold every render ──────────
+   The Tasks card is a list of things to do, so a ticked task leaves it instead of sitting there
+   until deleted - and the toggle that brings them back has to stay reachable and counted,
+   otherwise the list reads as if completed work vanished. The calendar has to ring today's own
+   cell from the local day: a UTC key calls yesterday "today" after midnight east of Greenwich. */
+check("tasks: the card lists open work by default, the completed ones behind a counted toggle",
+  /let showDone=false/.test(pageSrc)
+    && /showDone\?tasks:tasks\.filter\(x=>!x\.done\)/.test(pageSrc)
+    && /aria-pressed",String\(showDone\)/.test(pageSrc)
+    && /showDone\?t\("hideDone"\):t\("showDone"\)\+\(doneN/.test(pageSrc)
+    && /if\(full&&!list\.length\)\{[^\n]{0,80}t\("taskNone"\)/.test(pageSrc),
+  "open-only list · counted toggle · empty line");
+check("calendar: Monday leads, every row carries its ISO week, and the arrows flank a fixed frame",
+  /\(new Date\(y,m,1\)\.getDay\(\)\+6\)%7/.test(pageSrc)
+    && /function isoWeek\(d\)/.test(pageSrc)
+    && /wkNo=isoWeek\(new Date\(y,m,1-first\+r\*7\)\)/.test(pageSrc)
+    && /gridTemplateColumns="auto repeat\(7,1fr\)"/.test(pageSrc)
+    && /\.callab span:not\(\.on\)\{visibility:hidden\}/.test(pageSrc)
+    && /for\(let i=0;i<12;i\+\+\)\{const s=document\.createElement\("span"\)/.test(pageSrc),
+  "monday-first · iso week per row · label reserves the longest month");
+check("calendar: today's cell is filled and marked, keyed to the local day rather than UTC",
+  /function isoLocal\(d\)\{[^\n]{0,80}getFullYear/.test(pageSrc)
+    && /tdy=isoLocal\(new Date\(\)\)/.test(pageSrc)
+    && /ds===tdy\)\{c\.classList\.add\("calToday"\)/.test(pageSrc)
+    && /setAttribute\("aria-current","date"\)/.test(pageSrc)
+    && /\.calToday\{background:var\(--ac\)/.test(pageSrc)
+    && /const today=isoLocal\(new Date\(\)\)/.test(pageSrc),
+  "local key · filled cell · aria-current · tasks read the same day");
 
 console.log("\n-- sample payload --");
 for (const card of ["auto", "ai", "fin"]) {
