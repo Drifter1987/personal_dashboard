@@ -1,13 +1,15 @@
 # Deploying the dashboard
 
 Two things get published, to **different Cloudflare products**, and they are pinned to the
-account in different ways. The page publishes itself on a push to `main`; the Worker does not.
+account in different ways. The page publishes itself when a release tag (`v*`) is pushed from a commit
+on `main` (or a manual run on `main`); a plain push to `main` runs the gate and does not publish.
+The Worker does not publish itself.
 Read the credential section before running anything by hand.
 
 | What | How | Where it lands |
 |---|---|---|
 | Worker API | `wrangler deploy` — by hand, section 2 | `home-dashboard-api.drifter-87.workers.dev` |
-| Static page | **automatic**: a push to `main` that passes the gate, section 3 (or `wrangler pages deploy deploy/ --project-name home-dashboard` by hand) | `home-dashboard-5ma.pages.dev` |
+| Static page | **automatic**: a release tag on `main` that passes the gate, section 3 (or `wrangler pages deploy deploy/ --project-name home-dashboard` by hand) | `home-dashboard-5ma.pages.dev` |
 
 Target account: **`Drifter_87@live.com`** (`8660293d…`) — the main
 hosting account. Full inventory: [docs/CLOUDFLARE_ACCOUNTS.md](docs/CLOUDFLARE_ACCOUNTS.md).
@@ -205,10 +207,15 @@ python -m http.server 8099 --bind 127.0.0.1 --directory deploy
 
 ## 3. Publish the page
 
-**On `main`, a push does this for you.** `.github/workflows/checks.yml` has a `publish` job that
-runs only after the gate on that commit has passed, only for a push to `main` (or a manual run of
-the workflow on `main`), and it uploads `deploy/` to the project below before proving the live
-site serves it. Nothing needs doing by hand for a normal release.
+**A release tag does this for you.** `.github/workflows/checks.yml` has a `publish` job that runs
+only after the gate on that commit has passed, and only for a tag `v*` whose commit is on `main`
+(or a manual run of the workflow on `main`). It uploads `deploy/` to the project below before proving
+the live site serves it. A release is: merge to `main`, then
+`git tag v<version>` on that commit and `git push origin v<version>`.
+
+A plain push to `main` does **not** publish. It used to, and every push published whatever its
+commit held, so an older commit could replace a newer release: production went from 2.27.0 back to
+2.24.0 that way, because the 2.24.0 commit was pushed last.
 
 The job needs two repository secrets (**Settings → Secrets and variables → Actions**):
 
@@ -380,7 +387,7 @@ the workflow never runs at all.
 | `gate` | every push and pull request | `node _deploy.mjs` — the harness against the real sources, then that the bundle is the thing the harness tested. A red gate stops everything after it. |
 | `layout` | after a green gate | `python _ui.test.py` in Chromium: the browser contract for scroll, section, card frames and Today. Publishing waits for it, so a layout regression cannot ride a green source harness to production. |
 | `bundle` | after a green gate, never on a pull request | Uploads `dashboard-site.zip` as a build artifact, so a release is downloadable even when publishing was skipped. |
-| `publish` | after a green gate **and a green layout job**, **only on `main`** | Uploads `deploy/` to Pages on the production branch, then runs `node _smoke.mjs --page-only`. |
+| `publish` | after a green gate **and a green layout job**, **only for a `v*` tag on a commit that is on `main`, or a manual run on `main`** | Uploads `deploy/` to Pages on the production branch, then runs `node _smoke.mjs --page-only`. A tag from a commit that is not on `main` stops at a check before the credential is read. |
 
 The job finishes with the smoke test because a `wrangler` exit code says the upload was
 accepted, not that the edge is serving it. `--page-only` is what the job runs rather than the

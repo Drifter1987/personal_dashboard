@@ -179,7 +179,7 @@
     <div class="wrap">
       <p class="eyebrow">Guide · publishing the dashboard</p>
       <h1>One push, and the site <span>updates itself.</span></h1>
-      <p class="lede">The pipeline is already built: every push to <code>main</code> runs the tests, and if they pass it uploads the page to Cloudflare and checks the live site really changed. It is waiting on two credentials that only you can create. Add them once, and publishing becomes: commit, push, wait a minute, refresh.</p>
+      <p class="lede">The pipeline is already built: every push to <code>main</code> runs the tests. A release tag on <code>main</code> (for example <code>v2.28.0</code>) then uploads the page to Cloudflare and checks the live site really changed. A plain push publishes nothing. It is waiting on two credentials that only you can create. Add them once, and publishing becomes: commit, push, tag the release, wait a minute, refresh.</p>
       <div class="hero-meta">
         <span class="pill">7 steps</span>
         <span class="pill">About 15 minutes, once</span>
@@ -296,7 +296,7 @@
           <span class="when">2 min</span>
           <h3>Change something, and publish it</h3>
           <p class="why">This is the whole routine from now on. No Cloudflare dashboard, no commands, no credentials to type again.</p>
-          <p class="action">In <b>GitHub Desktop</b>: open the <b>Changes</b> tab, type a short summary, click <b>Commit to main</b>, then <b>Push origin</b>. Wait a minute or two, then refresh the site.</p>
+          <p class="action">In <b>GitHub Desktop</b>: open the <b>Changes</b> tab, type a short summary, click <b>Commit to main</b>, then <b>Push origin</b>. That push runs the tests but does not publish. To release it, tag that commit as the new version (a terminal command: <code>git tag v2.28.0</code> then <code>git push origin v2.28.0</code>), wait a minute or two, then refresh the site.</p>
           <p class="verify"><b>You should see</b> a new run under <b>Actions</b> for your commit, finishing green in about two minutes, and the new version number in the dashboard's <b>Settings → About</b> card.</p>
           <details class="fallback">
             <summary>If the run is still going</summary>
@@ -312,7 +312,7 @@
           <p class="verify"><b>You should see</b> the site serving the older version within a minute, and the rolled-back deployment marked as the active one.</p>
           <details class="fallback">
             <summary>If you would rather fix forward</summary>
-            <p>That is usually better: make the correction, commit, push, and the pipeline publishes it. Rollback is for when you want the old version up <em>now</em> and the fix is not ready yet.</p>
+            <p>That is usually better: make the correction, commit, push, tag the new version, and the pipeline publishes it. Rollback is for when you want the old version up <em>now</em> and the fix is not ready yet.</p>
           </details>
         </li>
 
@@ -344,7 +344,7 @@
         <li><span>GitHub repo → <strong>Settings → Secrets and variables → Actions</strong>: add <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ACCOUNT_ID</code> (<code>8660293d5a5646d0131b5edad05d7910</code>).</span></li>
         <li><span>Actions → latest <strong>checks</strong> run → <strong>Re-run all jobs</strong>; wait for <strong>publish the page</strong> to go green.</span></li>
         <li><span>Check <strong>Settings → About</strong> on the site for the new version.</span></li>
-        <li><span>From now on: commit, push, wait two minutes, refresh.</span></li>
+        <li><span>From now on: commit, push, tag the release, wait two minutes, refresh.</span></li>
       </ul>
     </div>
   </section>
@@ -370,7 +370,7 @@
             <tr><td>The <strong>deploy gate</strong> job is red</td><td>The tests failed on that commit, so nothing was published — by design.</td><td>Open the run, read which check failed, fix it in the next commit. The live site is still the last good version.</td></tr>
             <tr><td>The run is green but the site is not new</td><td>Look closely at which jobs ran: a green run with <strong>Publishing skipped</strong> published nothing.</td><td>Treat it as the first row: the credentials are the thing to fix.</td></tr>
             <tr><td>The site shows the old version for a minute or two</td><td>The edge can serve the previous version briefly after an upload. The pipeline's own check waits for it.</td><td>Wait, then refresh. If the publish job is green, the change is live.</td></tr>
-            <tr><td>A push on another branch published nothing</td><td>Only <code>main</code> publishes. Other branches run the tests and stop there.</td><td>Nothing to fix. Merge to <code>main</code> when the change is ready to be live.</td></tr>
+            <tr><td>A push on another branch published nothing</td><td>Only a release tag on <code>main</code> publishes. Other pushes run the tests and stop there.</td><td>Nothing to fix. Merge to <code>main</code> and tag the release when the change is ready to be live.</td></tr>
             <tr><td>Reminders or the metals API stopped working</td><td>Those live in the Worker, which this pipeline does not touch.</td><td>Unrelated to publishing. If <code>worker.js</code> changed, the Worker needs its own deploy — ask for it.</td></tr>
           </tbody>
         </table>
@@ -400,7 +400,7 @@
         <article class="card">
           <span class="label orange">Not covered</span>
           <h3>Publishing from another branch</h3>
-          <p>Only <code>main</code> publishes. A branch cannot be used to put a draft in front of someone else at the real address — that is deliberate, and it is also why there are no preview links here.</p>
+          <p>Only a release tag on <code>main</code> publishes. A branch cannot be used to put a draft in front of someone else at the real address — that is deliberate, and it is also why there are no preview links here.</p>
         </article>
         <article class="card">
           <span class="label">Worth knowing</span>
@@ -415,7 +415,7 @@
       </div>
       <div class="note" style="margin-top: 16px">
         <b>How current is this?</b>
-        <p style="margin: 6px 0 0">Written 2026-10-17. Verified here: the publish job exists and is restricted to <code>main</code> after a green gate, it uploads <code>deploy/</code> to the existing project on the <code>main</code> branch, it finishes with the live page comparison, and the live site was serving the older version that day. Taken from the platforms' documentation rather than run here: the token-creation and secret-adding click paths in steps 2 and 3, and the first real publish in step 4 — all three need your logins. If a button has moved, <a href="https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/">Cloudflare's CI documentation</a> and GitHub's <a href="https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions">secrets documentation</a> are the sources of truth.</p>
+        <p style="margin: 6px 0 0">Written 2026-10-17. Verified here: the publish job exists and, since 2026-10-18, runs only for a release tag on <code>main</code> (or a manual run on <code>main</code>) after a green gate, it uploads <code>deploy/</code> to the existing project on the <code>main</code> branch, it finishes with the live page comparison, and the live site was serving the older version that day. Taken from the platforms' documentation rather than run here: the token-creation and secret-adding click paths in steps 2 and 3, and the first real publish in step 4 — all three need your logins. If a button has moved, <a href="https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/">Cloudflare's CI documentation</a> and GitHub's <a href="https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions">secrets documentation</a> are the sources of truth.</p>
       </div>
     </div>
   </section>

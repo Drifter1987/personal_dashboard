@@ -1,4 +1,5 @@
-# The deploy gate, on every push and every pull request - and, on `main`, the publish itself.
+# The deploy gate, on every push and every pull request - and, for a release tag or a manual run
+# on `main`, the publish itself. A push to `main` runs the gate and never publishes.
 #
 # `node _deploy.mjs` is exactly what a local release goes through: it runs the harness
 # (node _check.mjs - the shipped Worker and page, against the real sources) and then proves
@@ -17,8 +18,9 @@
 # binding in config at all, so in CI the API token *is* the account selector and must be scoped
 # to that account. The token is a repository secret; nothing in this repo carries it.
 #
-# What `publish` does, and only when all of it is true: the event is a push to `main` (or a
-# manual run of this workflow on `main`), and `gate` has already passed on that commit. It then
+# What `publish` does, and only when all of it is true: the event is a release tag (`v*`) pushed
+# from a commit that is on `main`, or a manual run of this workflow on `main`, and `gate` has
+# already passed on that commit. It then
 # uploads deploy/ to the existing Pages project - the same project, and therefore the same
 # address, as the hand-run `wrangler pages deploy` it replaces - and finishes by running
 # `node _smoke.mjs --page-only`, which fetches the live site and compares it byte-for-byte with
@@ -112,11 +114,13 @@ jobs:
           retention-days: 14
 
   publish:
-    name: publish the page (main only)
+    name: publish the page (release tags and manual runs on main)
     needs: [gate, layout]
-    # main, and only main: a pull request, a scratch branch or a tag must never reach the
-    # live address. Neither does a cancelled or failed gate, because of `needs` above.
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    # Only a release tag or a manual run on main may reach the live address. A push to main alone
+    # does not publish: every push used to, so the last push decided what was live, and an older
+    # commit could silently replace a newer release. Neither does a cancelled or failed gate,
+    # because of `needs` above.
+    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -124,10 +128,24 @@ jobs:
       # wrangler-action records the deployment against the commit, which needs this
       deployments: write
     steps:
+      # full history, so the tag's commit can be checked against main below
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      # A tag is only a release if its commit is on main. Anything else is refused before the
+      # credential is read, so a tag pushed from a branch cannot reach the live address.
+      - name: Is this commit on main?
+        run: |
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "$GITHUB_SHA is on main: publishing it."
+          else
+            echo "::error title=Not on main::$GITHUB_SHA is not on main, so it is not published."
+            exit 1
+          fi
 
       # Before the credential exists, publishing would fail on every push, and a red X that means
       # "nobody has added the secret yet" is how a repo teaches people to ignore red. So the
