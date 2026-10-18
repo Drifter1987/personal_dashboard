@@ -1654,15 +1654,16 @@ check("calendar: today's cell is filled and marked, keyed to the local day rathe
     && /const today=isoLocal\(new Date\(\)\)/.test(pageSrc),
   "local key · filled cell · aria-current · tasks read the same day");
 
-/* A band gives every card in a row the tallest card's height, and the slack that leaves inside a
-   shorter card used to be blank. Three policies spend it on the reading instead - the review
-   chart takes it as track, a task list spreads its rows through it, a short read sits in the
-   middle of it - and each is written without a pixel a card could grow from, so a card can never
-   feed its own band taller on the next pass. The behaviour is measured in _ui.test.py; what
-   belongs here is that the policies still exist, still come from the card registry, and that a
+/* The desktop grid no longer stretches a card to the tallest in its row - that is what put 411px
+   of nothing inside a 576px clock card - so the page itself never hands a card slack to spend.
+   The fill utilities stay because a host (a test, an embed) can still give a card a height, and
+   then the review chart takes it as track, a task list spreads its rows through it and a short
+   read sits in the middle of it, each without a pixel a card could grow from. What belongs here
+   is that the grid ends at the content, those policies still come from the card registry, and a
    bar is a share of its track rather than a number of pixels. */
-check("layout: a stretched card spends its slack on the reading, never on its own height",
-  /\.card\.fillchart,\.card\.fillrows,\.card\.fillmid\{display:flex;flex-direction:column\}/.test(pageSrc)
+check("layout: a card ends at its content, and given a height it spends it on the reading",
+  /\.page-inner\{[^}]*align-items:start\}/.test(pageSrc)
+  && /\.card\.fillchart,\.card\.fillrows,\.card\.fillmid\{display:flex;flex-direction:column\}/.test(pageSrc)
   && /\.card\.fillmid>\[id\^="wb_"\]\{justify-content:center\}/.test(pageSrc)
   && /\.card\.fillrows>\[id\^="wb_"\]>\.list\{flex:1 1 auto;display:flex;flex-direction:column;justify-content:space-between\}/.test(pageSrc)
   && /\.card\.fillchart>\[id\^="wb_"\]>\.wkbox\{flex:1 1 auto;min-height:52px\}/.test(pageSrc)

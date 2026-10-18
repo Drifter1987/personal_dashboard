@@ -27,6 +27,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VERBOSE = "-v" in sys.argv
+# A Windows console defaults to a legacy code page, and a check that reports "≈" then raises
+# UnicodeEncodeError instead of its measurement - a passing case reported as a failure. The
+# contract's own text is UTF-8; make stdout match it, and never fail a check over a glyph.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 # A card above the fold is hidden from its own header, which is itself off-screen, so the click
 # is dispatched in the page: a Playwright click would scroll the header into view first and move
@@ -1302,8 +1309,12 @@ def cases(browser, base):
         finally:
             ctx.close()
 
-    # ── 11. the desktop grid is bands, not columns: one row, one top, one bottom ────────
+    # ── 11. the desktop grid keeps one top edge per row and sizes every card to its content ──
     def the_desktop_rows_are_aligned_bands():
+        """A card that is stretched to the tallest in its row puts the empty space inside its own
+        border - the clock filled a 576px row with 411px of nothing. So a card must end where its
+        content ends, whatever its neighbour's height; the row still shares one top edge and the
+        next row starts a grid gap below the tallest card, so nothing overlaps."""
         detail = []
         ok = True
         for width in (941, 1280, 1600):
@@ -1334,37 +1345,30 @@ def cases(browser, base):
                             if (b) b.cards.push(c); else bands.push({top: c.top, cards: [c]});
                           });
                           bands.sort((a, b) => a.top - b.top);
-                          let ragged = 0, worstRagged = 0, overlap = 0, tight = 0, gapBad = 0, worstGap = 0;
-                          bands.forEach(bd => {
-                            const bottom = Math.max.apply(null, bd.cards.map(c => c.bottom));
-                            bd.cards.forEach(c => {
-                              const d = bottom - c.bottom;
-                              if (d > 1) {ragged++; if (d > worstRagged) worstRagged = d}
-                            });
-                            /* the band is as tall as its tallest card's own content: at least one
-                               card in it is not stretched, or the height came from nowhere */
-                            if (Math.min.apply(null, bd.cards.map(c => c.slack)) <= 24) tight++;
-                          });
+                          /* No card may carry slack: its content has to reach its own bottom
+                             edge, because stretched space is the empty card this contract is
+                             about. Some cards ending above the row's tallest is intended. */
+                          let loose = 0, worstSlack = 0, overlap = 0, gapBad = 0, worstGap = 0;
+                          cards.forEach(c => {if (c.slack > 24) {loose++; if (c.slack > worstSlack) worstSlack = c.slack}});
                           for (let i = 1; i < bands.length; i++) {
                             const g = bands[i].top - Math.max.apply(null, bands[i - 1].cards.map(c => c.bottom));
                             if (g < 0) overlap++;
                             if (Math.abs(g - gap) > 1) {gapBad++; worstGap = Math.max(worstGap, g)}
                           }
-                          return {cards: cards.length, bands: bands.length, ragged: ragged,
-                                  worstRagged: Math.round(worstRagged), overlap: overlap,
-                                  tight: tight, gapBad: gapBad, worstGap: Math.round(worstGap), gap: gap};
+                          return {cards: cards.length, bands: bands.length, loose: loose,
+                                  worstSlack: Math.round(worstSlack), overlap: overlap,
+                                  gapBad: gapBad, worstGap: Math.round(worstGap), gap: gap};
                         })()"""
                     )
-                    if (st["ragged"] or st["overlap"] or st["tight"] != st["bands"]
-                            or st["gapBad"] or st["bands"] < 1):
+                    if (st["loose"] or st["overlap"] or st["gapBad"] or st["bands"] < 1):
                         ok = False
-                        detail.append("%dpx p%d: %d ragged (%dpx) · %d overlap · %d/%d bands content-sized · %d band gaps off (%dpx)"
-                                      % (width, section, st["ragged"], st["worstRagged"], st["overlap"],
-                                         st["tight"], st["bands"], st["gapBad"], st["worstGap"]))
+                        detail.append("%dpx p%d: %d cards with slack (%dpx) · %d overlap · %d band gaps off (%dpx)"
+                                      % (width, section, st["loose"], st["worstSlack"], st["overlap"],
+                                         st["gapBad"], st["worstGap"]))
             finally:
                 ctx.close()
-        check("the desktop rows line up - each band one top and one bottom, spaced by the grid gap",
-              ok, "; ".join(detail) or "3 widths × 6 sections · every row a band, every band content-sized")
+        check("the desktop rows keep one top edge, and every card ends where its content does",
+              ok, "; ".join(detail) or "3 widths × 6 sections · no card stretched, one top edge per row, uniform gaps")
 
     # ── 10. a stretched card spends its slack on the reading ────────────────────────────────
     def a_stretched_card_spends_its_slack_on_the_reading():
@@ -1538,18 +1542,23 @@ def cases(browser, base):
             # long enough for the hold to settle and the band to take the taller list
             page.wait_for_timeout(900)
             tall = page.evaluate(READ)
-            check("a long task list makes its band taller, and the chart in it grows to match",
+            # A card ends at its content now, so a longer list makes its own card taller and
+            # leaves the chart beside it exactly where it was. The band used to force the chart
+            # to grow with it, which is the stretching this release removed.
+            check("a long task list makes its own card taller, and the chart beside it keeps its height",
                   tall["rows"] >= 5 and tall["rows"] > rest["rows"]
-                  and tall["weekCard"] >= rest["weekCard"] + 40
-                  and tall["track"] >= rest["track"] + 40,
-                  "rows %(rows_w)s · week card %(weekCard_w)spx (was %(weekCard_r)spx) · track %(track_w)spx (was %(track_r)spx)"
+                  and tall["tasksCard"] >= rest["tasksCard"] + 40
+                  and abs(tall["weekCard"] - rest["weekCard"]) <= 2
+                  and abs(tall["track"] - rest["track"]) <= 2,
+                  "rows %(rows_w)s · tasks card %(tasks_w)spx (was %(tasks_r)spx) · week card %(weekCard_w)spx (was %(weekCard_r)spx) · track %(track_w)spx (was %(track_r)spx)"
                   % dict(track_r=rest["track"], weekCard_r=rest["weekCard"], track_w=tall["track"],
-                         weekCard_w=tall["weekCard"], rows_w=tall["rows"]))
+                         weekCard_w=tall["weekCard"], rows_w=tall["rows"],
+                         tasks_r=rest["tasksCard"], tasks_w=tall["tasksCard"]))
             page.evaluate(SHRINK)
             # the hold is deliberately kept for 1.5s before a card is allowed to shrink
             page.wait_for_timeout(2500)
             back = page.evaluate(READ)
-            check("…and with the rows gone again the band comes back down, so nothing ratchets",
+            check("…and with the rows gone again the tasks card comes back down, so nothing ratchets",
                   back["rows"] <= 1 and abs(back["weekCard"] - rest["weekCard"]) <= 2
                   and abs(back["track"] - rest["track"]) <= 2
                   and abs(back["tasksCard"] - rest["tasksCard"]) <= 2 and back["held"] == [],

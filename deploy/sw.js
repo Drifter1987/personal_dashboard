@@ -19,7 +19,7 @@
  * The cache name carries the version, and activating a worker deletes every other
  * home-dashboard cache, so an old shell can never be served after an update.
  */
-const VERSION = "2.27.0";
+const VERSION = "2.28.0";
 const CACHE = "home-dashboard-" + VERSION;
 /* absolute, so a cache key never depends on a worker's base-URL rules */
 const at = (p) => new URL(p, self.location.href).href;
