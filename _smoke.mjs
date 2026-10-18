@@ -159,10 +159,22 @@ const files = existsSync(join(ROOT, DEPLOY))
   ? bundleFiles(join(ROOT, DEPLOY)).filter((f) => !NOT_SERVED.has(f))
   : [];
 
-check("bundle: " + DEPLOY + "/" + PAGE + " is byte-identical to " + PAGE + " (the hash below is trustworthy)",
-  !!localHash && localHash === testedHash,
-  testedHash === null ? DEPLOY + "/" + PAGE + " is missing" : brief(localHash) + " / " + brief(testedHash)
-    + (localHash === testedHash ? "" : " - run node _deploy.mjs --sync"));
+/* The bundle is not the source. The gate pins the page's one inline script by SHA-256 as it
+   bundles (that is what makes 'unsafe-inline' unnecessary on the hosted copy), so what
+   deploy/index.html has to match is the *hardened* source - the same substitution the gate
+   makes, applied here to the bytes on disk. This mirrors _deploy.mjs on purpose: a smoke test
+   that compared the two files literally would fail every release from 2.27.0 on. */
+const harden = (html) => {
+  const hashes = [];
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi))
+    if (!/\bsrc\s*=/i.test(m[1])) hashes.push("sha256-" + createHash("sha256").update(m[2], "utf8").digest("base64"));
+  return html.replace(/script-src[^;]*;/, "script-src 'self'" + hashes.map((h) => " '" + h + "'").join("") + ";");
+};
+const wantHash = pageLocal ? sha(Buffer.from(harden(pageLocal.toString("utf8")), "utf8")) : null;
+check("bundle: " + DEPLOY + "/" + PAGE + " is " + PAGE + " with its script pinned by hash (the hash below is trustworthy)",
+  !!wantHash && wantHash === testedHash,
+  testedHash === null ? DEPLOY + "/" + PAGE + " is missing" : brief(wantHash) + " / " + brief(testedHash)
+    + (wantHash === testedHash ? "" : " - run node _deploy.mjs --sync"));
 
 let live = null;
 for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {

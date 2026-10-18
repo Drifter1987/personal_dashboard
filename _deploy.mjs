@@ -10,15 +10,16 @@
 
      1. the shipped page and Worker pass the harness (node _check.mjs) against the real sources;
      2. the thing that gets published is the thing that was tested - deploy/index.html is
-        byte-identical to index.html, and every file in deploy/ sits in dashboard-site.zip with
-        the same CRC-32 (the zip bookkeeping lives in _zip.py).
+        index.html with its one inline script pinned by SHA-256 and nothing else changed, and
+        every file in deploy/ sits in dashboard-site.zip with the same CRC-32 (the zip
+        bookkeeping lives in _zip.py).
 
    A failing check stops the run before anything is written, so a red gate can never leave a
    half-updated bundle behind. The same commands run in CI (.github/workflows/checks.yml).
 */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -60,6 +61,36 @@ const sha = (rel) => {
 };
 const brief = (h) => (h ? h.slice(0, 12) : "missing");
 
+/* ── hardening the shipped page ────────────────────────────────────────────────
+   The page is one file with one inline script and no inline handlers, so the policy can name
+   that script by its SHA-256 and drop 'unsafe-inline' altogether: a <script> that was not in
+   the bundle has a different hash and cannot run, and neither can anything else injected into
+   the document. The hash is computed here, at bundle time, because it has to be the hash of the
+   bytes being shipped - the source keeps 'unsafe-inline' so the file you open while working
+   always runs, and a stale hash could never be published: the gate compares the bundle to the
+   hardened source byte for byte, so a script edit that was not re-bundled fails it.
+   Browsers ignore 'unsafe-inline' as soon as a hash is present; the deployed policy carries
+   'self' and the hash and nothing else in that clause. */
+function scriptHashes(html) {
+  const out = [];
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (/\bsrc\s*=/i.test(m[1])) continue; /* external scripts are already covered by 'self' */
+    out.push("sha256-" + createHash("sha256").update(m[2], "utf8").digest("base64"));
+  }
+  return out;
+}
+function scriptPolicy(html) {
+  const hashes = scriptHashes(html);
+  return "script-src 'self'" + hashes.map((h) => " '" + h + "'").join("") + ";";
+}
+function harden(html) {
+  return {
+    html: html.replace(/script-src[^;]*;/, scriptPolicy(html)),
+    policy: scriptPolicy(html),
+    hashes: scriptHashes(html),
+  };
+}
+
 /* python 3, for the zip bookkeeping only */
 function findPython() {
   for (const cmd of ["python3", "python"]) {
@@ -84,11 +115,31 @@ function zipVerb(py, verb, name, src) {
 }
 
 function verifyBundle(py, state) {
-  const page = sha(PAGE);
-  const copy = sha(join(DEPLOY, PAGE));
-  check("bundle: deploy/" + PAGE + " is byte-identical to " + PAGE,
-    !!page && page === copy,
-    copy === null ? "deploy/" + PAGE + " is missing" : brief(page) + " / " + brief(copy));
+  const sourcePath = join(ROOT, PAGE);
+  const copyPath = join(DEPLOY, PAGE);
+  const sourceHtml = existsSync(sourcePath) ? readFileSync(sourcePath, "utf8") : "";
+  const copyHtml = existsSync(copyPath) ? readFileSync(copyPath, "utf8") : null;
+  const want = harden(sourceHtml);
+  /* not "identical" but "identical except the pinned script": the one difference between the
+     source and the bundle is the policy clause the build computes. */
+  check("bundle: deploy/" + PAGE + " is " + PAGE + " with its script pinned by hash, and nothing else changed",
+    !!copyHtml && copyHtml === want.html && want.hashes.length === 1,
+    copyHtml === null ? "deploy/" + PAGE + " is missing"
+      : want.hashes.length !== 1 ? "the page has " + want.hashes.length + " inline scripts, so one hash cannot cover it"
+        : want.html === copyHtml ? brief(sha(PAGE)) + " + 1 hash"
+          : "the bundle holds a different page (or an old hash) - run --sync after reviewing");
+  if (copyHtml) {
+    const shipped = harden(copyHtml);
+    check("bundle: the hash in the shipped policy is the hash of the shipped script",
+      copyHtml.indexOf(shipped.policy) >= 0 && shipped.hashes.length === 1
+      && want.policy === shipped.policy && !/script-src[^;]*'unsafe-inline'/.test(copyHtml),
+      shipped.hashes.length === 1 ? "script " + shipped.hashes[0].slice(7, 19) + "… · no 'unsafe-inline'"
+        : shipped.hashes.length + " inline scripts");
+    const headersHtml = existsSync(join(DEPLOY, "_headers")) ? readFileSync(join(DEPLOY, "_headers"), "utf8") : "";
+    check("bundle: the header policy carries the same pinned script clause",
+      headersHtml.indexOf(want.policy) >= 0 && !/script-src[^;]*'unsafe-inline'/.test(headersHtml),
+      headersHtml.indexOf(want.policy) >= 0 ? "same hash on the response header" : "the header policy does not match the page's");
+  }
 
   if (!state || state.error) {
     check("bundle: " + ZIP + " is readable and comparable", false, (state && state.error) || "not inspected");
@@ -135,10 +186,24 @@ verifyBundle(py, state);
 if (SYNC && fails.length) {
   console.log("\n--sync: rebuilding the bundle from " + PAGE + " --");
   let repaired = 0;
-  if (sha(PAGE) !== sha(join(DEPLOY, PAGE))) {
-    copyFileSync(join(ROOT, PAGE), join(ROOT, DEPLOY, PAGE));
-    console.log("  copied " + PAGE + " -> " + join(DEPLOY, PAGE));
+  const hardened = harden(readFileSync(join(ROOT, PAGE), "utf8"));
+  const copyPath = join(ROOT, DEPLOY, PAGE);
+  if (!existsSync(copyPath) || readFileSync(copyPath, "utf8") !== hardened.html) {
+    writeFileSync(copyPath, hardened.html);
+    console.log("  wrote " + join(DEPLOY, PAGE) + " - " + PAGE + " with its script pinned (" + hardened.hashes.length + " hash)");
     repaired++;
+  }
+  /* the header policy is the page's policy plus the two rules only a header can carry, so its
+     script clause is rewritten from the same hash rather than being kept by hand */
+  const hdrPath = join(ROOT, DEPLOY, "_headers");
+  if (existsSync(hdrPath)) {
+    const before = readFileSync(hdrPath, "utf8");
+    const after = before.replace(/script-src[^;]*;/, hardened.policy);
+    if (after !== before) {
+      writeFileSync(hdrPath, after);
+      console.log("  rewrote the script clause in " + join(DEPLOY, "_headers"));
+      repaired++;
+    }
   }
   /* the copy above can make a zip member stale that matched a moment ago, so the zip is
      compared against the deploy folder as it stands now, not as it stood before the copy */

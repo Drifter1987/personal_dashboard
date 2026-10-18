@@ -1,5 +1,5 @@
 import worker from "./worker.js";
-import { readFileSync as readW } from "node:fs";
+import { existsSync, readFileSync as readW } from "node:fs";
 
 /* Map-backed stand-in for Cloudflare's caches.default */
 const store = new Map();
@@ -1082,9 +1082,22 @@ const lastUsd = btcUsd.points[btcUsd.points.length - 1][1];
 check("chart/live: the crossed coin equals its USD series times that currency's USD leg",
   Math.abs((lastLbp / lastUsd) / ratesUsd.rates.LBP - 1) < 0.05,
   "BTC $" + Math.round(lastUsd) + " -> " + Math.round(lastLbp) + " LBP, the legs say x" + ratesUsd.rates.LBP);
+/* The newest bar is the one still forming, and Yahoo stamps it with the moment of the fetch -
+   so two calls ten seconds apart differ in their last timestamp by ten seconds. That is the
+   clock, not the data: the comparison is over the closed bars, and the open one is only asked
+   to be the same week's bar. Both runs are named in the failure, because a mismatch is either a
+   coin answered from two different bar sets or a leg that genuinely stops early, and which one
+   it is decides whether the Worker is wrong or the source is. */
+const closedBars = (s) => s.points.slice(0, -1);
+const openBar = (s) => s.points[s.points.length - 1] || [0, 0];
+const barMismatch = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { if (!a[i] || !b[i] || a[i][0] !== b[i][0]) return i; } return -1; };
 check("chart/live: pricing a coin abroad keeps the coin's own bars - same dates, a different unit",
-  btcLbp.count === btcUsd.count && btcLbp.points.every((p, i) => p[0] === btcUsd.points[i][0]),
-  btcLbp.first + " .. " + btcLbp.last + " · " + btcLbp.count + " pts, identical dates to the USD run");
+  btcLbp.count === btcUsd.count
+  && closedBars(btcLbp).every((p, i) => p[0] === closedBars(btcUsd)[i][0])
+  && Math.abs(openBar(btcLbp)[0] - openBar(btcUsd)[0]) < 120000,
+  "crossed " + btcLbp.first + ".." + btcLbp.last + " " + btcLbp.count + " pts · USD " + btcUsd.first
+  + ".." + btcUsd.last + " " + btcUsd.count + " pts · first differing closed bar: " + barMismatch(closedBars(btcUsd), closedBars(btcLbp))
+  + " · open bars " + Math.abs(openBar(btcLbp)[0] - openBar(btcUsd)[0]) + "ms apart (both the fetch's own clock)");
 check("rates: LBP comes off its own series while the majors stay ECB, each named",
   ratesUsd.rates.LBP > 50000 && ratesUsd.rates.LBP < 200000 && ratesUsd.sources.LBP === "Yahoo"
   && ratesUsd.sources.EUR === "ECB" && ratesUsd.rates.EUR > 0.7 && ratesUsd.rates.EUR < 1.3
@@ -1641,6 +1654,25 @@ check("calendar: today's cell is filled and marked, keyed to the local day rathe
     && /const today=isoLocal\(new Date\(\)\)/.test(pageSrc),
   "local key · filled cell · aria-current · tasks read the same day");
 
+/* A band gives every card in a row the tallest card's height, and the slack that leaves inside a
+   shorter card used to be blank. Three policies spend it on the reading instead - the review
+   chart takes it as track, a task list spreads its rows through it, a short read sits in the
+   middle of it - and each is written without a pixel a card could grow from, so a card can never
+   feed its own band taller on the next pass. The behaviour is measured in _ui.test.py; what
+   belongs here is that the policies still exist, still come from the card registry, and that a
+   bar is a share of its track rather than a number of pixels. */
+check("layout: a stretched card spends its slack on the reading, never on its own height",
+  /\.card\.fillchart,\.card\.fillrows,\.card\.fillmid\{display:flex;flex-direction:column\}/.test(pageSrc)
+  && /\.card\.fillmid>\[id\^="wb_"\]\{justify-content:center\}/.test(pageSrc)
+  && /\.card\.fillrows>\[id\^="wb_"\]>\.list\{flex:1 1 auto;display:flex;flex-direction:column;justify-content:space-between\}/.test(pageSrc)
+  && /\.card\.fillchart>\[id\^="wb_"\]>\.wkbox\{flex:1 1 auto;min-height:52px\}/.test(pageSrc)
+  && /\.card\.fillchart \.wkbox>\.wkbars\{position:absolute;inset:0;height:auto;margin:0\}/.test(pageSrc)
+  && /\.wkbar\{width:100%;max-width:22px;height:calc\(var\(--v,0\)\*100%\)/.test(pageSrc)
+  && /bar\.style\.setProperty\("--v"/.test(pageSrc) && !/bar\.style\.height=/.test(pageSrc)
+  && /s\.className="card"\+\(CARDS\[id\]&&CARDS\[id\]\.fill\?" fill"\+CARDS\[id\]\.fill:""\)/.test(pageSrc)
+  && (pageSrc.match(/fill:"(chart|rows|mid)"/g) || []).length === 5,
+  "chart as a share of its track · rows spread · short reads centred · on five cards, from the registry");
+
 /* The scroll contract is behavioural and lives in _ui.test.py, which measures it in Chromium.
    What belongs here is the one architectural fact that keeps that behaviour reachable: a rebuild
    goes through keepView, and a reorder is not navigation. Nothing below asserts how keepView
@@ -1650,6 +1682,149 @@ check("layout: every rebuild is view-preserving, and a reorder is not treated as
     && /function buildPages\(\)\{keepView\(\(\)=>\{/.test(pageSrc)
     && /goPage\(p,\{keepScroll:true\}\)/.test(pageSrc),
   "buildPages wrapped · reorder keeps the view · behaviour measured in _ui.test.py");
+
+/* ── what the host enforces, and what the Worker answers ─────────────────────────────────
+   The page's security policy lives in two places, because neither alone is enough: a meta tag
+   is ignored for frame-ancestors, and a header is absent when the page is opened from disk or
+   from the service worker's own copy. So the two are compared directive by directive, and the
+   header-only ones are asserted to be there. */
+const headersSrc = readFileSync(new URL("./deploy/_headers", import.meta.url), "utf8");
+const hdrCsp = (headersSrc.match(/Content-Security-Policy: *([^\n\r]+)/) || [])[1] || "";
+const withoutFrameRules = (s) => s.replace(/;?\s*frame-ancestors[^;]*/g, "").replace(/;?\s*form-action[^;]*/g, "").replace(/;\s*$/, "").trim();
+/* The bundle pins the page's one inline script by SHA-256, so the response header names a hash
+   where the source page still says 'unsafe-inline' (that copy is the file you open while you
+   work). The directive-by-directive comparison therefore compares everything *except* the script
+   clause; that clause is checked against the bytes it ships, in _deploy.mjs, which computes it. */
+const withoutScriptClause = (s) => s.replace(/script-src[^;]*;/, "script-src PINNED;");
+check("security: the hosted page refuses to be framed, and the header policy is the page's own policy",
+  /frame-ancestors 'none'/.test(hdrCsp) && /X-Frame-Options: DENY/.test(headersSrc)
+  && /X-Content-Type-Options: nosniff/.test(headersSrc) && /Referrer-Policy: no-referrer/.test(headersSrc)
+  && /Strict-Transport-Security: max-age=/.test(headersSrc) && /Permissions-Policy: geolocation=\(self\)/.test(headersSrc)
+  && /Cross-Origin-Opener-Policy: same-origin/.test(headersSrc)
+  && !!hdrCsp && withoutScriptClause(withoutFrameRules(hdrCsp)) === withoutScriptClause(cspSrc.trim()),
+  hdrCsp ? "frame-ancestors 'none' + DENY · policy matches the meta tag to the directive" : "_headers carries no policy");
+/* Why a hash can stand in for 'unsafe-inline' here at all: the page has exactly one script block,
+   nothing in it is an inline handler (hashes do not cover those without 'unsafe-hashes'), no
+   script is loaded from a file, and nothing is built with eval - so the page that ships needs no
+   allowance beyond its own hash. If any of those changes, the hardened policy would break the
+   app, so the invariant is asserted where it can be seen rather than trusted. */
+check("security: one inline script, no inline handlers and no eval - so a hash can cover the page",
+  (pageSrc.match(/<script\b[^>]*>/gi) || []).length === 1
+  && (pageSrc.match(/<script\b[^>]*\bsrc\s*=/gi) || []).length === 0
+  && (pageSrc.match(/\son(?:click|dblclick|load|error|change|input|submit|keydown|keyup|keypress|mousedown|mouseup|mousemove|mouseover|pointer\w+|focus|blur|touch\w+|drag\w*|drop|contextmenu)\s*=/gi) || []).length === 0
+  && !/\beval\s*\(|new Function\s*\(/.test(pageSrc)
+  && /script-src[^;]*;/.test(cspSrc),
+  "1 script block · 0 handlers · 0 eval · the bundle pins that block by SHA-256 (node _deploy.mjs)");
+/* ── what a passphrase covers, and what it cannot leak ────────────────────────────────
+   The claim is narrow, so it is worth pinning precisely: with a lock set, the provider key is
+   written only as ciphertext, the unsealing key is derived and never stored, and the file store
+   seals on the way in and refuses to write at all while locked. What a sealed record *looks*
+   like, what a relaunch can read, and what a wrong passphrase does are measured in Chromium by
+   _ui.test.py, because those are behaviours rather than shapes. */
+check("security: the passphrase seals the provider key and the file bytes, and is never stored",
+  /LOCK_ITER=3\d{5}/.test(pageSrc)
+  && /name:"PBKDF2",salt,iterations:iter,hash:"SHA-256"/.test(pageSrc)
+  && /name:"AES-GCM",length:256/.test(pageSrc)
+  && /store\.set\(LOCK_KEY,\{v:1,iter:LOCK_ITER,salt:B64\(salt\),check\}\)/.test(pageSrc)
+  && !/setItem\(LOCK_KEY[^\n]*pass/i.test(pageSrc)
+  && /function lockCan\(\)\{try\{return !!\(window\.crypto&&crypto\.subtle&&crypto\.getRandomValues\)/.test(pageSrc)
+  /* the provider key: plaintext only where there is no lock, sealed otherwise */
+  && /if\(lockOn\(\)\)return lockOpen\(\)\?BYOK_PLAIN:"";/.test(pageSrc)
+  && /if\(!lockOpen\(\)\)\{toast\(t\("lockNeedUnlock"\)\);return false\}/.test(pageSrc)
+  && /localStorage\.setItem\("pd_metals_key_enc",JSON\.stringify\(enc\)\)/.test(pageSrc)
+  /* the files: sealed on the way in, opened on the way out, never written while locked */
+  && /async function filePut\(rec\)\{\n if\(rec&&rec\.blob&&lockOn\(\)\)\{\n  if\(!lockOpen\(\)\)throw new Error\("locked"\);/.test(pageSrc)
+  && /enc:await lockSeal\(LOCK_CRYPT,new Uint8Array\(await rec\.blob\.arrayBuffer\(\)\)\)/.test(pageSrc)
+  && /if\(!rec\.enc\)return rec;/.test(pageSrc) && /\{locked:true\}/.test(pageSrc)
+  /* and the honest part: the recovery path is written down, not implied */
+  && existsSync(new URL("./docs/ATTACHMENTS_AND_KEY_LOCK.md", import.meta.url))
+  && /no recovery code/i.test(readFileSync(new URL("./docs/ATTACHMENTS_AND_KEY_LOCK.md", import.meta.url), "utf8"))
+  && /lockNoRecovery/.test(pageSrc),
+  "PBKDF2 310k → AES-GCM · salt+check only · key sealed · files sealed on the way in · recovery documented");
+check("security: a foreign origin gets no CORS grant at all, and every JSON answer names its type",
+  /if \(ok\) h\["Access-Control-Allow-Origin"\] = a === "\*" \? "\*" : origin;/.test(wsrc)
+  && !/Access-Control-Allow-Origin"\]\s*=[^;]*"null"/.test(wsrc)
+  && (wsrc.match(/Access-Control-Allow-Origin"\]/g) || []).length === 1
+  && /"X-Content-Type-Options": "nosniff"/.test(wsrc) && /"Referrer-Policy": "no-referrer"/.test(wsrc)
+  && /"Content-Type": "application\/json; charset=utf-8", "Cache-Control": "no-store"/.test(wsrc),
+  "one guarded Allow-Origin (never the literal null) · nosniff + no-referrer + no-store on JSON");
+check("security: a ticker cannot choose the upstream path, and a PDF opens in a frame that can do nothing",
+  /const TICKER = \/\^\[A-Za-z0-9\]\{2,12\}\$\//.test(wsrc)
+  && /!TICKER\.test\(symbol\) \|\| !TICKER\.test\(base\)/.test(wsrc)
+  && /list\.some\(\(c\) => !TICKER\.test\(String\(c\)\.trim\(\)\)\)/.test(wsrc)
+  && /const cgId = \/\^\[A-Za-z0-9-\]\{2,40\}\$\/\.test\(cg\) \? cg : ""/.test(wsrc)
+  && /f\.setAttribute\("sandbox",""\)/.test(pageSrc)
+  && /url\.origin === self\.location\.origin\) target = url\.pathname/.test(swSrc),
+  "tickers + cg id bounded · blob: frames sandboxed · a notification only navigates this origin");
+
+/* ── a reload is the same visit, a relaunch is the same place, a new visit is not ─────────
+   The place you were at survives the reload button, and it survives the installed app being
+   closed and opened again - there the sessionStorage record is gone with the session, so the
+   local copy is the only one left, and as the installed app that copy is trusted for a week
+   instead of a minute. A plain tab visit keeps the minute: a dashboard coming back on a
+   half-read page days later is the thing that rule exists to prevent. The browser's own
+   restoration stays off, because it brings back an offset without the section it belongs to. */
+check("a reload and a relaunch keep the place, a new visit opens on Home",
+  /sessionStorage\.setItem\(VIEW_KEY,/.test(pageSrc) && /sessionStorage\.getItem\(VIEW_KEY\)/.test(pageSrc)
+  && /if\(__v\)viewRestore\(__v\);else scrollTo\(0,0\)/.test(pageSrc)
+  && /history\.scrollRestoration="manual"/.test(pageSrc)
+  && /function viewRestore\(v\)\{viewLock=1;/.test(pageSrc) && /viewLock=0/.test(pageSrc)
+  /* the page is taller once its content has arrived than it was in the first frame, and an offset
+     put back before that is clamped by the shorter page and stays clamped - a refresh that looks
+     like it went home. So the restore re-applies while the document changes height. */
+  && /new ResizeObserver\(put\)/.test(pageSrc)
+  && /watch\.observe\(document\.documentElement\)/.test(pageSrc)
+  /* and the record cannot be written from a frame: a view that is not painting never delivers
+     one, the pending write is lost, and the guard left set swallows every later scroll too. */
+  && /viewSave\.due=setTimeout\(/.test(pageSrc) && !/viewSave\.raf/.test(pageSrc)
+  /* …nor from events alone: a window that is not compositing delivers no scroll event and can
+     tear the page down without a leaving event, so the position is read on a clock too */
+  && /setInterval\(\(\)=>\{if\(viewLock\)return;/.test(pageSrc)
+  && /if\(y!==viewSave\.y\|\|x!==viewSave\.x\)viewSave\(\)/.test(pageSrc)
+  && /viewSave\.y=v\.y;viewSave\.x=v\.x;/.test(pageSrc)
+  /* a refresh is not always a reload of this document: an app that refreshes by opening the page
+     again starts a new session, so the tab's record is gone and only the local copy can answer.
+     That copy carries its address and is honoured only while it is young, which is what still
+     keeps a new visit - days later - on Home. */
+  && /localStorage\.setItem\(VIEW_KEY,JSON\.stringify\(\{p:v\.p,y:v\.y,x:v\.x,t:at,u:location\.pathname\+location\.search\+location\.hash\}\)\)/.test(pageSrc)
+  && /const VIEW_FRESH=60\*1000;/.test(pageSrc)
+  && /const INSTALLED=\(\(\)=>\{try\{return matchMedia\("\(display-mode: standalone\)"\)\.matches\|\|navigator\.standalone===true\}catch\(e\)\{return false\}\}\)\(\);/.test(pageSrc)
+  && /const VIEW_RESUME=INSTALLED\?7\*24\*60\*60\*1000:VIEW_FRESH;/.test(pageSrc)
+  && /const VIEW_SESSION=60\*60\*1000;/.test(pageSrc)
+  && /s=ok\(JSON\.parse\(sessionStorage\.getItem\(VIEW_KEY\)\|\|"null"\),VIEW_SESSION\)/.test(pageSrc)
+  && /l=ok\(JSON\.parse\(localStorage\.getItem\(VIEW_KEY\)\|\|"null"\),VIEW_RESUME\)/.test(pageSrc)
+  && /l\.u===location\.pathname\+location\.search\+location\.hash/.test(pageSrc)
+  && /addEventListener\("pagehide",viewSave\)/.test(pageSrc)
+  && /else\{viewSave\(\)\}/.test(pageSrc)
+  && /sessionStorage\.removeItem\("pd_view"\);localStorage\.removeItem\("pd_view"\)/.test(pageSrc),
+  "record written on a timer · copied with its address · restored on growth · a week for the installed app, a minute for a tab");
+
+/* The restore is only worth as much as the places it is measured in. The sweep in _ui.test.py
+   drives the real page in every section at three widths and fails when the offset, or the card
+   under it, comes back anywhere else. This pins that the sweep still covers that whole grid, so
+   a release cannot quietly shrink it to the one section that happens to pass. */
+const uiSrc = readFileSync(new URL("./_ui.test.py", import.meta.url), "utf8");
+const uiCovered = (name) => (uiSrc.match(new RegExp(name, "g")) || []).length >= 2;
+check("layout: the browser contract measures the fill policies on the real page",
+  uiCovered("a_stretched_card_spends_its_slack_on_the_reading")
+  && /\.wkplot/.test(uiSrc) && /min-height:/.test(uiSrc),
+  "the sweep that hands a card a band's height, and takes it back, is registered in the contract");
+check("the browser contract sweeps a reload in every section at three widths",
+  (uiSrc.match(/every_section_keeps_its_place_after_a_reload/g) || []).length >= 2
+  && /for width in \(390, 1280, 1600\):/.test(uiSrc) && /for section in range\(6\):/.test(uiSrc)
+  && /pg\.querySelector\('\[data-widget/.test(uiSrc) && /the card under it moved/.test(uiSrc)
+  /* and one run asks the page to save its place with requestAnimationFrame stubbed out, because
+     a view nobody is painting is where the record used to be lost */
+  && /the_place_is_written_without_a_frame/.test(uiSrc)
+  && /window\.requestAnimationFrame = \(\) => 0/.test(uiSrc)
+  /* and one where the browser swallows every scroll listener, which is the silence this app's
+     own window gives the page - the position has to be taken off the clock there */
+  && /the_place_is_taken_on_a_clock_when_no_scroll_event_comes/.test(uiSrc)
+  && /type === 'scroll'/ .test(uiSrc)
+  /* and one run opens the page in a second session, which is the refresh the app's own button
+     performs - the case this was reported for */
+  && (uiSrc.match(/a_refresh_that_starts_a_new_session_keeps_its_place/g) || []).length >= 2,
+  "6 sections × 390/1280/1600 · the offset and the card under it · one run with no frames · one in a new session");
 
 console.log("\n-- sample payload --");
 for (const card of ["auto", "ai", "fin"]) {

@@ -236,6 +236,29 @@ a red gate — or to publish a commit that is not on `main`. It is the same proj
 production branch as the job, so the address never moves between the two. This is the step with
 no account binding, so it is the step where `whoami` has to be right.
 
+### The script is pinned as the page is bundled
+
+The page is one file with one inline `<script>`, and `node _deploy.mjs` replaces the policy's
+`script-src 'unsafe-inline'` with `script-src 'self' 'sha256-…'` — the hash of that block's
+bytes — in **both** `deploy/index.html` and `deploy/_headers`. Injected script therefore has a
+different hash and cannot run. Two consequences worth knowing before a release:
+
+- **Edit the script and the gate turns red** until the bundle is rebuilt (`node _deploy.mjs
+  --sync`, after a green run). That is the point: the hash in the bundle is the hash of the bytes
+  being shipped, and a stale one would ship a page that cannot run.
+- **`index.html` itself keeps `unsafe-inline`** so the file you open while working always runs.
+  The strict policy is a property of the bundle, not of the source — which is why the gate
+  compares the bundle to the *hardened* source rather than demanding they are identical, and why
+  the browser contract loads `deploy/index.html` and proves it boots and refuses an injected
+  script.
+
+If a future change adds a second inline script, an inline `on…=` handler or an `eval`, a single
+hash no longer covers the page: `_check.mjs` asserts those invariants so the hardening cannot
+quietly stop being true.
+
+The passphrase lock over attachments and the provider key (including its recovery path) is
+documented in [docs/ATTACHMENTS_AND_KEY_LOCK.md](docs/ATTACHMENTS_AND_KEY_LOCK.md).
+
 ## 4. Verify — always, against the live site
 
 A successful command is not proof that the site works. This step runs **after** publishing — the

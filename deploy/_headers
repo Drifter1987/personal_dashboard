@@ -1,3 +1,17 @@
+# Response headers for the published site. Everything here is enforced by the host, so it covers
+# the page even where a <meta> cannot: frame-ancestors is ignored in a meta tag, which left the
+# dashboard frameable by any site - and a framed copy can be sat under a transparent overlay to
+# make a tap land on "Wipe all data". The CSP is the same one the page carries in its meta tag
+# (_check.mjs compares the two), plus the two directives that only exist as a header.
+/*
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'self' 'sha256-lP8M3uNdENaUgUtlCd4Uo11T8ENRO/l1kd384J6L3Mw='; img-src data: blob: https://home-dashboard-5ma.pages.dev; frame-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'self'; worker-src 'self'; frame-ancestors 'none'; form-action 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(self), notifications=(self), camera=(), microphone=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
+
 /manifest.webmanifest
   Content-Type: application/manifest+json
 

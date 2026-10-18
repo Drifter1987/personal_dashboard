@@ -1014,18 +1014,26 @@ const P = {
 };
 const PROVIDER_IDS = Object.keys(P);
 
+/* A foreign origin is answered with no Access-Control-Allow-Origin at all rather than with the
+   literal "null": a sandboxed frame (or a file:// page) sends `Origin: null`, and the browser
+   compares that string to the header value - so writing "null" there grants exactly the callers
+   the check exists to refuse. Every JSON answer also carries the headers that stop a browser
+   guessing a type or handing our referrer on to a third party. */
 function cors(origin, allowed) {
   const a = allowed || "*";
   const ok = a === "*" || a === origin;
-  return {
-    "Access-Control-Allow-Origin": ok ? (a === "*" ? "*" : origin) : "null",
+  const h = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, X-Provider",
     "Access-Control-Max-Age": "86400",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
     "Vary": "Origin"
   };
+  if (ok) h["Access-Control-Allow-Origin"] = a === "*" ? "*" : origin;
+  return h;
 }
-const J = (obj, H, status) => new Response(JSON.stringify(obj), { status: status || 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, H) });
+const J = (obj, H, status) => new Response(JSON.stringify(obj), { status: status || 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, H) });
 
 function jreq(u) { return new Request(u, { method: "GET" }); }
 async function cacheGet(url) {
@@ -1447,6 +1455,9 @@ async function runPushDigests(env, now) {
   return out;
 }
 
+/* what a currency or coin ticker may look like, checked wherever one becomes part of an upstream
+   request or a cache key */
+const TICKER = /^[A-Za-z0-9]{2,12}$/;
 const MAX_BODY = 65536;
 async function readJson(request) {
   try {
@@ -1496,10 +1507,18 @@ export default {
       const from = url.searchParams.get("from") || HIST_FROM;
       if (["metal", "fx", "crypto"].indexOf(kind) < 0) return J({ error: "unknown kind", kinds: ["metal", "fx", "crypto"] }, H, 400);
       if (kind === "metal" && !IMF_METALS[String(symbol).toUpperCase()]) return J({ error: "unknown metal", symbols: Object.keys(IMF_METALS) }, H, 400);
-      const key = "https://history-cache.internal/v3/" + kind + "/" + symbol + "/" + base + "/" + from;
+      /* These two go into an upstream URL and into the cache key, so they are held to what a
+       * ticker can be rather than to whatever a caller types: a symbol of "../.." is not a
+       * pair, and it should not become a cache entry either. */
+      if (kind !== "metal" && (!TICKER.test(symbol) || !TICKER.test(base))) return J({ error: "bad symbol or base", rule: "2-12 letters or digits" }, H, 400);
+      const key = "https://history-cache.internal/v3/" + kind + "/" + String(symbol).toUpperCase() + "/" + String(base).toUpperCase() + "/" + from;
       try {
+        /* CoinGecko's own id for the coin, when the card knows it (wrapped tokens have no Yahoo
+           pair). Shaped like an id or dropped, for the same reason as the tickers above. */
+        const cg = String(url.searchParams.get("cg") || "");
+        const cgId = /^[A-Za-z0-9-]{2,40}$/.test(cg) ? cg : "";
         const got = await cachedJSON(key, HIST_TTL, async () => {
-          return { body: JSON.stringify(await historyPayload(kind, symbol, base, url.searchParams.get("cg"), from)) };
+          return { body: JSON.stringify(await historyPayload(kind, symbol, base, cgId, from)) };
         }, url.searchParams.get("fresh") === "1", ctx);
         return new Response(got.res.body, {
           headers: Object.assign({
@@ -1519,6 +1538,7 @@ export default {
     if (path === "/api/rates") {
       const base = url.searchParams.get("base") || "USD";
       const list = (url.searchParams.get("to") || YAHOO_FX.join(",")).split(",");
+      if (!TICKER.test(base) || list.some((c) => !TICKER.test(String(c).trim()))) return J({ error: "bad base or targets", rule: "2-12 letters or digits" }, H, 400);
       const key = "https://rates-cache.internal/v1/" + base.toUpperCase() + "/" + list.join(",").toUpperCase();
       try {
         const got = await cachedJSON(key, RATES_TTL, async () => {

@@ -19,7 +19,7 @@
  * The cache name carries the version, and activating a worker deletes every other
  * home-dashboard cache, so an old shell can never be served after an update.
  */
-const VERSION = "2.24.0";
+const VERSION = "2.27.0";
 const CACHE = "home-dashboard-" + VERSION;
 /* absolute, so a cache key never depends on a worker's base-URL rules */
 const at = (p) => new URL(p, self.location.href).href;
@@ -192,7 +192,14 @@ self.addEventListener("push", (event) => {
    stacking a new one every morning. */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || "/?p=3";
+  /* A reminder only ever points into this app. The URL arrives in a message rather than in our
+     own code, so it is resolved against our origin and anything that leaves it falls back to
+     the planner: a signed-in tab must never be navigated to somewhere else by a notification. */
+  let target = "/?p=3";
+  try {
+    const url = new URL((event.notification.data && event.notification.data.url) || "/?p=3", self.location.origin);
+    if (url.origin === self.location.origin) target = url.pathname + url.search + url.hash;
+  } catch (e) { /* unparseable: keep the planner */ }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const client of list) {
