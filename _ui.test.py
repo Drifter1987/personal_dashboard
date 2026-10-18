@@ -674,7 +674,10 @@ def cases(browser, base):
     def a_phone_reload_keeps_its_place():
         ctx, page = boot(browser, base, 390, 844)
         try:
-            page.evaluate("goPage(3)")
+            # instant: goPage's default glides the phone's sections sideways, and the section
+            # the page reports follows that glide. Reading it mid-glide (slow CI) records a section
+            # the reader was passing through, not the one they were on.
+            page.evaluate("goPage(3,{instant:true})")
             wait_for(page, "curPage", 3)
             page.evaluate("scrollTo(0, 420)")
             page.wait_for_timeout(250)
