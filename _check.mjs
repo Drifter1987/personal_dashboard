@@ -1663,6 +1663,9 @@ check("calendar: today's cell is filled and marked, keyed to the local day rathe
    bar is a share of its track rather than a number of pixels. */
 check("layout: a card ends at its content, and given a height it spends it on the reading",
   /\.page-inner\{[^}]*align-items:start\}/.test(pageSrc)
+  /* Three columns put the chart alone in its row; it spans that row rather than leaving two
+     thirds of it empty, and only there - two columns already pair it with Metals. */
+  && /#w_chart\{grid-column:1\/-1\}/.test(pageSrc)
   && /\.card\.fillchart,\.card\.fillrows,\.card\.fillmid\{display:flex;flex-direction:column\}/.test(pageSrc)
   && /\.card\.fillmid>\[id\^="wb_"\]\{justify-content:center\}/.test(pageSrc)
   && /\.card\.fillrows>\[id\^="wb_"\]>\.list\{flex:1 1 auto;display:flex;flex-direction:column;justify-content:space-between\}/.test(pageSrc)
