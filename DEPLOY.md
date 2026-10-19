@@ -59,7 +59,7 @@ run after touching a card's structure, the pager or the calendar:
 ```bash
 python _ui.test.py             # Chromium: scroll survives a rebuild, a hidden card moves nothing,
                                # a loading card holds its frame, a reload opens Home, Today
-                               # rests on the current month; 50 checks
+                               # rests on the current month; 91 checks
 python _ui.test.py -v          # same run, with every measurement printed
 ```
 

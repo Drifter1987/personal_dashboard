@@ -1309,12 +1309,19 @@ def cases(browser, base):
         finally:
             ctx.close()
 
-    # ── 11. the desktop grid keeps one top edge per row and sizes every card to its content ──
-    def the_desktop_rows_are_aligned_bands():
-        """A card that is stretched to the tallest in its row puts the empty space inside its own
-        border - the clock filled a 576px row with 411px of nothing. So a card must end where its
-        content ends, whatever its neighbour's height; the row still shares one top edge and the
-        next row starts a grid gap below the tallest card, so nothing overlaps."""
+    # ── 11. the desktop packs cards down its columns, in the page's own order ───────────────
+    def the_desktop_packs_cards_into_columns():
+        """A row grid gives every card in a row one top edge and each of them its own height, so
+        the shorter card leaves a hole that nothing fills - at 1280 the clock was 165px beside a
+        549px weather card and the next card began 372px lower than it needed to. Cards are still
+        never stretched: each one ends where its content ends. Instead the grid's rows are 8px
+        slabs and each card takes the slabs its height needs, in whichever column is shortest, so
+        the next card in the page's order sits directly under the previous one.
+
+        What that promises is testable: nothing overlaps, no card carries slack, a column has no
+        gap between consecutive cards (beyond the packing unit, and except where a full-width card
+        is what separates them), the order down a column is the order the page announces, and a
+        card the stylesheet spans across the row stays wider than one column."""
         detail = []
         ok = True
         for width in (941, 1280, 1600):
@@ -1323,52 +1330,70 @@ def cases(browser, base):
                 for section in range(6):
                     page.evaluate("goPage(%d)" % section)
                     wait_for(page, "curPage", section)
-                    page.wait_for_timeout(120)
+                    page.wait_for_timeout(150)
                     st = page.evaluate(
                         """(() => {
                           const inner = document.querySelector('.page.active .page-inner');
+                          const unit = parseFloat(getComputedStyle(inner).gridAutoRows) || 0;
                           const gap = parseFloat(getComputedStyle(inner).rowGap) || 0;
-                          const cards = [...inner.querySelectorAll(':scope > [data-widget]')].map(c => {
+                          const step = unit + gap;
+                          const cards = [...inner.querySelectorAll(':scope > [data-widget]')].map((c, i) => {
                             const r = c.getBoundingClientRect(), cs = getComputedStyle(c);
                             const b = c.querySelector('[id^=wb_]');
                             const end = (b.lastElementChild || b).getBoundingClientRect().bottom;
-                            return {id: c.dataset.widget, top: Math.round(r.top), bottom: Math.round(r.bottom),
+                            return {id: c.dataset.widget, i: i, top: r.top, bottom: r.bottom,
                                     left: Math.round(r.left), right: Math.round(r.right),
                                     wide: cs.gridColumnEnd === '-1',
                                     slack: Math.round(r.bottom - parseFloat(cs.paddingBottom)
                                                       - parseFloat(cs.borderBottomWidth) - end)};
                           });
-                          /* a band is the row: the cards that share a top edge */
-                          const bands = [];
-                          cards.forEach(c => {
-                            const b = bands.find(x => Math.abs(x.top - c.top) <= 1);
-                            if (b) b.cards.push(c); else bands.push({top: c.top, cards: [c]});
+                          const loose = [], overlap = [], holes = [], order = [], wideBad = [];
+                          cards.forEach(c => {if (c.slack > 24) loose.push(c.id + ' ' + c.slack + 'px')});
+                          for (let i = 0; i < cards.length; i++)
+                            for (let j = i + 1; j < cards.length; j++) {
+                              const A = cards[i], B = cards[j];
+                              if (A.left < B.right - 1 && B.left < A.right - 1
+                                  && A.top < B.bottom - 1 && B.top < A.bottom - 1)
+                                overlap.push(A.id + '/' + B.id);
+                            }
+                          /* columns: the cards sharing a left edge, in DOM order */
+                          const cols = {};
+                          cards.filter(c => !c.wide).forEach(c => {(cols[c.left] = cols[c.left] || []).push(c)});
+                          Object.keys(cols).forEach(left => {
+                            const list = cols[left];
+                            for (let i = 1; i < list.length; i++) {
+                              const d = list[i].top - list[i - 1].bottom;
+                              /* a card takes whole steps (unit + gap), so its slot can end a
+                                 step short of its own bottom edge */
+                              if (d < -1 || d > gap + step) {
+                                /* a row-spanning card may legitimately sit between them */
+                                const between = cards.some(w => w.wide && w.top >= list[i - 1].bottom - 1
+                                                               && w.bottom <= list[i].top + 1);
+                                if (!between) holes.push(list[i - 1].id + '->' + list[i].id + ' ' + Math.round(d) + 'px');
+                              }
+                              if (list[i].i < list[i - 1].i) order.push(list[i].id);
+                            }
                           });
-                          bands.sort((a, b) => a.top - b.top);
-                          /* No card may carry slack: its content has to reach its own bottom
-                             edge, because stretched space is the empty card this contract is
-                             about. Some cards ending above the row's tallest is intended. */
-                          let loose = 0, worstSlack = 0, overlap = 0, gapBad = 0, worstGap = 0;
-                          cards.forEach(c => {if (c.slack > 24) {loose++; if (c.slack > worstSlack) worstSlack = c.slack}});
-                          for (let i = 1; i < bands.length; i++) {
-                            const g = bands[i].top - Math.max.apply(null, bands[i - 1].cards.map(c => c.bottom));
-                            if (g < 0) overlap++;
-                            if (Math.abs(g - gap) > 1) {gapBad++; worstGap = Math.max(worstGap, g)}
-                          }
-                          return {cards: cards.length, bands: bands.length, loose: loose,
-                                  worstSlack: Math.round(worstSlack), overlap: overlap,
-                                  gapBad: gapBad, worstGap: Math.round(worstGap), gap: gap};
+                          const minLeft = Math.min.apply(null, cards.map(c => c.left));
+                          const maxRight = Math.max.apply(null, cards.map(c => c.right));
+                          cards.filter(c => c.wide).forEach(c => {
+                            if (c.left > minLeft + 1 || c.right < maxRight - 1) wideBad.push(c.id);
+                          });
+                          return {packed: inner.classList.contains('packed'), columns: Object.keys(cols).length,
+                                  loose: loose, overlap: overlap, holes: holes, order: order, wideBad: wideBad};
                         })()"""
                     )
-                    if (st["loose"] or st["overlap"] or st["gapBad"] or st["bands"] < 1):
+                    if (not st["packed"] or st["columns"] < 2 or st["loose"] or st["overlap"]
+                            or st["holes"] or st["order"] or st["wideBad"]):
                         ok = False
-                        detail.append("%dpx p%d: %d cards with slack (%dpx) · %d overlap · %d band gaps off (%dpx)"
-                                      % (width, section, st["loose"], st["worstSlack"], st["overlap"],
-                                         st["gapBad"], st["worstGap"]))
+                        detail.append("%dpx p%d: packed=%s cols=%d · slack %s · overlap %s · holes %s · order %s · wide %s"
+                                      % (width, section, st["packed"], st["columns"],
+                                         st["loose"][:2] or "-", st["overlap"][:2] or "-",
+                                         st["holes"][:2] or "-", st["order"][:2] or "-", st["wideBad"] or "-"))
             finally:
                 ctx.close()
-        check("the desktop rows keep one top edge, and every card ends where its content does",
-              ok, "; ".join(detail) or "3 widths × 6 sections · no card stretched, one top edge per row, uniform gaps")
+        check("the desktop packs cards down its columns, in order and without a hole",
+              ok, "; ".join(detail) or "3 widths × 6 sections · no card stretched, no overlap, columns contiguous and in page order")
 
     # ── 10. a stretched card spends its slack on the reading ────────────────────────────────
     def a_stretched_card_spends_its_slack_on_the_reading():
@@ -1583,7 +1608,7 @@ def cases(browser, base):
             a_file_name_is_a_search_result, the_file_viewer_zooms_filters_crops_and_copies,
             the_file_viewer_shows_text_and_says_what_it_cannot_show,
             a_phone_section_is_as_tall_as_its_content, a_phone_page_grows_with_what_you_add,
-            the_desktop_rows_are_aligned_bands,
+            the_desktop_packs_cards_into_columns,
             the_shipped_page_runs_under_its_pinned_script_hash,
             a_passphrase_seals_the_files_and_the_provider_key,
             a_stretched_card_spends_its_slack_on_the_reading,

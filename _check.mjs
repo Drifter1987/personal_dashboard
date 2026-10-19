@@ -1677,6 +1677,23 @@ check("layout: a card ends at its content, and given a height it spends it on th
   && (pageSrc.match(/fill:"(chart|rows|mid)"/g) || []).length === 5,
   "chart as a share of its track · rows spread · short reads centred · on five cards, from the registry");
 
+/* Packing itself is behavioural and measured in _ui.test.py, which drives the real page at three
+   widths and checks every section for overlap, contiguity, order and slack. What belongs here is
+   that the two halves cannot drift: the slab the packer counts in is declared in the stylesheet
+   and read back from it, and both a rebuild and a section change schedule a repack. A page that
+   lost the wiring would still pass every phone case in the browser contract, since a phone is
+   one column - which is exactly why the wiring is pinned here. */
+check("layout: cards pack into columns, and the packer reads its own slab from the stylesheet",
+  /\.page-inner\.packed\{grid-auto-rows:4px\}/.test(pageSrc)
+  && /parseFloat\(cs\.gridAutoRows\)/.test(pageSrc)
+  && /parseFloat\(cs\.rowGap\)/.test(pageSrc)
+  && /const PACK_RO=typeof ResizeObserver/.test(pageSrc)
+  && /sizePageBox\(\);packSoon\(\)\}\)\}/.test(pageSrc)
+  && /classList\.toggle\("active",idx===i\)\}\);sizePageBox\(\);packSoon\(\)\}/.test(pageSrc)
+  && /#w_kanban\{grid-column:1\/-1\}/.test(pageSrc)
+  && /function packFull\(el\)\{/.test(pageSrc),
+  "4px slabs declared once · unit and gap read back · observer · repack on rebuild and section change");
+
 /* The scroll contract is behavioural and lives in _ui.test.py, which measures it in Chromium.
    What belongs here is the one architectural fact that keeps that behaviour reachable: a rebuild
    goes through keepView, and a reorder is not navigation. Nothing below asserts how keepView

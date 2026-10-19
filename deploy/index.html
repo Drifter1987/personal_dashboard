@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.29.0</title>
+<title>Home Dashboard v2.30.0</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="manifest" href="manifest.webmanifest">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'self' 'sha256-dN5MckS0YiGL9BxF70jhGSIWyY4yGcF1Ro3xI6OcYIo='; img-src data: blob: https://home-dashboard-5ma.pages.dev; frame-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'self'; worker-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'self' 'sha256-aJ1ZjUqJ091fqkwisqOAat1rPEy3ZD/Wy3oEqXVlu8s='; img-src data: blob: https://home-dashboard-5ma.pages.dev; frame-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'self'; worker-src 'self'">
 <style>
 :root{--r:16px}
 [data-theme="dark"]{--bg:#232327;--bg2:#2A2A2E;--card:#313136;--card2:#3A3A40;--text:#E6E6EA;--text2:#FFFFFF;--muted:#9B9BA3;--line:#45454C;--ok:#34C759;--bad:#FF6B6B;--shadow:0 8px 28px rgba(0,0,0,.45)}
@@ -66,14 +66,22 @@ h1.brand{margin:0;font-size:inherit;line-height:1.25;letter-spacing:inherit}
 #pages{display:flex;align-items:flex-start;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;height:auto}
 #pages::-webkit-scrollbar{display:none}
 .page{min-width:100%;scroll-snap-align:start;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
-/* One row, one top edge. Cards keep the height their own content asks for; a row's shorter cards
-   end where their reading ends and the space below them is the page's, not an empty bordered
-   box inside a stretched card. Stretching every card to the tallest in its row was tried and it
-   left exactly that: a clock stretched to a 576px band with 411px of nothing under the time.
-   A packed masonry was rejected too - it puts a card above an older one, so the reading order
-   stops matching the order the page announces. Rows still line up at the top and the next row
-   starts below the tallest card, separated by the grid gap. */
+/* Cards keep the height their own content asks for. Stretching every card to the tallest in its
+   row was tried and it put the empty space inside the card's border: a clock stretched to a
+   576px band with 411px of nothing under the time.
+
+   On the desktop the cards then pack into columns (packPages, in the script): each column is
+   filled with the next card in the page's own order, so the reading runs down a column and the
+   space a short card leaves is taken by the card that follows it rather than left as a row of
+   background. The order is never rearranged - a card only ever moves up into a gap its
+   predecessor left, which is why the packed page still announces the same sequence. The grid
+   rows are 8px slabs here (packed, below), so a card spans the whole number of slabs its own
+   height needs; nothing is stretched and no card overlaps another. */
 .page-inner{display:grid;gap:12px;grid-template-columns:1fr;max-width:1100px;margin:0 auto;align-items:start}
+/* the slab the packer counts in - packPages reads it back from this rule, so the two cannot
+   disagree about the unit. 4px keeps the rounding short of a fifth of the gap: a card's slot is
+   at most 4px taller than the card, so a column reads as cards separated by one gap. */
+.page-inner.packed{grid-auto-rows:4px}
 /* If a host hands a card more height than its content needs (a test, an embed), the reading
    spends it rather than leaving blank space: the review card's chart takes it as track, a task
    list spreads its rows through it, and a short read sits in the middle of it. All three are
@@ -452,10 +460,25 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 .ntext{font-size:13.5px;line-height:1.35;overflow-wrap:anywhere;white-space:pre-wrap}
 .nmeta{display:flex;gap:8px;align-items:center;margin-top:5px}
 .npin{font-size:11.5px;color:var(--muted)}
-/* weather: the hourly strip scrolls inside its own card, never the page */
-.wxstrip{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;overscroll-behavior-x:contain}
+/* weather: on a phone the hourly strip scrolls inside its own card, never the page. From 600px
+   up the twelve hours fit as six columns by two rows, so no label is cut in half at the card's
+   edge and there is nothing to find by scrolling sideways. */
+.wxstrip{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin-top:10px;padding-bottom:2px;overscroll-behavior-x:contain;scroll-snap-type:x proximity}
 .wxstrip::-webkit-scrollbar{display:none}
-.wxh{flex:none;min-width:46px;text-align:center;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:6px 4px}
+.wxh{flex:none;min-width:46px;scroll-snap-align:start;text-align:center;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:6px 4px}
+@media(min-width:600px){
+ .wxstrip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));overflow:visible;scroll-snap-type:none}
+ .wxh{min-width:0}
+}
+/* the five-day forecast, one tile per day: the weekday is what a reader looks for, so the ISO date
+   that used to lead each row becomes a tooltip, and the high and low stack in the same place
+   under every day instead of trailing a sentence of numbers and a weather word */
+.wxdays{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}
+.wxd{text-align:center;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:7px 4px}
+.wxd .wd{font-size:11px;color:var(--muted);white-space:nowrap}
+.wxd .wi{font-size:15px;line-height:1.35}
+.wxd .wt{font-weight:700;font-variant-numeric:tabular-nums;font-size:13px;margin-top:1px}
+.wxd .wl{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .wxh .whh{font-size:11px;color:var(--muted);white-space:nowrap}
 .wxh .wht{font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
 .wxdet{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
@@ -521,7 +544,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.29.0",
+  VERSION: "2.30.0",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -546,6 +569,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.30.0", d:"2026-10-19", en:"This release closes the empty columns the last two opened. A row grid gives every card in a row the same top edge, so a 165px clock sat beside a 549px weather card and the next card began 372px lower than it needed to - the space was the page's rather than a stretched card's, but it was still 372px of nothing. On the desktop the cards now pack down their columns in the page's own order: each card takes the grid rows its own height needs, in whichever column is shortest, so the card that follows sits directly under the one before it. Nothing is stretched, nothing overlaps and no card is reordered - a column still reads in the order the page announces. Home is about 990px tall at 1280 instead of 1507px. The weather card reads better too: the twelve hours are a six-by-two grid at every width above a phone, so no label is cut in half at the card's edge, and the five-day forecast is five tiles led by the weekday with the high above the low and the full date in the tooltip, instead of five rows led by an ISO date. The browser contract now measures the packing itself - overlap, contiguity, order and slack, on every section at three widths - rather than the row bands it used to.", ar:"يغلق هذا الإصدار الأعمدة الفارغة التي فتحها الإصداران السابقان. كانت شبكة الصفوف تعطي كل بطاقة في الصف حدًّا أعلى واحداً، فتقف ساعة بارتفاع 165 بكسل بجانب بطاقة طقس بارتفاع 549 بكسل، وتبدأ البطاقة التالية أخفض بـ372 بكسل مما تحتاج — كان الفراغ فراغ الصفحة لا فراغ بطاقة ممدودة، لكنه ظل 372 بكسل من لا شيء. على سطح المكتب تتراصّ البطاقات الآن في أعمدتها بترتيب الصفحة نفسه: تأخذ كل بطاقة من صفوف الشبكة بقدر ارتفاعها، في العمود الأقصر حالاً، فتجلس البطاقة التالية مباشرة تحت سابقتها. لا تمديد ولا تراكب ولا إعادة ترتيب — يُقرأ العمود بالترتيب الذي تعلنه الصفحة. ويصير ارتفاع الرئيسية نحو 990 بكسل عند عرض 1280 بدل 1507. وتُقرأ بطاقة الطقس أفضل أيضاً: الساعات الاثنتا عشرة شبكة من ستة في صفّين عند كل عرض يتجاوز الهاتف، فلا يُقطع وسم في نصفه عند حد البطاقة، وتوقعات خمسة أيام خمس بطاقات صغيرة يتصدّرها اسم اليوم مع العظمى فوق الصغرى والتاريخ الكامل في التلميح، بدل خمسة أسطر يتصدّرها تاريخ بصيغة ISO. ويقيس عقد المتصفح التراص نفسه الآن — التراكب والاتصال والترتيب والفراغ — في كل قسم وثلاثة عروض، بدل نطاقات الصفوف التي كان يقيسها."},
 {v:"2.29.0", d:"2026-10-19", en:"On a wide desktop the time-travel chart takes the whole row. At three columns it was the fourth card, so it began a row alone and left two thirds of that row as page background; it spans the row there instead, and grows taller with the width it is given - about 250px at the dashboard's full 1,100 - so a 417-point series is read across the page rather than in a narrow column. Two columns already put it beside Metals in a full row, and the phone gives every card a row of its own, so neither changes.", ar:"على سطح المكتب العريض يأخذ مخطط السفر عبر الزمن الصف كله. فقد كان في ثلاثة أعمدة البطاقة الرابعة، فيبدأ صفًّا وحده ويترك ثلثي ذلك الصف فراغًا؛ وصار يمتد على الصف هناك، ويكبر ارتفاعًا مع العرض الذي يُمنحه — نحو 250 بكسل عند عرض اللوحة الكامل 1100 — فيُقرأ مسار من 417 نقطة على عرض الصفحة لا في عمود ضيّق. أما العمودان فيضعانه أصلًا بجوار المعادن في صف كامل، والهاتف يعطي كل بطاقة صفّها، فلا يتغيّر أيّهما."},
 {v:"2.28.0", d:"2026-10-19", en:"The time-travel chart can be read month by month and against a labelled axis now. Two month pickers narrow the series without another request - pick August 2020 to January 2021 and the line, and the y-axis with it, covers only the prices in that window, the caption states the window, and All brings the whole history back. The y-axis carries round tick labels and faint gridlines, and the cursor is a crosshair that carries the point's value horizontally to the axis, where a chip names it. The cursor is one of the drawn points rather than one of a hundred slider steps, so dragging reaches every price and every peak; the canvas is sized in the pixels it is displayed at, which is what finally puts the dot on the line it belongs to. On the desktop a card is no longer stretched to the tallest in its row: the empty space a tall neighbour used to leave inside a shorter card - 411px under the clock on this screen - is gone, a card ends where its reading ends, and the row still keeps one top edge.", ar:"يمكن الآن قراءة مخطط السفر عبر الزمن شهراً بشهر وعلى محور مُعلَّم. يضيّق منتقيا الشهر السلسلة دون طلب جديد — اختر أغسطس 2020 إلى يناير 2021 فيغطي الخط والمحور الرأسي معه أسعار تلك النافذة وحدها، ويذكر التعليق النافذة، ويعيد زر «الكل» التاريخ كاملاً. ويحمل المحور الرأسي علامات مستديرة وخطوط شبكة خفيفة، والمؤشر تقاطع يحمل قيمة النقطة أفقياً إلى المحور حيث تسمّيها شريحة. والمؤشر نقطة من النقاط المرسومة لا واحدة من مئة خطوة للمنزلق، فيبلغ السحب كل سعر وكل قمة؛ وقياس اللوحة صار بالبكسل الذي تُعرض به، وهو ما يضع النقطة أخيراً على خطها. وعلى سطح المكتب لم تعد البطاقة تُمدّ إلى أطول بطاقة في صفّها: الفراغ الذي كان الجار الطويل يتركه داخل البطاقة القصيرة — 411 بكسل تحت الساعة على هذه الشاشة — قد ذهب، فتنتهي البطاقة حيث تنتهي قراءتها ويحتفظ الصف بحدّ أعلى واحد."},
 {v:"2.27.0", d:"2026-10-18", en:"Closing the app and opening it again comes back to where you were, not to Home. The place was always kept twice, but the copy outside the session was honoured for a minute - long enough for a refresh, short enough that a reopened app looked like a first visit - so as the installed app that copy is now trusted for a week, while a plain tab visit still opens on Home. The page that ships also stops allowing inline script wholesale: the bundle computes the SHA-256 of its one script block and pins it in the meta tag and in the response header, so anything injected into the document has a different hash and cannot run. The source keeps the old allowance so the file you open while working still runs, the gate refuses to publish a bundle whose hash is not the hash of the bytes it carries, and the browser contract loads the shipped copy to prove it boots and refuses an injected script. And a passphrase can now seal what used to sit in the clear: the bytes of every attachment and the metals provider key. Both are sealed with AES-GCM under a key derived from the passphrase with PBKDF2-SHA256 (310,000 iterations), and the passphrase itself is stored nowhere - only a random salt and an encrypted check value are. The key lives in memory for the session, so a relaunch locks again, and the passphrase is asked where it is needed rather than at boot: opening a sealed file, or the provider-key field. Files attached before the passphrase was set are sealed in place, removing the protection puts them back exactly as they were, and the settings card says plainly that there is no recovery code, no reset and no way around it.", ar:"إغلاق التطبيق وفتحه من جديد يعيدك إلى حيث كنت، لا إلى الصفحة الأولى. كان الموضع محفوظًا مرّتين دائمًا، لكن النسخة خارج الجلسة كانت تُعتمد لدقيقة — تكفي لتحديث، وتقصر عن أن يُقرأ تطبيقٌ أُعيد فتحه كزيارة أولى — فصارت هذه النسخة موثوقة أسبوعًا حين يعمل التطبيق مثبّتًا، بينما تبقى زيارة التبويب العادية تفتح على الصفحة الأولى. والصفحة التي تُنشر لم تعد تسمح بالبرمجة المضمّنة جملةً: تحسب عملية التجميع بصمة SHA-256 لكتلة السكربت الوحيدة وتثبّتها في وسم الميتا وفي ترويسة الاستجابة، فما يُحقن في الصفحة بصمته مختلفة ولا يعمل. ويُبقي الملف المصدر السماح القديم ليعمل الملف الذي تفتحه أثناء العمل، ويرفض البوّاب نشر حزمة بصمتها ليست بصمة البايتات التي تحملها، ويحمّل عقد المتصفح النسخة المنشورة ليثبت أنها تعمل وترفض سكربتًا محقونًا. وصارت عبارة سرّية تختم ما كان مكشوفًا: بايتات كل مرفق ومفتاح مزوّد بيانات المعادن. يُختم الاثنان بـ AES-GCM بمفتاح مشتق من العبارة عبر PBKDF2-SHA256 (310,000 دورة)، والعبارة نفسها لا تُخزَّن في أي مكان — يُخزَّن ملح عشوائي وقيمة تحقّق مشفّرة فقط. ويعيش المفتاح في الذاكرة مدة الجلسة، فإعادة التشغيل تُقفل من جديد، وتُطلب العبارة حيث تُحتاج لا عند الإقلاع: عند فتح ملف مختوم أو عند حقل مفتاح المزوّد. والملفات المرفقة قبل تعيين العبارة تُختم في مكانها، وإزالة الحماية تُعيدها كما كانت بالضبط، وتقول بطاقة الإعدادات صراحةً أنه لا رمز استرداد ولا إعادة تعيين ولا طريق آخر."},
@@ -1026,7 +1050,7 @@ function renderTabs(){const bar=$("#tabbar");if(!bar)return;bar.innerHTML="";con
     const bb=bar.getBoundingClientRect(),oo=on.getBoundingClientRect();
     const want=bar.scrollLeft+(oo.left-bb.left)-(bar.clientWidth-oo.width)/2;
     bar.scrollTo({left:Math.max(lo,Math.min(want,hi)),behavior:"smooth"})}}
-function showPageView(i){document.querySelectorAll(".page").forEach((pg,idx)=>{pg.classList.toggle("active",idx===i)});sizePageBox()}
+function showPageView(i){document.querySelectorAll(".page").forEach((pg,idx)=>{pg.classList.toggle("active",idx===i)});sizePageBox();packSoon()}
 function applyLayoutMode(){if(isDesktop())showPageView(curPage);else document.querySelectorAll(".page").forEach(pg=>pg.classList.remove("active"))}
 /* A section is a place you go, not a bookmark the app keeps for you. The address is never
    rewritten as you move around, so closing the dashboard and opening it again lands on Home
@@ -1037,7 +1061,7 @@ function applyLayoutMode(){if(isDesktop())showPageView(curPage);else document.qu
    already on, and scrolling to the top there would undo the view keepView just restored. */
 function goPage(i,opts){curPage=i;const p=document.querySelector('.page[data-page="'+i+'"]');if(p){if(isDesktop()){showPageView(i);if(!(opts&&opts.keepScroll))window.scrollTo({top:0,behavior:"smooth"})}else{const bar=$("#pages");if(opts&&opts.instant)bar.scrollLeft=p.offsetLeft;else bar.scrollTo({left:p.offsetLeft,behavior:"smooth"})}}sizePageBox();renderPager();renderTabs();if(!(opts&&opts.keepScroll)&&typeof viewSave==="function"&&!viewLock)viewSave()}
 $("#pages").addEventListener("scroll",()=>{if(isDesktop())return;const el=$("#pages");const i=Math.round(Math.abs(el.scrollLeft)/el.clientWidth);if(i!==curPage&&i>=0&&i<pageCount()){curPage=i;sizePageBox();renderTabs();if(typeof viewSave==="function"&&!viewLock)viewSave()}renderPager()},{passive:true});
-window.addEventListener("resize",()=>{applyLayoutMode();renderPager();renderTabs();sizePageBox()});
+window.addEventListener("resize",()=>{applyLayoutMode();renderPager();renderTabs();sizePageBox();packSoon()});
 /* fixed swipe viewport: replace fragile subtract-a-number layout with a real spacer */
 /* ============ the shape of a section ============
    Two rules, one per layout, and both exist because a layout that fills a box draws emptiness
@@ -1050,22 +1074,81 @@ window.addEventListener("resize",()=>{applyLayoutMode();renderPager();renderTabs
    fills in, a task list that grows. The document is then exactly as long as what you are looking
    at, and it grows with it.
 
-   On the desktop the grid still places cards in rows, and a row's cards share one top edge, but
-   each card is only as tall as its own content. A stretched card was tried and it put the empty
-   space inside the card's border: the clock sat in a 576px row with 411px of nothing under the
-   time. The space a short card does not use is the page's, below it, and the next row starts
-   below the tallest card in the row. A hand-packed masonry was rejected because it reorders the
-   page - a card would sit above an older one - which is not something a reader can be expected
-   to follow. */
+   On the desktop each card is only as tall as its own content. A stretched card was tried and
+   it put the empty space inside the card's border: the clock sat in a 576px row with 411px of
+   nothing under the time. Rows left the same emptiness outside the border instead - 372px under
+   the clock on a 1280 screen - so the cards now pack down two (or three) columns in their own
+   order (packPages, below), and a short card is followed immediately by the next one. */
 function sizePageBox(){const box=$("#pages");if(!box)return;
  if(isDesktop()){box.style.height="";return}
  const pg=box.querySelectorAll(":scope > .page")[curPage];
  box.style.height=pg?Math.max(160,Math.round(pg.scrollHeight))+"px":""}
+/* ============ cards pack into their columns ============
+   A row grid gives every card in a row the same top edge and none of them the same height, so the
+   shorter card leaves a hole under itself that nothing ever fills: at 1280 the clock was 165px
+   beside a 549px weather card, and the next card started 372px lower than it needed to. Packing
+   removes that hole without stretching anything.
+
+   The grid's rows become 8px slabs and each card is given the number of slabs its own height
+   needs, in the column that is currently shortest. A card therefore sits directly under the card
+   that precedes it, never beside an older one that has been moved up past it: the page's order is
+   untouched, the reading still runs down a column in the announced order, and no two cards can
+   overlap because the next slot starts at or below the tallest column's end.
+
+   Cards the CSS makes full-width (the kanban at every desktop width, the chart at three columns)
+   keep spanning the row; the packer places them below every column and starts the columns again
+   from their bottom edge. That rule lives in the stylesheet, so it has to be read back here - if
+   either side changes alone the packing would put a full-row card in a single column.
+
+   Repacking is cheap enough to do whenever the layout changes: the page is rebuilt, a card's
+   content lands, a card is hidden or the window resizes. A resize observer on the cards and on
+   their grid is what notices all four, and the plan is compared with the last one before
+   anything is written, so a settled page cannot keep feeding itself layout changes. */
+const PACK_PLAN=new WeakMap();
+let packFrame=0;
+function packInner(){return document.querySelector(".page.active > .page-inner")}
+/* the full-width rule, mirrored from the two rules that span a card in the stylesheet */
+function packFull(el){return el.id==="w_kanban"||(el.id==="w_chart"&&matchMedia("(min-width:1300px)").matches)}
+function packClear(inner){if(!inner)return;PACK_PLAN.delete(inner);inner.classList.remove("packed");for(const el of inner.children){if(el.dataset&&el.dataset.widget){el.style.gridColumn="";el.style.gridRow=""}}}
+function packNow(){
+  packFrame=0;
+  const inner=packInner();
+  if(!isDesktop()){packClear(inner);return}
+  /* a card being dragged is out of the flow: repacking now would move the others under the pointer */
+  if(document.querySelector(".card.dragging"))return;
+  /* a page that is not laid out yet (display:none, so no resolved columns) keeps what it had:
+     clearing here would unpack it for as long as it takes to become visible */
+  const tpl=getComputedStyle(inner).gridTemplateColumns;
+  if(!tpl||tpl==="none")return;
+  const cols=tpl.split(/\s+/).filter(Boolean).length;
+  if(cols<2){packClear(inner);return}
+  const kids=Array.from(inner.children).filter(el=>el.dataset&&el.dataset.widget);
+  inner.classList.add("packed");
+  const cs=getComputedStyle(inner);
+  const unit=parseFloat(cs.gridAutoRows)||8, gap=parseFloat(cs.rowGap)||12, step=unit+gap;
+  const tops=new Array(cols).fill(0), plan=[], seen=[];
+  for(const el of kids){
+    const span=Math.max(1,Math.ceil((el.getBoundingClientRect().height+gap)/step));
+    if(packFull(el)){
+      const row=Math.ceil(Math.max.apply(null,tops)/step)+1;
+      const bottom=(row-1)*step+span*unit+(span-1)*gap;
+      tops.fill(bottom);plan.push([el.id,"1 / -1",row,span]);seen.push(el);continue
+    }
+    let c=0;for(let i=1;i<cols;i++)if(tops[i]<tops[c]-0.5)c=i;
+    const row=Math.ceil(tops[c]/step)+1;
+    tops[c]=(row-1)*step+span*unit+(span-1)*gap;plan.push([el.id,String(c+1),row,span]);seen.push(el)}
+  const sig=cols+"|"+plan.map(p=>p.join(":")).join("|");
+  if(PACK_RO){PACK_RO.observe(inner);seen.forEach(el=>PACK_RO.observe(el))}
+  if(PACK_PLAN.get(inner)===sig)return;
+  PACK_PLAN.set(inner,sig);
+  for(const [id,col,row,span] of plan){const el=document.getElementById(id);if(!el)continue;el.style.gridColumn=col;el.style.gridRow=row+" / span "+span}}
+function packSoon(){if(packFrame)return;packFrame=requestAnimationFrame(packNow)}
+const PACK_RO=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>packSoon()):null;
 document.addEventListener("keydown",e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;if(e.key==="ArrowRight")goPage(Math.min(pageCount()-1,curPage+1));if(e.key==="ArrowLeft")goPage(Math.max(0,curPage-1))});
 let editing=false;
 function setEditing(v){editing=!!v;document.body.classList.toggle("editing",editing);const b=document.getElementById("editBtn");if(b){b.textContent=editing?"✓":"✎";b.setAttribute("aria-pressed",editing?"true":"false");if(editing){b.classList.add("on")}else{b.classList.remove("on")}}}
 function bindLongPress(h){let lpT=null,sx=0,sy=0;h.addEventListener("pointerdown",e=>{if(editing)return;sx=e.clientX;sy=e.clientY;lpT=setTimeout(()=>{setEditing(true);if(navigator.vibrate){try{navigator.vibrate(10)}catch(_){}}},550)},{passive:true});h.addEventListener("pointermove",e=>{if(lpT&&Math.hypot(e.clientX-sx,e.clientY-sy)>10){clearTimeout(lpT);lpT=null}},{passive:true});["pointerup","pointercancel"].forEach(ev=>h.addEventListener(ev,()=>{clearTimeout(lpT);lpT=null},{passive:true}))}
-function bindDrag(handle,card){handle.addEventListener("pointerdown",e=>{e.preventDefault();if(!editing)setEditing(true);const inner=card.parentElement;const ph=document.createElement("div");ph.className="drop-ph";ph.style.height=card.offsetHeight+"px";const r=card.getBoundingClientRect();const offX=e.clientX-r.left,offY=e.clientY-r.top;inner.insertBefore(ph,card);card.classList.add("dragging");card.style.width=r.width+"px";card.style.position="fixed";card.style.left=r.left+"px";card.style.top=r.top+"px";card.style.margin="0";card.style.pointerEvents="none";document.body.appendChild(card);const scroller=inner.parentElement;const move=ev=>{card.style.left=(ev.clientX-offX)+"px";card.style.top=(ev.clientY-offY)+"px";if(ev.clientY<110)scroller.scrollTop-=10;else if(ev.clientY>window.innerHeight-110)scroller.scrollTop+=10;const kids=Array.prototype.filter.call(inner.children,k=>k!==ph);let placed=false;for(const k of kids){const kr=k.getBoundingClientRect();if(ev.clientY<kr.top+kr.height/2){inner.insertBefore(ph,k);placed=true;break}}if(!placed)inner.appendChild(ph)};const up=()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);window.removeEventListener("pointercancel",up);card.classList.remove("dragging");card.removeAttribute("style");inner.insertBefore(card,ph);ph.remove();const pg=inner.parentElement;const p=+pg.dataset.page;const o=Array.prototype.map.call(inner.querySelectorAll("[data-widget]"),n=>n.dataset.widget);saveOrder(p,o)};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);window.addEventListener("pointercancel",up);try{handle.setPointerCapture(e.pointerId)}catch(_){}})}
+function bindDrag(handle,card){handle.addEventListener("pointerdown",e=>{e.preventDefault();if(!editing)setEditing(true);const inner=card.parentElement;packClear(inner);const ph=document.createElement("div");ph.className="drop-ph";ph.style.height=card.offsetHeight+"px";const r=card.getBoundingClientRect();const offX=e.clientX-r.left,offY=e.clientY-r.top;inner.insertBefore(ph,card);card.classList.add("dragging");card.style.width=r.width+"px";card.style.position="fixed";card.style.left=r.left+"px";card.style.top=r.top+"px";card.style.margin="0";card.style.pointerEvents="none";document.body.appendChild(card);const scroller=inner.parentElement;const move=ev=>{card.style.left=(ev.clientX-offX)+"px";card.style.top=(ev.clientY-offY)+"px";if(ev.clientY<110)scroller.scrollTop-=10;else if(ev.clientY>window.innerHeight-110)scroller.scrollTop+=10;const kids=Array.prototype.filter.call(inner.children,k=>k!==ph);let placed=false;for(const k of kids){const kr=k.getBoundingClientRect();if(ev.clientY<kr.top+kr.height/2){inner.insertBefore(ph,k);placed=true;break}}if(!placed)inner.appendChild(ph)};const up=()=>{window.removeEventListener("pointermove",move);window.removeEventListener("pointerup",up);window.removeEventListener("pointercancel",up);card.classList.remove("dragging");card.removeAttribute("style");inner.insertBefore(card,ph);ph.remove();const pg=inner.parentElement;const p=+pg.dataset.page;const o=Array.prototype.map.call(inner.querySelectorAll("[data-widget]"),n=>n.dataset.widget);saveOrder(p,o)};window.addEventListener("pointermove",move);window.addEventListener("pointerup",up);window.addEventListener("pointercancel",up);try{handle.setPointerCapture(e.pointerId)}catch(_){}})}
 /* ============ a card keeps its frame while it loads ============
    Every card paints twice: a shell now, the data when it lands. The shell is shorter than the
    result, so everything below it slides up and then back down - the same class of shift the
@@ -1188,7 +1271,7 @@ function keepView(fn){
   restore();
   requestAnimationFrame(restore);
 }
-function buildPages(){keepView(()=>{for(let p=0;p<pageCount();p++){const host=$("#page"+p);host.innerHTML="";pageOrder(p).forEach(id=>{host.appendChild(widgetShell(id,nameFor(id)))})}renderTabs();applyLayoutMode();renderAll();paintUpdate();sizePageBox()})}
+function buildPages(){keepView(()=>{for(let p=0;p<pageCount();p++){const host=$("#page"+p);host.innerHTML="";pageOrder(p).forEach(id=>{host.appendChild(widgetShell(id,nameFor(id)))})}renderTabs();applyLayoutMode();renderAll();paintUpdate();sizePageBox();packSoon()})}
 /* The review card's name is the window it is showing, so a name takes that window as an
    argument rather than reading state: `span` is 7, 30 or anything else the card can pick. */
 /* Every place that names a card to the user goes through here, so a card whose name depends on
@@ -1219,7 +1302,11 @@ function wxIcon(c){return WX_ICON[c]||"•"}
 function hourLabel(t2){try{return new Intl.DateTimeFormat(settings.lang==="ar"?"ar-EG":"en-US",{hour:"numeric"}).format(new Date(t2))}catch(e){return String(t2).slice(11,16)}}
 /* The hourly strip and the detail chips are the part a phone can read at a glance without
    opening another app: what it feels like now, how wet or windy it is, and the next 12 hours. */
-function paintWx(out,j,cached){out.innerHTML="";const cur=j.current||{};const b=document.createElement("div");b.className="big";b.textContent=digits(Math.round(cur.temperature_2m||0))+"° "+esc(wcode(cur.weather_code));out.appendChild(b);const m=document.createElement("div");m.className="muted";m.textContent=(cached?t("cached")+" · ":"")+t("weather");out.appendChild(m);const det=document.createElement("div");det.className="wxdet";const chip=(l,v)=>{const s=document.createElement("span");s.textContent=l+" "+v;det.appendChild(s)};if(cur.apparent_temperature!==undefined)chip(t("wxFeels"),digits(Math.round(cur.apparent_temperature))+"°");if(cur.relative_humidity_2m!==undefined)chip(t("wxHumid"),digits(Math.round(cur.relative_humidity_2m))+"%");if(cur.wind_speed_10m!==undefined)chip(t("wxWind"),digits(Math.round(cur.wind_speed_10m))+" km/h");if(j.daily&&j.daily.sunrise&&j.daily.sunrise[0])chip(t("wxSunrise"),String(j.daily.sunrise[0]).slice(11,16));if(j.daily&&j.daily.sunset&&j.daily.sunset[0])chip(t("wxSunset"),String(j.daily.sunset[0]).slice(11,16));if(det.children.length)out.appendChild(det);if(j.hourly&&j.hourly.time&&j.hourly.time.length){let start=0;const now=Date.now();for(let i=0;i<j.hourly.time.length;i++){if(new Date(j.hourly.time[i]).getTime()>=now-1800000){start=i;break}}const lbl=document.createElement("div");lbl.className="muted";lbl.style.marginTop="10px";lbl.textContent=t("wxNext");out.appendChild(lbl);const strip=document.createElement("div");strip.className="wxstrip";strip.setAttribute("role","list");j.hourly.time.slice(start,start+12).forEach((tm,i)=>{const k=start+i;const c=document.createElement("div");c.className="wxh";c.setAttribute("role","listitem");const h=document.createElement("div");h.className="whh";h.textContent=(i===0)?t("today"):hourLabel(tm);c.appendChild(h);const ic=document.createElement("div");ic.textContent=wxIcon(j.hourly.weather_code&&j.hourly.weather_code[k]);c.appendChild(ic);const tt=document.createElement("div");tt.className="wht";tt.textContent=digits(Math.round(j.hourly.temperature_2m[k]))+"°";c.appendChild(tt);strip.appendChild(c)});out.appendChild(strip)}const ul=document.createElement("div");(j.daily&&j.daily.time||[]).slice(0,5).forEach((d,i)=>{const kv=document.createElement("div");kv.className="kv";const a=document.createElement("span");a.textContent=esc(d);const bb=document.createElement("span");bb.textContent=digits(Math.round(j.daily.temperature_2m_min[i])+" / "+Math.round(j.daily.temperature_2m_max[i]))+"° "+esc(wcode(j.daily.weather_code[i]));kv.appendChild(a);kv.appendChild(bb);ul.appendChild(kv)});out.appendChild(ul)}
+function paintWx(out,j,cached){out.innerHTML="";const cur=j.current||{};const b=document.createElement("div");b.className="big";b.textContent=digits(Math.round(cur.temperature_2m||0))+"° "+esc(wcode(cur.weather_code));out.appendChild(b);/* the cache note is only worth a line when the reading is cached; a fresh one is the card's
+   own title twice otherwise */
+if(cached){const m=document.createElement("div");m.className="muted";m.textContent=t("cached");out.appendChild(m)}const det=document.createElement("div");det.className="wxdet";const chip=(l,v)=>{const s=document.createElement("span");s.textContent=l+" "+v;det.appendChild(s)};if(cur.apparent_temperature!==undefined)chip(t("wxFeels"),digits(Math.round(cur.apparent_temperature))+"°");if(cur.relative_humidity_2m!==undefined)chip(t("wxHumid"),digits(Math.round(cur.relative_humidity_2m))+"%");if(cur.wind_speed_10m!==undefined)chip(t("wxWind"),digits(Math.round(cur.wind_speed_10m))+" km/h");if(j.daily&&j.daily.sunrise&&j.daily.sunrise[0])chip(t("wxSunrise"),String(j.daily.sunrise[0]).slice(11,16));if(j.daily&&j.daily.sunset&&j.daily.sunset[0])chip(t("wxSunset"),String(j.daily.sunset[0]).slice(11,16));if(det.children.length)out.appendChild(det);if(j.hourly&&j.hourly.time&&j.hourly.time.length){let start=0;const now=Date.now();for(let i=0;i<j.hourly.time.length;i++){if(new Date(j.hourly.time[i]).getTime()>=now-1800000){start=i;break}}const lbl=document.createElement("div");lbl.className="muted";lbl.style.marginTop="10px";lbl.textContent=t("wxNext");out.appendChild(lbl);const strip=document.createElement("div");strip.className="wxstrip";strip.setAttribute("role","list");strip.tabIndex=0;strip.setAttribute("aria-label",t("wxNext"));j.hourly.time.slice(start,start+12).forEach((tm,i)=>{const k=start+i;const c=document.createElement("div");c.className="wxh";c.setAttribute("role","listitem");const h=document.createElement("div");h.className="whh";h.textContent=(i===0)?t("today"):hourLabel(tm);c.appendChild(h);const ic=document.createElement("div");ic.textContent=wxIcon(j.hourly.weather_code&&j.hourly.weather_code[k]);c.appendChild(ic);const tt=document.createElement("div");tt.className="wht";tt.textContent=digits(Math.round(j.hourly.temperature_2m[k]))+"°";c.appendChild(tt);strip.appendChild(c)});out.appendChild(strip)}/* the five days as tiles: the weekday leads, the high and the low stack where they can be
+   compared down the row, and the full date and the condition are the tile's tooltip */
+const days=document.createElement("div");days.className="wxdays";(j.daily&&j.daily.time||[]).slice(0,5).forEach((d,i)=>{const lang=settings.lang==="ar"?"ar":"en";const dt=new Date(d+"T12:00:00");const ok=!isNaN(dt.getTime());const tile=document.createElement("div");tile.className="wxd";const dn=document.createElement("div");dn.className="wd";dn.textContent=ok?dt.toLocaleDateString(lang,{weekday:"short"}):esc(d);const ic=document.createElement("div");ic.className="wi";ic.textContent=wxIcon(j.daily.weather_code[i]);const hi=document.createElement("div");hi.className="wt";hi.textContent=digits(Math.round(j.daily.temperature_2m_max[i]))+"°";const lo=document.createElement("div");lo.className="wl";lo.textContent=digits(Math.round(j.daily.temperature_2m_min[i]))+"°";tile.title=(ok?dt.toLocaleDateString(lang,{weekday:"long",month:"short",day:"numeric"}):d)+" · "+wcode(j.daily.weather_code[i]);tile.append(dn,ic,hi,lo);days.appendChild(tile)});out.appendChild(days)}
 function renderPrayer(){const el=$("#wb_prayer");if(!el)return;el.innerHTML="";const info=document.createElement("div");info.className="muted";info.textContent=(location_?location_.name:t("noData"))+" · "+t("method");el.appendChild(info);const sel=document.createElement("select");sel.style.marginTop="8px";[[4,t("mUmmAlQura")],[3,t("mMWL")],[2,t("mISNA")],[5,t("mGulf")]].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;if(settings.method==v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{settings.method=+sel.value;saveSettings();loadPrayer(el)};el.appendChild(sel);const out=document.createElement("div");out.id="prOut";el.appendChild(out);loadPrayer(el)}
 async function loadPrayer(host){const out=host.querySelector("#prOut");if(!out)return;out.innerHTML="";if(!location_){const p=document.createElement("p");p.className="muted";p.textContent=t("cityPh");out.appendChild(p);return}try{const d=new Date();const s=String(d.getDate()).padStart(2,"0")+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+d.getFullYear();const u="https://api.aladhan.com/v1/timings/"+s+"?latitude="+location_.lat+"&longitude="+location_.lon+"&method="+settings.method;const r=await fetch(u);const j=await r.json();const tm=j.data.timings,H=j.data.date.hijri;const order=[["Fajr","pFajr"],["Sunrise","pSunrise"],["Dhuhr","pDhuhr"],["Asr","pAsr"],["Maghrib","pMaghrib"],["Isha","pIsha"]];const h=document.createElement("div");h.className="muted";h.textContent=t("hijri")+": "+esc(digits(H.day)+" "+(settings.lang==="ar"?(H.month.ar||H.month.en):H.month.en)+" "+digits(H.year));out.appendChild(h);const now=new Date();let next=null;order.forEach(([k,kl])=>{const kv=document.createElement("div");kv.className="kv";const a=document.createElement("span");a.textContent=t(kl);const b2=document.createElement("span");let v=(tm[k]||"").slice(0,5);b2.textContent=digits(v);kv.appendChild(a);kv.appendChild(b2);out.appendChild(kv);const parts=v.split(":");if(parts.length===2&&!next){const dt=new Date();dt.setHours(+parts[0],+parts[1],0,0);if(dt>now)next={k,dt}}})}catch(e){const p=document.createElement("p");p.className="muted";p.textContent=t("noData");out.appendChild(p)}}
 /* ============ quote ============ */
