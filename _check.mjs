@@ -1133,9 +1133,9 @@ const arK = PAGE_I18N ? Object.keys(PAGE_I18N.ar) : [];
 check("arabic: the two dictionaries carry the same keys, so no key can fall back to English",
   enK.length > 200 && enK.length === arK.length && enK.every((k) => arK.indexOf(k) >= 0) && arK.every((k) => enK.indexOf(k) >= 0),
   enK.length + " en / " + arK.length + " ar");
-/* A Latin run is allowed only where it is a format, a ticker, a source's own name or the
-   {x} placeholder - anything else is a string that was left half translated. */
-const LATIN_TOKEN = /(JSON|CSV|PDF|Excel|QR|ETH|Yahoo|CoinGecko|\{x\})/g;
+/* A Latin run is allowed only where it is a format, a ticker, a source's own name or a
+   {placeholder} - anything else is a string that was left half translated. */
+const LATIN_TOKEN = /(JSON|CSV|PDF|Excel|QR|ETH|Yahoo|CoinGecko|\{[a-z]+\})/g;
 const latinAr = arK.filter((k) => /[A-Za-z]/.test(PAGE_I18N.ar[k]));
 const strayed = latinAr.filter((k) => PAGE_I18N.ar[k].replace(LATIN_TOKEN, "").match(/[A-Za-z]/));
 check("arabic: every Latin run left in the dictionary is a known code, brand or placeholder",
@@ -1258,12 +1258,37 @@ check("file viewer: the page's own CSP allows the file it is holding to be paint
   cspSrc ? "img-src " + (/img-src[^;]*\bblob:/.test(cspSrc) ? "allows" : "blocks") + " blob: · frame-src "
     + (/frame-src[^;]*\bblob:/.test(cspSrc) ? "allows" : "blocks") + " blob:" : "no CSP on the page");
 check("storage: every change is written, the page flushes when it hides, and a refused write is reported",
-  /set\(k,v\)\{try\{localStorage\.setItem\(k,JSON\.stringify\(v\)\);this\.ok=true;return true\}/.test(pageSrc)
+  /set\(k,v\)\{[\s\S]{0,400}?localStorage\.setItem\(k,JSON\.stringify\(v\)\);this\.ok=true/.test(pageSrc)
   && /addEventListener\("pagehide",flushState\)/.test(pageSrc)
   && /document\.visibilityState==="hidden"\) flushState\(\)/.test(pageSrc)
   && /toast\(t\("storeFail"\)\)/.test(pageSrc)
   && /function storageLine\(\)\{/.test(pageSrc),
   "store.set returns and reports · pagehide + visibility flush · storage line in About");
+/* A browser can clear localStorage without the page doing anything: WebKit has cleared an origin
+   after a quota error, and an installed app's container can be evicted. The records are therefore
+   mirrored into IndexedDB, only a MISSING key is restored (an empty list is a real state the user
+   chose), a key that could not be parsed is never overwritten by an automatic flush, and the
+   caches that can be rebuilt are kept out of localStorage altogether. These are the properties
+   that make a release - or a hostile browser - unable to turn saved work into a first visit. */
+check("storage: durable records are mirrored to IndexedDB and restored only when the key is missing",
+  /const DURABLE=\["pd_settings","pd_tasks","pd_events","pd_countdowns","pd_notes","pd_habits","pd_location"/.test(pageSrc)
+  && /indexedDB\.open\("pd_backup",1\)/.test(pageSrc)
+  && /if\(!readable\|\|have!==null\)continue/.test(pageSrc)
+  && /localStorage\.setItem\(k,snap\.data\[k\]\)/.test(pageSrc)
+  && /if\(DURABLE\.indexOf\(k\)>=0\)snapSoon\(\)/.test(pageSrc)
+  && /function canFlush\(k\)\{return !store\.bad\[k\]&&\(snapChecked\|\|!store\.missing\[k\]\)\}/.test(pageSrc)
+  && /function saveSettings\(\)\{if\(canFlush\("pd_settings"\)\)store\.set/.test(pageSrc)
+  && /function rollOverdue\(\)\{if\(typeof store!=="undefined"&&store\.bad&&store\.bad\.pd_tasks\)return 0/.test(pageSrc)
+  && /if\(!store\.bad\.pd_settings&&settings\.orderRev!==LAYOUT_REV\)/.test(pageSrc),
+  "DURABLE mirror · missing-only restore · canFlush · rollover and settings guards");
+check("storage: rebuildable caches go to sessionStorage, and Wipe removes the mirror and the files",
+  /const VOLATILE=k=>k==="pd_news_v2"/.test(pageSrc)
+  && /if\(VOLATILE\(k\)\)\{try\{sessionStorage\.setItem/.test(pageSrc)
+  && /await snapClear\(\)/.test(pageSrc)
+  && /indexedDB\.deleteDatabase\("pd_files"\)/.test(pageSrc)
+  && /indexedDB\.deleteDatabase\("pd_backup"\)/.test(pageSrc)
+  && /navigator\.storage\.persist\(\)/.test(pageSrc),
+  "sessionStorage caches · Wipe clears both databases · persistent storage requested");
 /* The review card answers to two names, and which one it uses is the window it is showing. */
 const nameSrcR = (pageSrc.match(/function nameFor\(id\)\{[^\n\r]*\}/) || [])[0];
 if (nameSrcR && PAGE_I18N) {
@@ -1519,6 +1544,17 @@ check("offline: the new worker waits, and only a Reload or an unloadable inherit
   (swSrc.match(/skipWaiting\(/g) || []).length + " call site(s): reload + stuck-shell recovery");
 check("offline: the API and every other origin are passed straight through, never cached",
   /url\.origin !== self\.location\.origin\) return;/.test(swSrc) && !/caches\.default/.test(swSrc));
+/* The installed app's identity is what decides which storage container it reads, so this is a
+   data question, not a cosmetic one: a manifest `id`, a new start_url or a new scope gives a
+   home-screen app a new identity - and an empty store under it, which looks exactly like a
+   release having reset everything. The identity stays as it was installed; changing it is a
+   migration, never a detail of a release. */
+const manifest = JSON.parse(readFileSync(new URL("./deploy/manifest.webmanifest", import.meta.url), "utf8"));
+check("install: the manifest keeps the identity the app was installed under, so a release cannot separate it from its store",
+  manifest.start_url === "/" && manifest.scope === "/" && !("id" in manifest)
+  && manifest.display === "standalone",
+  "start_url " + manifest.start_url + " · scope " + manifest.scope
+  + " · id " + (manifest.id || "none (derived from start_url)") + " · display " + manifest.display);
 check("page: the worker is registered at boot, not only when reminders are switched on",
   /function swBoot[\s\S]{0,400}swEnsure\(\)/.test(pageSrc) && /pushResume\(\);\nswBoot\(\);/.test(pageSrc));
 check("page: Reload swaps the waiting worker, then reloads on controllerchange",
@@ -1612,6 +1648,18 @@ const taskRun = spawnSync(process.execPath, ["_tasks.test.mjs"], { encoding: "ut
 const taskTail = String(taskRun.stderr || taskRun.stdout || "").trim().split("\n").filter(Boolean).pop();
 check("plan: repeats, successors and rollover, executed - one copy, dated forward, once a day",
   taskRun.status === 0, taskRun.status === 0 ? ((taskRun.stdout.match(/^\d+\/\d+ checks passed$/m) || ["passed"])[0]) : taskTail);
+
+/* ── the release command: versions, edits and escaping, executed ───────────────
+   A release is the one step where a quiet mistake is expensive: a version bumped in two files
+   out of three, a note that ends the page's <script>, or a tag naming a version the page does
+   not carry. _release.test.mjs executes the arithmetic, the three edits and the escaping
+   against both a fixture and the real page, so the tool that performs every release cannot
+   rot between them. */
+const releaseRun = spawnSync(process.execPath, ["_release.test.mjs"], { encoding: "utf8", cwd: ROOT });
+const releaseTail = String(releaseRun.stderr || releaseRun.stdout || "").trim().split("\n").filter(Boolean).pop();
+check("release: the version bump, the three edits and the note escaping, executed",
+  releaseRun.status === 0,
+  releaseRun.status === 0 ? ((releaseRun.stdout.match(/^\d+\/\d+ checks passed$/m) || ["passed"])[0]) : releaseTail);
 /* A repeated card and a carried one are the only places the user sees these rules holding, so
    they have to survive a refactor of the card and of the CSV export. */
 check("plan: a repeating card and a carried one still say so - a chip on the card, a repeat column in the CSV",
@@ -1817,7 +1865,10 @@ check("a reload and a relaunch keep the place, a new visit opens on Home",
   && /l\.u===location\.pathname\+location\.search\+location\.hash/.test(pageSrc)
   && /addEventListener\("pagehide",viewSave\)/.test(pageSrc)
   && /else\{viewSave\(\)\}/.test(pageSrc)
-  && /sessionStorage\.removeItem\("pd_view"\);localStorage\.removeItem\("pd_view"\)/.test(pageSrc),
+  /* Wipe forgets the place too - and it does it by clearing both stores of every pd_ key rather
+     than naming pd_view, so a record this release adds tomorrow cannot survive a wipe either. */
+  && /sessionStorage\.clear\(\)/.test(pageSrc)
+  && /filter\(k=>k\.startsWith\("pd_"\)\)\.forEach\(k=>localStorage\.removeItem\(k\)\)/.test(pageSrc),
   "record written on a timer · copied with its address · restored on growth · a week for the installed app, a minute for a tab");
 
 /* The restore is only worth as much as the places it is measured in. The sweep in _ui.test.py

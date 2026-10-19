@@ -85,7 +85,7 @@ The generator refuses to write when an entry is missing its version, date, or En
 or when the array is out of order. The harness independently fails when the newest entry's
 version or language text does not match the running `VERSION`, so a release that bumps the
 page but forgets its notes cannot get through the gate. Regenerate the markdown in the same
-commit as the version bump.
+commit as the version bump; `node _release.mjs` (section 3) does that as part of the release.
 
 ## 2. Publish the Worker
 
@@ -215,12 +215,87 @@ python -m http.server 8099 --bind 127.0.0.1 --directory deploy
 **A release tag does this for you.** `.github/workflows/checks.yml` has a `publish` job that runs
 only after the gate on that commit has passed, and only for a tag `v*` whose commit is on `main`
 (or a manual run of the workflow on `main`). It uploads `deploy/` to the project below before proving
-the live site serves it. A release is: merge to `main`, then
-`git tag v<version>` on that commit and `git push origin v<version>`. The tag must name the
-version the page carries (`v2.30.0` for `CONFIG.VERSION: "2.30.0"`): the gate compares the tag
-with the page and fails on a mismatch, so a tag that says one version and ships another never
-reaches the publish job. (`node _deploy.mjs` run locally makes the same comparison against any
-`v*` tag pointing at `HEAD`, so tag first if you want the local gate to catch it too.)
+the live site serves it. A release is: merge to `main`, run `node _release.mjs` (below), then
+push the commit and the tag it creates — `git push origin main` and `git push origin v<version>`.
+The tag must name the version the page carries (`v2.30.0` for `CONFIG.VERSION: "2.30.0"`): the
+gate compares the tag with the page and fails on a mismatch, so a tag that says one version and
+ships another never reaches the publish job. (`node _deploy.mjs` run locally makes the same
+comparison against any `v*` tag pointing at `HEAD`.)
+
+### A release never resets a reader's data
+
+A deploy does not touch browser storage by itself: the same Pages project means the same origin,
+the service worker replaces only its own caches, and no code in the page calls `localStorage.clear()`
+or deletes a database. So a dashboard that came back empty after a release was not emptied by the
+deploy — the browser had taken the store away underneath it (WebKit has cleared an origin's
+localStorage after a quota error, and an installed app's container can be evicted), and the page
+had no copy to put back. The defence is therefore in the page, and it is what the gate measures:
+
+| Mechanism | Where | What it stops |
+|---|---|---|
+| `pd_backup` IndexedDB mirror | `snapSave` / `snapRestore` | losing every `pd_*` record at once |
+| restore only a **missing** key | `snapRestore`, `canFlush` | a default written over work that is only slow to arrive |
+| unreadable keys are never overwritten | `store.bad` | a parse error turning into a silent wipe on the next flush |
+| caches in `sessionStorage` | `VOLATILE` | news/prices competing with records for a small quota |
+| `navigator.storage.persist()` | `armPersist` | the origin being treated as best-effort when it need not be |
+
+`DURABLE` in the page is the list that is mirrored — settings, tasks, events, countdowns, notes,
+habits, location, the lock record and the sealed provider key. A new saved record belongs in that
+list in the same change that adds it, or it is the one thing a browser wipe can still take.
+
+**Identity is a data question.** The installed app's manifest keeps `start_url: "/"`, `scope: "/"`
+and **no `id`**: adding an `id`, or moving the start URL or scope, gives a home-screen app a new
+identity and an empty store under it — which looks exactly like this bug. The gate now fails if
+that identity changes. Moving the app to another domain is a migration, not a release.
+
+**Never add `Clear-Site-Data`** to `deploy/_headers` for this project. It is the one response
+header that does exactly the harm this section exists to prevent.
+
+Where it is proven, and how to re-run just that proof:
+
+```bash
+node _check.mjs                        # the storage contract: mirror, missing-only restore, guards
+python _ui.test.py                     # 97 browser checks; the storage case wipes the store for real
+```
+
+The browser case (`a_cleared_localStorage_comes_back_from_the_device_backup`) seeds records, saves a
+backup, removes one key, then clears the whole of localStorage the way a browser would — with the
+page's own leaving handlers off — and asserts the records return, that an untouched neighbour is not
+rewritten, and that a list the reader emptied is **not** restored back to an older one.
+
+What it cannot do: it protects records from a release onward. Data lost before this version is
+gone, Settings → **Wipe all data** is still a wipe (it clears both databases and both stores), and
+deleting the app or the site data from the OS still removes everything — the JSON export in the
+Data card remains the copy that survives that.
+
+### The release command
+
+One command performs the whole release, in the order that matters:
+
+```bash
+node _release.mjs patch --en "..." --ar "..."          # 2.30.1 -> 2.30.2
+node _release.mjs minor --en @notes-en.txt --ar @notes-ar.txt
+node _release.mjs 2.31.0 --en "..." --ar "..." --title "cards pack into columns" --dry-run
+```
+
+- **Preflight.** Refuses a branch other than `main`, a tracked tree that is not clean, a version
+  that is not newer than the running one, a tag that already exists, and a note shorter than the
+  harness accepts. The note is required in both languages. Nothing is written until all of it
+  holds.
+- **Bump.** `CONFIG.VERSION`, the `<title>` and the newest `CHANGELOG` entry (escaped, so a quote,
+  a backslash or `</script>` in a note cannot break the page), and `deploy/sw.js`'s `VERSION`;
+  then `node _changelog.mjs` regenerates `CHANGELOG.md`.
+- **Commit, then gate.** The gate has to run on the release commit: while the previous release
+  tag still points at `HEAD`, its tag check would correctly refuse a page carrying the new
+  version. `node _deploy.mjs --sync` then runs the real harness and rebuilds `deploy/` from the
+  page it just proved.
+- **Fold and tag.** The rebuilt bundle is amended into that same commit, so what is tagged is
+  what was tested; the annotated tag `v<version>` is created on it, and a final
+  `node _deploy.mjs --artifacts-only` proves the tag names the page's version.
+
+A red gate at any point undoes the release commit and restores every file to the bytes it had
+before the run. **It never pushes:** pushing the tag is the publish, and that needs an explicit
+go-ahead for the account in question (section 0).
 
 A plain push to `main` does **not** publish. It used to, and every push published whatever its
 commit held, so an older commit could replace a newer release: production went from 2.27.0 back to

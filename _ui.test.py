@@ -1311,6 +1311,101 @@ def cases(browser, base):
         finally:
             ctx.close()
 
+    # ── 10e. a browser that clears localStorage does not take the records with it ──────────
+    def a_cleared_localStorage_comes_back_from_the_device_backup():
+        """A release itself clears nothing - but the store a phone is most willing to clear is
+        localStorage, and a browser can take it away without asking: WebKit has been recorded
+        clearing an origin after a quota error, and an installed app's container can be evicted.
+        Either one looked exactly like a first visit. This measures the defence rather than the
+        cause: the records come back from the device's own IndexedDB mirror, only a key that is
+        actually missing is filled, and a list the user emptied on purpose is not "restored"
+        back to an older one.
+
+        Storage is lost the way a browser loses it: with the page's own leaving handlers off, so
+        the page cannot flush its memory back into the store it just lost.
+        """
+        MARK = "RESTORE-MARK-4b81e"
+
+        def lose(keys):
+            return page.evaluate(
+                "(keys) => {"
+                "  removeEventListener('pagehide', flushState);"
+                "  flushState = () => {}; snapSave = () => {}; snapSoon = () => {};"
+                "  if (keys === '*') localStorage.clear();"
+                "  else keys.forEach(k => localStorage.removeItem(k));"
+                "  return Object.keys(localStorage).filter(k => k.indexOf('pd_') === 0)}", keys)
+
+        def booted():
+            page.reload()
+            page.wait_for_function("() => snapChecked === true")
+            page.wait_for_timeout(200)
+
+        def state():
+            return page.evaluate(
+                "(mark) => ({mark: tasks.some(x => x.text === mark), span: settings.weekSpan,"
+                "  n: snapRestored, count: tasks.length, saved: snapAt > 0, persist: persistMode,"
+                "  cards: document.querySelectorAll('[data-widget]').length,"
+                "  restoreBtn: !![...document.querySelectorAll('#wb_data button')]"
+                ".find(b => /Restore|استعادة/.test(b.textContent)),"
+                "  backupLine: (document.querySelector('#wb_data .setnote') || {}).textContent || ''})",
+                MARK)
+
+        # seeded *after* boot, not by an init script: an init script would run again on every
+        # reload and quietly refill the store this case has just emptied
+        ctx, page = boot(browser, base, 941, 620)
+        try:
+            page.wait_for_function("() => snapChecked === true")
+            page.evaluate(
+                "(mark) => {tasks = [0, 1, 2].map(i => ({id: 'r' + i, text: i ? 'Seeded ' + i : mark,"
+                "  done: false, due: '', status: 'todo'})); persistAll();"
+                "  settings.weekSpan = 30; saveSettings()}", MARK)
+            page.wait_for_timeout(700)
+            first = page.evaluate("() => ({at: snapAt, n: snapRestored})")
+            check("storage: a device that already holds records takes a backup without being asked",
+                  first["at"] > 0 and first["n"] == 0,
+                  "backup taken: %s · restored on this boot: %s" % (bool(first["at"]), first["n"]))
+            page.evaluate(
+                "async () => {await new Promise(r => setTimeout(r, 500)); return snapSave()}")
+
+            # 1. one key lost while the other survives: only the missing one is filled in
+            left = lose(["pd_settings"])
+            booted()
+            part = state()
+            check("storage: a key the browser dropped is put back, and its neighbour is untouched",
+                  "pd_tasks" in left and part["mark"] and part["span"] == 30
+                  and part["count"] == 3 and part["n"] >= 1,
+                  "cleared pd_settings · kept pd_tasks: %s · tasks back: %s · window %s · restored %d"
+                  % ("pd_tasks" in left, part["mark"], part["span"], part["n"]))
+
+            # 2. the whole store taken away, as a quota wipe or an evicted container looks
+            lose("*")
+            booted()
+            full = state()
+            check("storage: a browser that clears everything does not turn the dashboard into a first visit",
+                  full["mark"] and full["span"] == 30 and full["count"] == 3
+                  and full["n"] >= 2 and full["saved"] and full["cards"] > 20,
+                  "backup record present · tasks back: %s · window %s · restored %d · %d cards"
+                  % (full["mark"], full["span"], full["n"], full["cards"]))
+            check("storage: the Settings card says a device backup exists and offers it explicitly",
+                  full["restoreBtn"] and "ackup" in full["backupLine"],
+                  "restore button: %s · line: %r" % (full["restoreBtn"], full["backupLine"][:80]))
+            check("storage: the browser is asked to keep this origin's storage, not treat it as best-effort",
+                  full["persist"] in ("persistent", "best-effort"),
+                  "persist requested: %r" % full["persist"])
+
+            # 3. an emptied list is a real state: deleting every card must not resurrect it
+            page.evaluate(
+                "async () => {tasks = []; persistAll();"
+                "  await new Promise(r => setTimeout(r, 500)); return snapSave()}")
+            lose("*")
+            booted()
+            gone = state()
+            check("storage: a list the reader emptied is not restored back to an older one",
+                  not gone["mark"] and gone["count"] == 0 and gone["span"] == 30,
+                  "marker back: %s · %d tasks · window %s" % (gone["mark"], gone["count"], gone["span"]))
+        finally:
+            ctx.close()
+
     # ── 11. the desktop packs cards down its columns, in the page's own order ───────────────
     def the_desktop_packs_cards_into_columns():
         """A row grid gives every card in a row one top edge and each of them its own height, so
@@ -1613,6 +1708,7 @@ def cases(browser, base):
             the_desktop_packs_cards_into_columns,
             the_shipped_page_runs_under_its_pinned_script_hash,
             a_passphrase_seals_the_files_and_the_provider_key,
+            a_cleared_localStorage_comes_back_from_the_device_backup,
             a_stretched_card_spends_its_slack_on_the_reading,
             a_rebuilt_card_holds_its_content_height_not_its_band]
 
