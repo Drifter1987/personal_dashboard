@@ -1386,8 +1386,13 @@ def cases(browser, base):
                   and full["n"] >= 2 and full["saved"] and full["cards"] > 20,
                   "backup record present · tasks back: %s · window %s · restored %d · %d cards"
                   % (full["mark"], full["span"], full["n"], full["cards"]))
+            # the line is painted by the boot before the first snapshot exists, so it must be
+            # repainted when one lands: "No device backup yet" over a real backup is a lie the
+            # reader would act on
             check("storage: the Settings card says a device backup exists and offers it explicitly",
-                  full["restoreBtn"] and "ackup" in full["backupLine"],
+                  full["restoreBtn"]
+                  and ("Saved" in full["backupLine"] or "حُفظت" in full["backupLine"])
+                  and "No device backup" not in full["backupLine"],
                   "restore button: %s · line: %r" % (full["restoreBtn"], full["backupLine"][:80]))
             check("storage: the browser is asked to keep this origin's storage, not treat it as best-effort",
                   full["persist"] in ("persistent", "best-effort"),
