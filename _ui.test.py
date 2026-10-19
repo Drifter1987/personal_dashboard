@@ -281,7 +281,9 @@ def cases(browser, base):
 
     # ── 2. reordering is not navigation either ───────────────────────────────────────────────
     def reorder_keeps_offset():
-        ctx, page = boot(browser, base, 941, 620)
+        # the case needs a page with room to scroll, and packed columns made an empty Planner
+        # fit on one screen at this height: rows to scroll past are seeded rather than assumed
+        ctx, page = boot(browser, base, 941, 620, tasks=14)
         try:
             page.evaluate("goPage(3); setEditing(true)")
             wait_for(page, "curPage", 3)
