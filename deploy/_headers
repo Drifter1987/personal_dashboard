@@ -4,7 +4,7 @@
 # make a tap land on "Wipe all data". The CSP is the same one the page carries in its meta tag
 # (_check.mjs compares the two), plus the two directives that only exist as a header.
 /*
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'self' 'sha256-jbO9XdkWPaFVQQu7xFyuuQ+8Z3xLE8xSZavMhlkYcEk='; img-src data: blob: https://home-dashboard-5ma.pages.dev; frame-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'self'; worker-src 'self'; frame-ancestors 'none'; form-action 'none'
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'self' 'sha256-Tgzud3sXls4vMqglPWadpFPej3P5c2z0UR4b8FYkGSQ='; img-src data: blob: https://home-dashboard-5ma.pages.dev; frame-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'self'; worker-src 'self'; frame-ancestors 'none'; form-action 'none'
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer

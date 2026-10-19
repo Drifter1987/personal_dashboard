@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.30.2</title>
+<title>Home Dashboard v2.30.3</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -552,7 +552,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.30.2",
+  VERSION: "2.30.3",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -577,6 +577,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.30.3", d:"2026-10-19", en:"The Settings card now says when the device backup was taken instead of \"no backup yet\" while one exists: the line is repainted when a snapshot lands, and it names the saved time and whether storage is protected.", ar:"تعرض بطاقة الإعدادات وقت أخذ النسخة الاحتياطية بدل عبارة «لا نسخة احتياطية بعد» مع وجودها: يُعاد رسم السطر عند حفظ النسخة، ويذكر وقت الحفظ وما إذا كان التخزين محمياً."},
 {v:"2.30.2", d:"2026-10-19", en:"Saved work survives what the phone does to its storage: tasks, settings, cards and countdowns are mirrored into a device backup and put back when the browser drops them, while news and price caches stepped out of the store a phone clears first. Settings shows when that backup was taken and can restore it on demand.", ar:"يبقى عملك المحفوظ في مأمن مما يفعله الهاتف بالتخزين: تُنسخ المهام والإعدادات والبطاقات والعدادات احتياطياً على الجهاز وتُستعاد إذا حذفها المتصفح، بينما خرجت ذاكرات الأخبار والأسعار من التخزين الذي يُمسح أولاً. تعرض الإعدادات وقت أخذ النسخة وتتيح استعادتها عند الحاجة."},
 {v:"2.30.1", d:"2026-10-19", en:"At three grid columns the crypto card's two-column list ran wider than the card itself, so Ethereum's price and the change beside it were cut off at the right edge. The name yields first now - it ellipsizes - and the row is allowed to shrink to its own column, so the price and the change are always whole: the numbers are what the card is for, and a coin's long name is not.", ar:"عند ثلاثة أعمدة كانت قائمة العملات ذات العمودين في بطاقة العملات الرقمية أعرض من البطاقة نفسها، فانقطع سعر إيثيريوم والتغيير بجانبه عند الحد الأيمن. يتنازل الاسم أولاً الآن — يُختصر بنقاط — ويُسمح للسطر بأن ينكمش إلى عموده، فيبقى السعر والتغيير كاملين دائماً: الأرقام هي غرض البطاقة، وليس اسم العملة الطويل."},
 {v:"2.30.0", d:"2026-10-19", en:"This release closes the empty columns the last two opened. A row grid gives every card in a row the same top edge, so a 165px clock sat beside a 549px weather card and the next card began 372px lower than it needed to - the space was the page's rather than a stretched card's, but it was still 372px of nothing. On the desktop the cards now pack down their columns in the page's own order: each card takes the grid rows its own height needs, in whichever column is shortest, so the card that follows sits directly under the one before it. Nothing is stretched, nothing overlaps and no card is reordered - a column still reads in the order the page announces. Home is about 990px tall at 1280 instead of 1507px. The weather card reads better too: the twelve hours are a six-by-two grid at every width above a phone, so no label is cut in half at the card's edge, and the five-day forecast is five tiles led by the weekday with the high above the low and the full date in the tooltip, instead of five rows led by an ISO date. The browser contract now measures the packing itself - overlap, contiguity, order and slack, on every section at three widths - rather than the row bands it used to.", ar:"يغلق هذا الإصدار الأعمدة الفارغة التي فتحها الإصداران السابقان. كانت شبكة الصفوف تعطي كل بطاقة في الصف حدًّا أعلى واحداً، فتقف ساعة بارتفاع 165 بكسل بجانب بطاقة طقس بارتفاع 549 بكسل، وتبدأ البطاقة التالية أخفض بـ372 بكسل مما تحتاج — كان الفراغ فراغ الصفحة لا فراغ بطاقة ممدودة، لكنه ظل 372 بكسل من لا شيء. على سطح المكتب تتراصّ البطاقات الآن في أعمدتها بترتيب الصفحة نفسه: تأخذ كل بطاقة من صفوف الشبكة بقدر ارتفاعها، في العمود الأقصر حالاً، فتجلس البطاقة التالية مباشرة تحت سابقتها. لا تمديد ولا تراكب ولا إعادة ترتيب — يُقرأ العمود بالترتيب الذي تعلنه الصفحة. ويصير ارتفاع الرئيسية نحو 990 بكسل عند عرض 1280 بدل 1507. وتُقرأ بطاقة الطقس أفضل أيضاً: الساعات الاثنتا عشرة شبكة من ستة في صفّين عند كل عرض يتجاوز الهاتف، فلا يُقطع وسم في نصفه عند حد البطاقة، وتوقعات خمسة أيام خمس بطاقات صغيرة يتصدّرها اسم اليوم مع العظمى فوق الصغرى والتاريخ الكامل في التلميح، بدل خمسة أسطر يتصدّرها تاريخ بصيغة ISO. ويقيس عقد المتصفح التراص نفسه الآن — التراكب والاتصال والترتيب والفراغ — في كل قسم وثلاثة عروض، بدل نطاقات الصفوف التي كان يقيسها."},
