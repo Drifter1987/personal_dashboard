@@ -1898,6 +1898,108 @@ check("the browser contract sweeps a reload in every section at three widths",
   && (uiSrc.match(/a_refresh_that_starts_a_new_session_keeps_its_place/g) || []).length >= 2,
   "6 sections × 390/1280/1600 · the offset and the card under it · one run with no frames · one in a new session");
 
+/* ── the encrypted cloud backup: one slot per device, and a Worker that cannot read any of them ──
+   What this pins is the whole contract, because the failures it exists to prevent are silent: a
+   copy that stores plaintext, or one phone's restore landing in another phone's slot. The shapes
+   are checked here; the browser case in _ui.test.py seals, wipes and restores for real. */
+const bkKV = new Map();
+const fakeKV = {
+  async get(k, type) { const v = bkKV.get(k); return v === undefined ? null : (type === "json" ? JSON.parse(v) : v); },
+  async put(k, v) { bkKV.set(k, v); },
+  async delete(k) { bkKV.delete(k); }
+};
+const bpost = (path, obj, env, headers) => worker.fetch(new Request("https://worker.test" + path, {
+  method: "POST",
+  headers: Object.assign({ "Content-Type": "application/json" }, headers || {}),
+  body: JSON.stringify(obj)
+}), env || { PUSH: fakeKV });
+const BJ = async (p, o, env, h) => { const r = await bpost(p, o, env, h); return { status: r.status, j: await r.json() }; };
+const ACCT = "a".repeat(32);
+const DEV1 = "11111111", DEV2 = "22222222";
+const IV = "AAAAAAAAAAAAAAAA";
+const CT1 = Buffer.from("slot-for-phone-one").toString("base64");
+const CT2 = Buffer.from("slot-for-phone-two").toString("base64");
+
+const hb = await (await worker.fetch(new Request("https://worker.test/api/health"), { PUSH: fakeKV })).json();
+const hb0 = await (await worker.fetch(new Request("https://worker.test/api/health"), {})).json();
+check("backup: the Worker says whether it has a store, and does not invent one",
+  hb.backup === true && hb0.backup === false,
+  "with PUSH bound: " + hb.backup + " · unbound: " + hb0.backup);
+
+const put1 = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 1, v: "2.31.0", blob: { iv: IV, ct: CT1 }, baseAt: 0 });
+const put2 = await BJ("/api/backup/put", { account: ACCT, dev: DEV2, at: 1, v: "2.31.0", blob: { iv: IV, ct: CT2 }, baseAt: 0 });
+const get1 = await BJ("/api/backup/get", { account: ACCT, dev: DEV1 });
+const get2 = await BJ("/api/backup/get", { account: ACCT, dev: DEV2 });
+const stored1 = JSON.parse(bkKV.get("bk:" + ACCT + ":" + DEV1));
+const listed = await BJ("/api/backup/list", { account: ACCT });
+check("backup: ten devices hold ten slots - one put never touches another phone's copy",
+  put1.status === 200 && put1.j.backup === true && put2.status === 200
+  && get1.j.blob.ct === CT1 && get2.j.blob.ct === CT2 && get1.j.dev === DEV1
+  && Object.keys(stored1).sort().join(",") === "at,ct,iv,v"
+  && listed.j.devices.length === 2 && listed.j.devices.every((d) => /^[0-9a-f]{6,32}$/.test(d.dev))
+  && [...bkKV.keys()].filter((k) => k.indexOf("bk:" + ACCT) === 0).length === 3,
+  "2 slots + index · phone1 kept its own ciphertext · stored fields " + Object.keys(stored1).sort().join(","));
+
+const again = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 2, v: "2.31.0", blob: { iv: IV, ct: CT1 }, baseAt: get1.j.at });
+const stale = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 3, v: "2.31.0", blob: { iv: IV, ct: CT1 }, baseAt: 7 });
+const forced = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 4, v: "2.31.1", blob: { iv: IV, ct: CT1 }, baseAt: 7, force: true });
+check("backup: a stale write from a second tab is refused with the server's copy named, and force wins",
+  again.status === 200 && stale.status === 409 && stale.j.error === "stale" && stale.j.at === again.j.at
+  && forced.status === 200 && forced.j.v === "2.31.1",
+  "matching baseAt 200 · stale 409 at=" + stale.j.at + " · force 200 v=" + forced.j.v);
+
+const bad = await Promise.all([
+  BJ("/api/backup/put", { account: "nope", dev: DEV1, blob: { iv: IV, ct: CT1 } }),
+  BJ("/api/backup/put", { account: ACCT, dev: "zz", blob: { iv: IV, ct: CT1 } }),
+  BJ("/api/backup/put", { account: ACCT, dev: DEV1, blob: { iv: "short", ct: CT1 } }),
+  BJ("/api/backup/put", { account: ACCT, dev: DEV1, blob: { iv: IV, ct: "x".repeat(61000) } }),
+  BJ("/api/backup/get", { account: ACCT, dev: DEV1 })
+]);
+const missing = await BJ("/api/backup/get", { account: ACCT, dev: "abcdef" });
+check("backup: a bad account, device or iv, or an oversized body, is refused; unknown slot is 404",
+  bad[0].status === 400 && bad[1].status === 400 && bad[2].status === 400 && bad[3].status === 413
+  && bad[4].status === 200 && missing.status === 404,
+  bad.map((r) => r.status).join("/") + " · missing " + missing.status);
+
+const foreign = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, blob: { iv: IV, ct: CT1 }, baseAt: 0, force: true },
+  { PUSH: fakeKV, ALLOWED_ORIGIN: "https://home-dashboard-5ma.pages.dev" }, { Origin: "https://evil.example" });
+const ownOrigin = await BJ("/api/backup/list", { account: ACCT },
+  { PUSH: fakeKV, ALLOWED_ORIGIN: "https://home-dashboard-5ma.pages.dev" }, { Origin: "https://home-dashboard-5ma.pages.dev" });
+const asGet = await worker.fetch(new Request("https://worker.test/api/backup/get?account=" + ACCT), { PUSH: fakeKV });
+const del = await BJ("/api/backup/del", { account: ACCT, dev: DEV1 });
+const afterDel = await BJ("/api/backup/get", { account: ACCT, dev: DEV1 });
+const stillThere = await BJ("/api/backup/get", { account: ACCT, dev: DEV2 });
+check("backup: a foreign origin is refused, reads are POSTs, and delete removes one slot only",
+  foreign.status === 403 && ownOrigin.status === 200 && ownOrigin.j.devices.length === 2 && asGet.status === 405
+  && del.status === 200 && del.j.left === 1 && afterDel.status === 404 && stillThere.status === 200
+  && !/\/api\/backup\/(get|list)\?/.test(pageSrc) && /syncCall\("\/api\/backup\/list"/.test(pageSrc),
+  "403 foreign · 405 on GET · one slot deleted, the other kept · no account in any query string");
+
+check("backup: the page derives an account and a key from the phrase, and keeps the key off the disk",
+  /const SYNC_KEY="pd_sync", SYNC_ITER=310000/.test(pageSrc)
+  && /deriveBits\(\{name:"PBKDF2",salt:new TextEncoder\(\)\.encode\(SYNC_SALT\),iterations:SYNC_ITER,hash:"SHA-256"\},base,512\)/.test(pageSrc)
+  && /bits\.slice\(0,16\)\]\.map\(b=>b\.toString\(16\)/.test(pageSrc)
+  && /importKey\("raw",bits\.slice\(16,48\),"AES-GCM",false,\["encrypt","decrypt"\]\)/.test(pageSrc)
+  /* a device keeps its own slot, and a new device takes a fresh id */
+  && /function syncNewDev\(\)\{ const b=crypto\.getRandomValues\(new Uint8Array\(4\)\)/.test(pageSrc)
+  && /const dev=\(prev&&prev\.account===account&&prev\.dev\)\?prev\.dev:syncNewDev\(\);/.test(pageSrc)
+  /* the payload leaves pd_sync out, so a push cannot look like an edit and loop */
+  && /if\(k===SYNC_KEY\)return;/.test(pageSrc)
+  /* and nothing on disk is the passphrase or the key */
+  && !/localStorage[^\n]{0,80}(SYNC_PASS|syncPass|SYNC_AES)/.test(pageSrc)
+  && /let SYNC_AES=null/.test(pageSrc),
+  "PBKDF2 310k → account||key · per-device slot id · payload without pd_sync · key in memory only");
+
+check("backup: the copy holds this device's records, not the attachments, and the card says so",
+  /if\(k!==SYNC_KEY&&typeof data\[k\]==="string"\)/.test(pageSrc)
+  && !/pd_files|fileAll\(\)/.test((pageSrc.match(/function syncPayload\(\)\{[\s\S]{0,400}/) || ["}"])[0])
+  && /syncHint:"Each device keeps its own encrypted copy/.test(pageSrc)
+  && /syncHint:"لكل جهاز نسخته المشفّرة الخاصة/.test(pageSrc)
+  /* a pull that lands in the page must not have its own pagehide flush undo it */
+  && /function flushState\(\)\{ if\(SYNC_HOLD\)return;/.test(pageSrc)
+  && /SYNC_HOLD=true;/.test(pageSrc),
+  "records only · attachments excluded · en+ar wording · flush held during a pull");
+
 console.log("\n-- sample payload --");
 for (const card of ["auto", "ai", "fin"]) {
   console.log("  --- " + card + " ---");

@@ -50,7 +50,7 @@
  * cache put.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-const VERSION = "1.13.0";
+const VERSION = "1.14.0";
 const UA = "dashboard-worker/" + VERSION;
 const METALS = ["XAU", "XAG", "XPT", "XPD"];
 const MNAME = { XAU: "gold", XAG: "silver", XPT: "platinum", XPD: "palladium" };
@@ -1455,6 +1455,127 @@ async function runPushDigests(env, now) {
   return out;
 }
 
+/* ─────────────── Encrypted cloud backup ───────────────
+ * One slot per DEVICE, grouped by an account derived from the user's passphrase. A dashboard
+ * opened on ten phones holds ten different sets of tasks; a single shared record would make a
+ * restore on one phone replace another phone's work, which is the opposite of the thing this is
+ * for. So each device writes only its own slot, and a phone that lost everything can list the
+ * slots in the account, recognise its own by id and time, and pull that one.
+ *
+ * The page seals a slot before it leaves the device (AES-GCM under a key from PBKDF2), and the
+ * account name is PBKDF2 output too. This Worker therefore holds: a 32-hex account, a short
+ * device id, two timestamps, and ciphertext it cannot read.
+ *
+ *   POST /api/backup/put   {account, dev, at, v, blob:{iv,ct}, baseAt, force?}
+ *   POST /api/backup/get   {account, dev}
+ *   POST /api/backup/list  {account}
+ *   POST /api/backup/del   {account, dev}
+ *
+ * POST for reads as well as writes, deliberately: an account in a query string is an account
+ * written into a proxy log and a `Referer`, and it is the only thing guarding the slots.
+ * `baseAt` is the copy this device last saw. Because slots are per device, a stale write means
+ * two tabs on one phone rather than two phones fighting; it is refused with 409 and the server's
+ * timestamp instead of replacing the newer copy, and the page says so.
+ *
+ * The store is the KV namespace the reminders already use, under its own `bk:` prefix: no second
+ * namespace to provision, and the push sweep only ever lists `p:`. A dedicated BACKUP binding, if
+ * one is ever declared in wrangler.toml, takes precedence without touching this code.
+ */
+const BACKUP_PREFIX = "bk:";
+const BACKUP_ACCOUNT = /^[a-f0-9]{32,64}$/;
+const BACKUP_DEV = /^[a-f0-9]{6,32}$/;
+/* readJson refuses a body over 64 KiB, so this is the real ceiling rather than a round number */
+const BACKUP_CT_MAX = 60000;
+const BACKUP_IV = /^[A-Za-z0-9+/]{16,24}={0,2}$/;
+/* one index per account, so a phone can find its own slot without knowing the id in advance.
+   A hundred devices is within the free tier's KV value limit by a wide margin (an entry is an id
+   and a timestamp); 256 keeps the list useful without turning the answer into a directory. */
+const BACKUP_SLOTS_MAX = 256;
+/* the index is refreshed at most hourly per device: a save costs one KV write, not two, and the
+   timestamp in the list is a hint for recognising a phone, not a ledger */
+const BACKUP_INDEX_REFRESH = 3600000;
+const backupStore = (env) => env.BACKUP || env.PUSH || null;
+const backupKey = (account, dev) => BACKUP_PREFIX + account + ":" + dev;
+const backupIndexKey = (account) => BACKUP_PREFIX + account + ":index";
+
+async function backupIndexRead(kv, account) {
+  const rec = await kv.get(backupIndexKey(account), "json");
+  return (rec && Array.isArray(rec.devices)) ? rec.devices : [];
+}
+async function backupIndexWrite(kv, account, devices) {
+  const kept = devices.filter((d) => d && BACKUP_DEV.test(d.dev))
+    .sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, BACKUP_SLOTS_MAX)
+    .map((d) => ({ dev: d.dev, at: Number(d.at) || 0 }));
+  await kv.put(backupIndexKey(account), JSON.stringify({ devices: kept }));
+  return kept;
+}
+
+async function backupPut(env, json) {
+  const kv = backupStore(env);
+  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const account = String(json.account || ""), dev = String(json.dev || "");
+  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
+  if (!BACKUP_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "6-32 lowercase hex" } };
+  const blob = json.blob || {};
+  const iv = String(blob.iv || ""), ct = String(blob.ct || "");
+  if (!BACKUP_IV.test(iv)) return { status: 400, body: { error: "bad iv" } };
+  if (!ct || ct.length > BACKUP_CT_MAX) return { status: 413, body: { error: "ciphertext too large", max: BACKUP_CT_MAX } };
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(ct)) return { status: 400, body: { error: "bad ciphertext encoding" } };
+  const key = backupKey(account, dev);
+  const prev = await kv.get(key, "json");
+  /* baseAt 0 matches only the first write of a slot, so two tabs racing from empty still end with
+     one 409 rather than one silent overwrite */
+  if (prev && !json.force && Number(json.baseAt || 0) !== Number(prev.at || 0)) {
+    return { status: 409, body: { error: "stale", at: prev.at || 0, v: prev.v || "" } };
+  }
+  const at = Date.now();
+  const rec = { at, v: String(json.v || "").slice(0, 20), iv, ct };
+  await kv.put(key, JSON.stringify(rec));
+  const slots = await backupIndexRead(kv, account);
+  const known = slots.find((d) => d.dev === dev);
+  if (!known || at - (Number(known.at) || 0) > BACKUP_INDEX_REFRESH) {
+    await backupIndexWrite(kv, account, slots.filter((d) => d.dev !== dev).concat([{ dev, at }]));
+  }
+  /* `backup:true` is not decoration: a Worker deployed before these routes existed answers any
+     unknown path with the 200 index, and without a marker the page would believe a save it never
+     made. The client refuses an answer that does not carry it. */
+  return { status: 200, body: { ok: true, backup: true, at, v: rec.v, dev } };
+}
+
+async function backupGet(env, json) {
+  const kv = backupStore(env);
+  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const account = String(json.account || ""), dev = String(json.dev || "");
+  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
+  if (!BACKUP_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "6-32 lowercase hex" } };
+  const rec = await kv.get(backupKey(account, dev), "json");
+  if (!rec || !rec.ct) return { status: 404, body: { error: "no backup" } };
+  return { status: 200, body: { ok: true, backup: true, dev, at: rec.at, v: rec.v, blob: { iv: rec.iv, ct: rec.ct } } };
+}
+
+/* Only ids and times - never a label a person typed, and never anything from inside a slot. A
+   phone that lost its data can still see which slots exist and when each was last saved. */
+async function backupList(env, json) {
+  const kv = backupStore(env);
+  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const account = String(json.account || "");
+  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
+  const devices = await backupIndexRead(kv, account);
+  return { status: 200, body: { ok: true, backup: true, devices } };
+}
+
+async function backupDel(env, json) {
+  const kv = backupStore(env);
+  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const account = String(json.account || ""), dev = String(json.dev || "");
+  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
+  if (!BACKUP_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "6-32 lowercase hex" } };
+  await kv.delete(backupKey(account, dev));
+  const left = (await backupIndexRead(kv, account)).filter((d) => d.dev !== dev);
+  await backupIndexWrite(kv, account, left);
+  return { status: 200, body: { ok: true, backup: true, deleted: 1, left: left.length } };
+}
+
 /* what a currency or coin ticker may look like, checked wherever one becomes part of an upstream
    request or a cache key */
 const TICKER = /^[A-Za-z0-9]{2,12}$/;
@@ -1488,6 +1609,7 @@ export default {
         keyResolved: resolved,
         defaultProvider: (env.METALS_PROVIDER || "").trim() || (kind === "none" ? PROVIDER_KEYLESS : PROVIDER_DEFAULT),
         providers: PROVIDER_IDS.map((id) => ({ id, label: P[id].label, needsKey: P[id].needsKey })),
+        backup: !!backupStore(env),
         byok: "send X-Provider and X-Api-Key headers to /api/metals"
       }, H);
     }
@@ -1665,10 +1787,29 @@ export default {
       return J({ error: "unknown push route" }, H, 404);
     }
 
+    /* ── encrypted cloud backup ─────────────────────────────────────────────────
+     * The same rule as reminders: a write from a foreign page is refused outright, not merely
+     * hidden behind CORS, because the browser would still let the write land. */
+    if (path.startsWith("/api/backup")) {
+      const origin = request.headers.get("Origin") || "";
+      if (allowed !== "*" && origin !== allowed) {
+        return J({ error: "origin not allowed" }, H, 403);
+      }
+      if (request.method !== "POST") return J({ error: "method not allowed", method: "POST" }, H, 405);
+      const { json, error } = await readJson(request);
+      if (error) return J({ error }, H, 400);
+      const out = path === "/api/backup/put" ? await backupPut(env, json)
+        : path === "/api/backup/get" ? await backupGet(env, json)
+        : path === "/api/backup/list" ? await backupList(env, json)
+        : path === "/api/backup/del" ? await backupDel(env, json)
+        : { status: 404, body: { error: "unknown backup route" } };
+      return J(out.body, H, out.status);
+    }
+
     return J({
       ok: true,
       v: VERSION,
-      routes: ["/api/health", "/api/metals", "/api/metals/history", "/api/history", "/api/rates", "/api/news", "/api/repos", "/api/generators", "/api/push/key", "/api/push/register", "/api/push/test", "/api/push/off"],
+      routes: ["/api/health", "/api/metals", "/api/metals/history", "/api/history", "/api/rates", "/api/news", "/api/repos", "/api/generators", "/api/push/key", "/api/push/register", "/api/push/test", "/api/push/off", "/api/backup/put", "/api/backup/get", "/api/backup/list", "/api/backup/del"],
       providers: PROVIDER_IDS
     }, H);
   },

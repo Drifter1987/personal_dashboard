@@ -238,6 +238,7 @@ had no copy to put back. The defence is therefore in the page, and it is what th
 | unreadable keys are never overwritten | `store.bad` | a parse error turning into a silent wipe on the next flush |
 | caches in `sessionStorage` | `VOLATILE` | news/prices competing with records for a small quota |
 | `navigator.storage.persist()` | `armPersist` | the origin being treated as best-effort when it need not be |
+| opt-in encrypted copy in the Worker, one slot per device | `syncSave` / `syncApply` | the container itself being deleted, or a lost phone |
 
 `DURABLE` in the page is the list that is mirrored — settings, tasks, events, countdowns, notes,
 habits, location, the lock record and the sealed provider key. A new saved record belongs in that
@@ -262,6 +263,14 @@ The browser case (`a_cleared_localStorage_comes_back_from_the_device_backup`) se
 backup, removes one key, then clears the whole of localStorage the way a browser would — with the
 page's own leaving handlers off — and asserts the records return, that an untouched neighbour is not
 rewritten, and that a list the reader emptied is **not** restored back to an older one.
+
+A second case (`a_cloud_backup_restores_a_phone_that_lost_everything`) covers the copy that crosses
+devices: it turns sync on, proves the Worker's fake only ever received ciphertext and ids, turns it
+on from a second phone and asserts that phone got its **own** slot and left the first byte-identical,
+simulates a second tab saving first (the stale write must be refused and reported), deletes both
+local stores, reloads into an empty dashboard, restores by picking the original slot from the list,
+and asserts the other phone's records did **not** come with it. The threat model, the per-device
+rule and the recovery steps are in [docs/CLOUD_BACKUP.md](docs/CLOUD_BACKUP.md).
 
 What it cannot do: it protects records from a release onward. Data lost before this version is
 gone, Settings → **Wipe all data** is still a wipe (it clears both databases and both stores), and

@@ -1694,6 +1694,163 @@ def cases(browser, base):
         finally:
             ctx.close()
 
+    # ── 10f. the encrypted cloud copy: two phones, two slots, a real wipe ────────────────
+    def a_cloud_backup_restores_a_phone_that_lost_everything():
+        """Ten phones hold ten different dashboards, so the copy is per device: each phone writes
+        its own slot under an account derived from the phrase, and a phone that lost everything
+        lists the slots and picks its own. A shared record would make one phone's restore replace
+        another phone's work, which is the failure this case exists to catch.
+
+        The Worker is faked in this process rather than called: the contract is the page's, and a
+        live network would make a wipe-and-restore test depend on somebody else's uptime. The fake
+        keeps the one server rule that matters - a write whose baseAt is not the slot it holds is
+        refused - so the stale path is exercised rather than assumed.
+        """
+        MARK1 = "CLOUD-PHONE-ONE-77f2"
+        MARK2 = "CLOUD-PHONE-TWO-91c4"
+        PASS = "two-phones-one-phrase"
+        remote = {}
+        index = {}
+        seen = []
+
+        def api(route):
+            req = route.request
+            cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Methods": "POST"}
+            if req.method == "OPTIONS":
+                route.fulfill(status=204, headers=cors)
+                return
+            try:
+                body = json.loads(req.post_data or "{}")
+            except Exception:
+                body = {}
+            seen.append(req.post_data or "")
+            head = dict(cors, **{"Content-Type": "application/json"})
+            path = req.url.split("?")[0]
+            acct, dev = body.get("account"), body.get("dev")
+            slot = "%s:%s" % (acct, dev)
+            if path.endswith("/put"):
+                rec = remote.get(slot)
+                if rec and not body.get("force") and int(body.get("baseAt") or 0) != int(rec["at"]):
+                    route.fulfill(status=409, headers=head,
+                                  body=json.dumps({"error": "stale", "at": rec["at"]}))
+                    return
+                at = int(time.time() * 1000)
+                remote[slot] = {"at": at, "v": body.get("v", ""), "blob": body["blob"]}
+                index.setdefault(acct, {})[dev] = at
+                route.fulfill(status=200, headers=head,
+                              body=json.dumps({"ok": True, "backup": True, "at": at,
+                                               "v": body.get("v", ""), "dev": dev}))
+            elif path.endswith("/get"):
+                rec = remote.get(slot)
+                if not rec:
+                    route.fulfill(status=404, headers=head, body=json.dumps({"error": "no backup"}))
+                else:
+                    route.fulfill(status=200, headers=head,
+                                  body=json.dumps({"ok": True, "backup": True, "dev": dev,
+                                                   "at": rec["at"], "v": rec["v"], "blob": rec["blob"]}))
+            elif path.endswith("/list"):
+                devices = [{"dev": d, "at": t} for d, t in
+                           sorted(index.get(acct, {}).items(), key=lambda kv: -kv[1])]
+                route.fulfill(status=200, headers=head,
+                              body=json.dumps({"ok": True, "backup": True, "devices": devices}))
+            else:
+                remote.pop(slot, None)
+                index.get(acct, {}).pop(dev, None)
+                route.fulfill(status=200, headers=head,
+                              body=json.dumps({"ok": True, "backup": True, "deleted": 1}))
+
+        def enable(pg, phrase):
+            return pg.evaluate("async (p) => {const r = await syncEnable(p);"
+                               "  const c = syncConf(); return {ok: r.ok, dev: c && c.dev, at: c && c.at}}", phrase)
+
+        def restore(pg, phrase, dev):
+            pg.evaluate("() => {const b=[...document.querySelectorAll('#wb_data button')]"
+                        ".find(x=>/Restore from cloud|استعادة من السحابة/.test(x.textContent));"
+                        " if(!b) throw new Error('no restore button'); b.click()}")
+            pg.fill("#modalBox input", phrase)
+            pg.click("#lkS")
+            pg.wait_for_selector("#spRow button", timeout=8000)
+            pg.evaluate("(d) => {const b=[...document.querySelectorAll('#spRow button')]"
+                        ".find(x => x.textContent.indexOf(d) >= 0); if(!b) throw new Error('no slot ' + d); b.click()}",
+                        dev[-4:])
+
+        ctx1, page1 = boot(browser, base, 941, 720)
+        try:
+            page1.route("**/api/backup/**", api)
+            page1.wait_for_function("() => snapChecked === true")
+            page1.evaluate("(m) => {tasks = [{id: 'c1', text: m, done: false, due: '', status: 'todo'}];"
+                           "  persistAll(); settings.weekSpan = 30; saveSettings()}", MARK1)
+            one = enable(page1, PASS)
+            check("cloud: turning it on sends ciphertext and takes a slot of this device's own",
+                  one["ok"] is True and re.fullmatch(r"[a-f0-9]{8}", one["dev"] or "") is not None
+                  and len(remote) == 1 and MARK1 not in json.dumps(remote)
+                  and MARK1 not in "".join(seen),
+                  "device %s · one slot · marker absent from every request: %s"
+                  % (one["dev"], MARK1 not in "".join(seen)))
+            slot1 = json.dumps(remote["%s:%s" % (list(index)[0], one["dev"])])
+
+            # the second phone, on the same phrase, must get its own slot and leave the first alone
+            ctx2, page2 = boot(browser, base, 390, 720)
+            try:
+                page2.route("**/api/backup/**", api)
+                page2.wait_for_function("() => snapChecked === true")
+                page2.evaluate("(m) => {tasks = [{id: 'c2', text: m, done: false, due: '', status: 'todo'}];"
+                               "  persistAll()}", MARK2)
+                two = enable(page2, PASS)
+                acct = list(index)[0]
+                slot2 = json.dumps(remote["%s:%s" % (acct, two["dev"])])
+                check("cloud: a second phone gets a second slot and cannot touch the first",
+                      two["ok"] is True and two["dev"] != one["dev"] and len(remote) == 2
+                      and json.dumps(remote["%s:%s" % (acct, one["dev"])]) == slot1
+                      and MARK2 not in slot2 and MARK2 not in slot1,
+                      "device %s and %s · two slots · first slot byte-identical: %s"
+                      % (one["dev"], two["dev"],
+                         json.dumps(remote["%s:%s" % (acct, one["dev"])]) == slot1))
+            finally:
+                ctx2.close()
+
+            # a second tab on the first phone saves after this one: the stale write must be refused
+            acct = list(index)[0]
+            remote["%s:%s" % (acct, one["dev"])]["at"] += 5000
+            page1.evaluate("() => {tasks.push({id: 'c3', text: 'local edit', done: false, due: ''}); persistAll()}")
+            stale = page1.evaluate("async () => {const ok = await syncSave(false);"
+                                   "  const c = syncConf(); return {ok: ok, stale: c && c.stale, note: syncLine()}}")
+            check("cloud: a stale write is told, instead of overwriting the newer copy",
+                  stale["ok"] is False and stale["stale"] > 0
+                  and ("newer copy" in stale["note"] or "أحدث" in stale["note"]),
+                  "push refused · note: %s" % stale["note"][:72])
+
+            # a new phone: nothing in localStorage, no IndexedDB, no key in memory
+            page1.evaluate(
+                "async () => {removeEventListener('pagehide', flushState); flushState = () => {};"
+                "  snapSave = () => {}; snapSoon = () => {}; SYNC_AES = null; SYNC_LOG = null;"
+                "  localStorage.clear();"
+                "  await new Promise(r => {const q = indexedDB.deleteDatabase('pd_backup');"
+                "    q.onsuccess = q.onerror = q.onblocked = () => r(true)})}")
+            page1.reload()
+            page1.wait_for_function("() => typeof tasks !== 'undefined' && snapChecked === true")
+            wiped = page1.evaluate("() => ({n: tasks.length, conf: !!syncConf()})")
+            check("cloud: the wipe really removes both copies on the device",
+                  wiped["n"] == 0 and not wiped["conf"],
+                  "tasks %d · sync config present: %s" % (wiped["n"], wiped["conf"]))
+
+            restore(page1, PASS, one["dev"])
+            page1.wait_for_function("(m) => tasks.some(x => x.text === m)", arg=MARK1, timeout=10000)
+            back = page1.evaluate("() => ({mine: tasks.some(x => x.text === 'CLOUD-PHONE-ONE-77f2'),"
+                                  "  other: tasks.some(x => x.text === 'CLOUD-PHONE-TWO-91c4'),"
+                                  "  span: settings.weekSpan, on: !!syncConf(),"
+                                  "  dev: syncConf() && syncConf().dev,"
+                                  "  note: (document.querySelector('#syncNote') || {}).textContent || ''})")
+            check("cloud: the wiped phone restores its own slot, and not the other phone's",
+                  back["mine"] and not back["other"] and back["span"] == 30 and back["on"],
+                  "own records back · other phone's absent: %s · window %s · %s"
+                  % (not back["other"], back["span"], back["note"][:56]))
+            check("cloud: after a restore the phone continues the slot it restored",
+                  back["dev"] == one["dev"], "slot %s" % (back["dev"],))
+        finally:
+            ctx1.close()
+
     return [rebuild_keeps_offset, reorder_keeps_offset, hiding_a_card_above_holds_the_card_below,
             shortening_page_clamps_but_never_snaps_to_the_top, hiding_a_card_above_holds_the_reading_on_home,
             section_change_starts_at_the_top, phone_keeps_section_and_offset,
@@ -1714,6 +1871,7 @@ def cases(browser, base):
             the_shipped_page_runs_under_its_pinned_script_hash,
             a_passphrase_seals_the_files_and_the_provider_key,
             a_cleared_localStorage_comes_back_from_the_device_backup,
+            a_cloud_backup_restores_a_phone_that_lost_everything,
             a_stretched_card_spends_its_slack_on_the_reading,
             a_rebuilt_card_holds_its_content_height_not_its_band]
 
