@@ -6,13 +6,16 @@
      node _deploy.mjs --sync           after a green run, repair the bundle from index.html
      node _deploy.mjs --help
 
-   Two things are true when this exits 0, and neither is worth much on its own:
+   Three things are true when this exits 0, and none is worth much on its own:
 
      1. the shipped page and Worker pass the harness (node _check.mjs) against the real sources;
      2. the thing that gets published is the thing that was tested - deploy/index.html is
         index.html with its one inline script pinned by SHA-256 and nothing else changed, and
         every file in deploy/ sits in dashboard-site.zip with the same CRC-32 (the zip
-        bookkeeping lives in _zip.py).
+        bookkeeping lives in _zip.py);
+     3. if a release tag (v*) points at this commit, it names the page's CONFIG.VERSION. The
+        workflow publishes on any v* tag, so a tag naming a version the page does not carry
+        would put the wrong version at a fixed address under the wrong name.
 
    A failing check stops the run before anything is written, so a red gate can never leave a
    half-updated bundle behind. The same commands run in CI (.github/workflows/checks.yml).
@@ -50,6 +53,7 @@ if (unknown.length) {
 }
 
 let harnessPassed = false;
+let tagFailed = false;
 const fails = [];
 const check = (name, ok, detail) => {
   console.log((ok ? "PASS  " : "FAIL  ") + name + (detail === undefined ? "" : "  -> " + detail));
@@ -232,14 +236,56 @@ if (SYNC && fails.length) {
   }
 }
 
+/* ── release identity: the tag has to name the version that ships ───────────────
+   A release tag is the only thing the workflow will publish, and the publish step uploads
+   deploy/ as it stands - the upload itself never says which version it holds. So a tag that
+   does not match the page's CONFIG.VERSION puts a page labelled something else at a fixed
+   address, permanently and silently. This is a gate failure, like any other.
+
+   Two ways a tag is seen, because a shallow CI checkout may not have the tag object at all:
+     - CI: GITHUB_REF=refs/tags/vX.Y.Z on the very run that will publish;
+     - locally: every tag pointing at HEAD (the runbook is commit -> tag -> gate -> push).
+   No release tag at all is not a failure: a push to main, a pull request and an ordinary
+   local run have no release to match, and the gate must not refuse them. */
+function releaseTags() {
+  const ref = process.env.GITHUB_REF || "";
+  if ((process.env.GITHUB_REF_TYPE || "") === "tag" || ref.indexOf("refs/tags/") === 0) {
+    const name = process.env.GITHUB_REF_NAME || ref.slice("refs/tags/".length);
+    return { tags: name ? [name] : [], how: "GITHUB_REF " + (ref || name) };
+  }
+  const r = spawnSync("git", ["tag", "--points-at", "HEAD"], { cwd: ROOT, encoding: "utf8" });
+  if (r.status !== 0) return { tags: [], how: "no tag information (git tag exited " + r.status + ")" };
+  return {
+    tags: String(r.stdout || "").split(/\r?\n/).map((t) => t.trim()).filter(Boolean),
+    how: "git tag --points-at HEAD",
+  };
+}
+{
+  const pageFile = existsSync(join(ROOT, PAGE)) ? PAGE : join(DEPLOY, PAGE);
+  const pageHtml = existsSync(join(ROOT, pageFile)) ? readFileSync(join(ROOT, pageFile), "utf8") : "";
+  const version = (pageHtml.match(/\bVERSION:\s*"([^"]+)"/) || [])[1] || null;
+  const { tags, how } = releaseTags();
+  const releases = tags.filter((t) => /^v\d/.test(t));
+  const wrong = releases.filter((t) => t.slice(1) !== version);
+  tagFailed = !version || wrong.length > 0;
+  check("release: the release tag names the version the page ships",
+    !!version && wrong.length === 0,
+    !version ? "no CONFIG.VERSION found in " + pageFile
+      : wrong.length ? "tag " + wrong.join(", ") + " but " + pageFile + " is v" + version
+        : releases.length ? releases.join(", ") + " = v" + version
+          : "no release tag at HEAD (" + how + ") - nothing to match; page v" + version);
+}
+
 /* ── verdict ──────────────────────────────────────────────────────────────────── */
 if (fails.length) {
   console.log("\nFAILED (" + fails.length + "): " + fails.join("; "));
-  const reason = ARTIFACTS_ONLY
-    ? "the bundle is not the tested page (and this run did not execute the harness)"
-    : harnessPassed
-      ? "the harness is green, but the release bundle is not the page that passed it"
-      : "the shipped page or Worker failed the harness";
+  const reason = tagFailed
+    ? "a release tag points at this commit but does not name the version the page ships"
+    : ARTIFACTS_ONLY
+      ? "the bundle is not the tested page (and this run did not execute the harness)"
+      : harnessPassed
+        ? "the harness is green, but the release bundle is not the page that passed it"
+        : "the shipped page or Worker failed the harness";
   console.log("DEPLOY BLOCKED: " + reason + ".");
   process.exit(1);
 }

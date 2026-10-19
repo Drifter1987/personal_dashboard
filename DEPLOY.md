@@ -43,10 +43,15 @@ node _deploy.mjs --artifacts-only # fast re-check of the bundle only, no third-p
 node _deploy.mjs --sync          # after a green run, repair deploy/ from index.html
 ```
 
-A green run proves two things: the shipped page and Worker pass the harness against the real
-sources, and the thing that gets published is byte-identical to the thing that was tested
+A green run proves three things: the shipped page and Worker pass the harness against the real
+sources; the thing that gets published is byte-identical to the thing that was tested
 (`deploy/index.html` matches `index.html`; every `deploy/` file is in `dashboard-site.zip` with
-the same CRC-32). A failing check stops the run before anything is written.
+the same CRC-32); and, when a release tag points at the commit, that tag names the page's
+`CONFIG.VERSION`. That last one matters because the workflow publishes on any `v*` tag and the
+upload itself never says which version it holds — a tag that does not match would put a page
+labelled something else at the fixed address. No tag at all (a push to `main`, a pull request,
+an ordinary local run) is not a failure; there is no release to match. A failing check stops the
+run before anything is written.
 
 The harness reads sources; it cannot see layout. The browser contract does, and is the check to
 run after touching a card's structure, the pager or the calendar:
@@ -211,7 +216,11 @@ python -m http.server 8099 --bind 127.0.0.1 --directory deploy
 only after the gate on that commit has passed, and only for a tag `v*` whose commit is on `main`
 (or a manual run of the workflow on `main`). It uploads `deploy/` to the project below before proving
 the live site serves it. A release is: merge to `main`, then
-`git tag v<version>` on that commit and `git push origin v<version>`.
+`git tag v<version>` on that commit and `git push origin v<version>`. The tag must name the
+version the page carries (`v2.30.0` for `CONFIG.VERSION: "2.30.0"`): the gate compares the tag
+with the page and fails on a mismatch, so a tag that says one version and ships another never
+reaches the publish job. (`node _deploy.mjs` run locally makes the same comparison against any
+`v*` tag pointing at `HEAD`, so tag first if you want the local gate to catch it too.)
 
 A plain push to `main` does **not** publish. It used to, and every push published whatever its
 commit held, so an older commit could replace a newer release: production went from 2.27.0 back to
@@ -384,7 +393,7 @@ the workflow never runs at all.
 
 | Job | Runs when | What it settles |
 |---|---|---|
-| `gate` | every push and pull request | `node _deploy.mjs` — the harness against the real sources, then that the bundle is the thing the harness tested. A red gate stops everything after it. |
+| `gate` | every push and pull request | `node _deploy.mjs` — the harness against the real sources, then that the bundle is the thing the harness tested, then that a release tag on this commit names the page's version. A red gate stops everything after it. |
 | `layout` | after a green gate | `python _ui.test.py` in Chromium: the browser contract for scroll, section, card frames and Today. Publishing waits for it, so a layout regression cannot ride a green source harness to production. |
 | `bundle` | after a green gate, never on a pull request | Uploads `dashboard-site.zip` as a build artifact, so a release is downloadable even when publishing was skipped. |
 | `publish` | after a green gate **and a green layout job**, **only for a `v*` tag on a commit that is on `main`, or a manual run on `main`** | Uploads `deploy/` to Pages on the production branch, then runs `node _smoke.mjs --page-only`. A tag from a commit that is not on `main` stops at a check before the credential is read. |
