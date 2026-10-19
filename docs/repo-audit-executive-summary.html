@@ -37,21 +37,21 @@
 <main>
 
 <h1>Repo audit: executive summary</h1>
-<p class="sub">Every git repo under <code>AI_Workspace</code> (22 found), as of 2026-10-17. Read-only: nothing in the repos was changed.</p>
+<p class="sub">Every git repo under <code>AI_Workspace</code> (22 found in the original audit, plus <code>our day</code>, found on re-check), as of 2026-10-17. Updated the same day after fetching every remote. No commits, pushes or file changes were made to the repos in this update.</p>
 
 <section>
   <h2>At a glance</h2>
   <table>
     <thead><tr><th>Group</th><th>Repos</th><th>What it means</th></tr></thead>
     <tbody>
-      <tr><td>Owned, working</td><td>7</td><td>Projects you author, plus the workspace root. One is gated and deployed, two have hygiene problems (committed dependencies, a remote mismatch), and two are unborn or unversioned.</td></tr>
+      <tr><td>Owned, working</td><td>8</td><td>Projects you author, plus the workspace root and <code>our day</code>. One is gated and deployed, two have hygiene problems (committed dependencies, a remote mismatch), and two are unborn or unversioned.</td></tr>
       <tr><td>Backup copies</td><td>13</td><td>Clones of GitHub repos under <code>Repo_Backups/</code>. Two match their local twin, two are <em>ahead</em> of the local copy, and the rest have no local twin.</td></tr>
       <tr><td>Vendor clones</td><td>2</td><td>Third-party projects (herdr, stable-diffusion-webui). Not yours to grade; listed for completeness.</td></tr>
       <tr><td>Unborn repos</td><td>2</td><td>Git directories with no commits: the workspace root and <code>windows11-replicate</code>. Likely accidental <code>git init</code>.</td></tr>
     </tbody>
   </table>
   <div class="flag">
-    <strong>Security item still open.</strong> <code>len-golani/New_Stuff/index.html</code> contains 2 strings matching GitHub token formats (count only; values not printed here). Confirm whether either is live. If one is, rotate it at github.com/settings/tokens and remove it from the file.
+    <strong>Security item still open.</strong> <code>Repo_Backups/len-golani/New_Stuff/index.html</code> still contains 2 strings matching GitHub token formats (re-counted today; values not printed here). Confirm whether either is live. If one is, rotate it at github.com/settings/tokens and remove it from the file.
   </div>
 </section>
 
@@ -62,8 +62,8 @@
     <div class="card">
       <h3>personal_dashboard</h3>
       <p class="path">02_Projects/Ghazi_Tools/personal_dashboard · Drifter1987 · main</p>
-      <div class="pills"><span class="pill ok">Shipped, gated</span><span class="pill warn">2 uncommitted files</span></div>
-      <p>Cloudflare Worker plus static dashboard. CI runs the deploy gate (<code>_check.mjs</code>, <code>_deploy.mjs</code>) on every push. Last commit 2026-10-16. Uncommitted: a modified <code>docs/MACHINE_ACCOUNTS_AND_DEFAULTS.md</code> (not from this audit) and the new <code>docs/repo-audit-executive-summary.html</code>.</p>
+      <div class="pills"><span class="pill ok">Shipped, gated</span><span class="pill warn">1 commit unpushed</span><span class="pill warn">1 uncommitted file</span></div>
+      <p>Cloudflare Worker plus static dashboard. CI runs the deploy gate (<code>_check.mjs</code>, <code>_deploy.mjs</code>) on every push. Last commit 2026-10-17 is the audit page, <code>docs/repo-audit-executive-summary.html</code>, committed locally but not pushed. Uncommitted: a modified <code>docs/MACHINE_ACCOUNTS_AND_DEFAULTS.md</code> (+165 lines, not from this audit).</p>
       <ul>
         <li>Gap: no README. <code>AGENTS.md</code> and <code>DEPLOY.md</code> cover the process, but a newcomer has no entry point.</li>
         <li>Gap: the publish job is intentionally not wired into CI yet.</li>
@@ -78,7 +78,7 @@
       <p>React, Vite and Tailwind app, served from GitHub Pages with HashRouter. Bun lockfile present. Clean working tree.</p>
       <ul>
         <li><strong>Biggest issue:</strong> <code>node_modules/</code> is committed, 13,612 tracked files. This bloats every clone and push. Untrack it and add it to <code>.gitignore</code>.</li>
-        <li>The local clone has 5 commits (last 2026-08-21). The backup copy has 9 (last 2026-10-06, including the <code>/admin</code> sign-in fix). Pull before further work.</li>
+        <li>The local clone has 5 commits (last 2026-08-21) and is 4 behind origin after a fetch today. The remote adds the <code>/admin</code> sign-in fix, the react-query removal, the tsbuildinfo untrack and a README rewrite. Pull before further work.</li>
       </ul>
     </div>
 
@@ -100,7 +100,18 @@
       <p>OEM exploded-parts viewer, React frontend with a FastAPI backend. Phase 1 (VIN decoder and vehicle lookup) is done. Supabase is the Phase 2 target.</p>
       <ul>
         <li>Secrets hygiene is fine: only <code>backend/.env.example</code> is tracked.</li>
-        <li>The local clone is one commit behind its backup (session summary and docs).</li>
+        <li>The local clone is one commit behind origin after a fetch today (session summary and docs).</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>our day</h3>
+      <p class="path">02_Projects/Ghazi_Tools/our day · ghaziomairi93/G-B · main</p>
+      <div class="pills"><span class="pill ok">Remote in sync</span><span class="pill warn">5 uncommitted changes</span></div>
+      <p>Git repo with 17 commits, last 2026-09-20. Wedding invitation and engagement files, per the original audit note.</p>
+      <ul>
+        <li>Uncommitted, not made by this audit: <code>.gitignore</code> modified, <code>sessions.html</code> deleted, and an untracked <code>new-style/</code> folder plus one HTML file.</li>
+        <li>It was listed as "not a repo" in the original audit. It now has a <code>.git</code> directory with 17 commits.</li>
       </ul>
     </div>
 
@@ -149,11 +160,11 @@
       <tr><td>len-golani/AutoParts</td><td>13</td><td>2026-08-21</td><td>Session summary and project docs. Ahead of local by one commit.</td><td><span class="pill warn">Ahead of local</span></td></tr>
       <tr><td>len-golani/New_Stuff</td><td>1</td><td>2026-10-06</td><td>GitHub Command Center page. Contains the token-shaped strings flagged above.</td><td><span class="pill bad">Security check</span></td></tr>
       <tr><td>len-golani/CarDNA</td><td>32</td><td>2026-08-21</td><td>Matches the local clone.</td><td><span class="pill ok">In sync</span></td></tr>
-      <tr><td>Drifter1987/personal_dashboard</td><td>4</td><td>2026-10-16</td><td>Matches the local clone.</td><td><span class="pill ok">In sync</span></td></tr>
+      <tr><td>Drifter1987/personal_dashboard</td><td>4</td><td>2026-10-16</td><td>One commit behind local: the audit page commit (<code>d15c354</code>), not pushed.</td><td><span class="pill warn">Behind local</span></td></tr>
       <tr><td>len-golani/mep</td><td>2</td><td>2026-10-06</td><td>MEP (mechanical, electrical and plumbing) README.</td><td><span class="pill grey">Docs only</span></td></tr>
       <tr><td>len-golani/len-golani</td><td>1</td><td>2026-10-06</td><td>Profile README listing projects.</td><td><span class="pill grey">Docs only</span></td></tr>
       <tr><td>ghaziomairi93/MyDashboard</td><td>236</td><td>2026-04-16</td><td>Long history, one HTML file.</td><td><span class="pill info">Archive</span></td></tr>
-      <tr><td>ghaziomairi93/G-B</td><td>17</td><td>2026-09-20</td><td>Design specimens (HTML). Older versions moved to <code>archive/</code>.</td><td><span class="pill info">Design archive</span></td></tr>
+      <tr><td>ghaziomairi93/G-B</td><td>17</td><td>2026-09-20</td><td>Design specimens (HTML). Older versions moved to <code>archive/</code>. Local <code>our day/</code> points here, with the same 17 commits.</td><td><span class="pill info">Design archive</span></td></tr>
       <tr><td>ghaziomairi93/houdini-tools</td><td>14</td><td>2026-04-30</td><td>Small Houdini script and notes.</td><td><span class="pill grey">Small</span></td></tr>
       <tr><td>ghaziomairi93/GO-Houdini</td><td>7</td><td>2026-04-30</td><td>Two HTML files. Same remote as the DCTimeClock folder.</td><td><span class="pill grey">Small</span></td></tr>
       <tr><td>ghaziomairi93/Claude-Session</td><td>1</td><td>2026-10-04</td><td>Initial commit with a README.</td><td><span class="pill grey">Stub</span></td></tr>
@@ -172,7 +183,7 @@
       <tr><td>big_merge/…/windows11-replicate</td><td>Git directory with no commits and 15 uncommitted files.</td><td>Unborn repo. Commit deliberately or remove <code>.git</code>.</td></tr>
     </tbody>
   </table>
-  <p class="note">Not a repo, excluded: <code>our day/</code> (wedding invitation and engagement files).</p>
+  <p class="note"><code>our day/</code> was listed as not a repo in the original audit. It is a git repo (<code>ghaziomairi93/G-B</code>) and is now under Owned repos.</p>
 </section>
 
 <section>
@@ -180,7 +191,8 @@
   <ul>
     <li><strong>Checked:</strong> git state for all 22 repos (branch, commit count, last commit, dirty files, remotes); tracked-file hygiene (committed <code>node_modules</code>, tracked <code>.env</code> files); README and package scripts for the owned repos; <code>worker.js</code> parses (<code>node --check</code>).</li>
     <li><strong>Not run:</strong> builds and test suites in the owned repos, and the deploy gate in <code>personal_dashboard</code>. The gate calls live services and was not re-run here. Its last recorded pass is the 2026-10-16 commit.</li>
-    <li><strong>Not checked:</strong> runtime behaviour of any app. Correctness grades are therefore limited to what the repo state shows.</li>
+    <li><strong>Re-checked 2026-10-17:</strong> fetched every remote (<code>nexus</code> has none); recorded branch, commit count, dirty files and ahead/behind for the seven main repos; re-counted token-format strings in <code>Repo_Backups</code> (counts only). A regex sweep of tracked and non-ignored files in the Ghazi_Tools repos found no token-format strings or private keys in project source. The flagged hits were library code under CarPartsFinder's <code>node_modules/</code> and setting names in personal_dashboard, not values.</li>
+    <li><strong>Not checked:</strong> runtime behaviour of any app. Correctness grades are therefore limited to what the repo state shows. Git history was not swept for secrets. The three <code>.env</code> files in non-git folders were checked for existence only. Pending commits in AutoParts and CarPartsFinder were listed by subject, not reviewed. The workspace-root and <code>windows11-replicate</code> counts were not re-run.</li>
   </ul>
 </section>
 
