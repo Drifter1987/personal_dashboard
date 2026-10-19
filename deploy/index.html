@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#2A2A2E">
 <link rel="preconnect" href="https://home-dashboard-api.drifter-87.workers.dev" crossorigin>
-<title>Home Dashboard v2.30.3</title>
+<title>Home Dashboard v2.30.4</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="manifest" href="manifest.webmanifest">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'self' 'sha256-vBKwnZ7sAktryJ8MQ61uonnyDm2T4xP5SOabt0ipTQU='; img-src data: blob: https://home-dashboard-5ma.pages.dev; frame-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'self'; worker-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.gold-api.com https://api.open-meteo.com https://geocoding-api.open-meteo.com https://api.coingecko.com https://api.frankfurter.dev https://api.aladhan.com https://api.github.com https://hn.algolia.com https://huggingface.co https://*.workers.dev; style-src 'unsafe-inline'; script-src 'self' 'sha256-rJDSHPMhCeXOqutN5tF1yRxHnbVa3j7+b80suErd/+4='; img-src data: blob: https://home-dashboard-5ma.pages.dev; frame-src 'self' blob:; font-src 'none'; object-src 'none'; base-uri 'self'; worker-src 'self'">
 <style>
 :root{--r:16px}
 [data-theme="dark"]{--bg:#232327;--bg2:#2A2A2E;--card:#313136;--card2:#3A3A40;--text:#E6E6EA;--text2:#FFFFFF;--muted:#9B9BA3;--line:#45454C;--ok:#34C759;--bad:#FF6B6B;--shadow:0 8px 28px rgba(0,0,0,.45)}
@@ -552,7 +552,7 @@ button,.mini,.iconbtn,.btn,input,select,textarea,a{touch-action:manipulation}
 "use strict";
 /* ================= CONFIG — placeholders only. Real secrets go in Cloudflare Worker, added later. ================= */
 const CONFIG = {
-  VERSION: "2.30.3",
+  VERSION: "2.30.4",
   /* Metals data sources for Bring-Your-Own-Key (BYOK). "" = use whatever the Worker is set to. */
   METALS_PROVIDERS: [
     {id:"fastforex", label:"FastForex.io"},
@@ -577,6 +577,7 @@ const CONFIG = {
   NEWS_CACHE_KEY: "pd_news_v2",  // new key + schema: the old 24h payload is ignored
   NEWS_SCHEMA: 5                // 5: items carry their free-tier quota
 };const CHANGELOG = [
+{v:"2.30.4", d:"2026-10-19", en:"An optional encrypted cloud copy, one slot per device: turn it on with a passphrase and each phone seals its own tasks, cards, notes, habits, countdowns, settings and lock record into a slot of its own, so a phone that loses everything can list the slots, pick its own and restore it. Ten devices never overwrite each other, restoring is never automatic, and a deploy still touches no device's data.", ar:"نسخة سحابية مشفّرة اختيارية، بموضع لكل جهاز: تُشغّلها بعبارة سرّية، فيختم كل هاتف مهامه وبطاقاته وملاحظاته وعاداته وعدّاداته وإعداداته وقفل العبارة في موضعه الخاص، فالهاتف الذي يفقد كل شيء يسرد المواضع ويختار موضعه ويستعيده. عشرة أجهزة لا يكتب بعضها فوق بعض، والاستعادة لا تحدث تلقائياً، والنشر لا يمس بيانات أي جهاز."},
 {v:"2.30.3", d:"2026-10-19", en:"The Settings card now says when the device backup was taken instead of \"no backup yet\" while one exists: the line is repainted when a snapshot lands, and it names the saved time and whether storage is protected.", ar:"تعرض بطاقة الإعدادات وقت أخذ النسخة الاحتياطية بدل عبارة «لا نسخة احتياطية بعد» مع وجودها: يُعاد رسم السطر عند حفظ النسخة، ويذكر وقت الحفظ وما إذا كان التخزين محمياً."},
 {v:"2.30.2", d:"2026-10-19", en:"Saved work survives what the phone does to its storage: tasks, settings, cards and countdowns are mirrored into a device backup and put back when the browser drops them, while news and price caches stepped out of the store a phone clears first. Settings shows when that backup was taken and can restore it on demand.", ar:"يبقى عملك المحفوظ في مأمن مما يفعله الهاتف بالتخزين: تُنسخ المهام والإعدادات والبطاقات والعدادات احتياطياً على الجهاز وتُستعاد إذا حذفها المتصفح، بينما خرجت ذاكرات الأخبار والأسعار من التخزين الذي يُمسح أولاً. تعرض الإعدادات وقت أخذ النسخة وتتيح استعادتها عند الحاجة."},
 {v:"2.30.1", d:"2026-10-19", en:"At three grid columns the crypto card's two-column list ran wider than the card itself, so Ethereum's price and the change beside it were cut off at the right edge. The name yields first now - it ellipsizes - and the row is allowed to shrink to its own column, so the price and the change are always whole: the numbers are what the card is for, and a coin's long name is not.", ar:"عند ثلاثة أعمدة كانت قائمة العملات ذات العمودين في بطاقة العملات الرقمية أعرض من البطاقة نفسها، فانقطع سعر إيثيريوم والتغيير بجانبه عند الحد الأيمن. يتنازل الاسم أولاً الآن — يُختصر بنقاط — ويُسمح للسطر بأن ينكمش إلى عموده، فيبقى السعر والتغيير كاملين دائماً: الأرقام هي غرض البطاقة، وليس اسم العملة الطويل."},
