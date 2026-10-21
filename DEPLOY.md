@@ -8,7 +8,7 @@ Read the credential section before running anything by hand.
 
 | What | How | Where it lands |
 |---|---|---|
-| Worker API | `wrangler deploy` — by hand, section 2 | `home-dashboard-api.drifter-87.workers.dev` |
+| Worker API | `wrangler deploy --tag <sha256 of worker.js>` — by hand, section 2 | `home-dashboard-api.drifter-87.workers.dev` |
 | Static page | **automatic**: a release tag on `main` that passes the gate, section 3 (or `wrangler pages deploy deploy/ --project-name home-dashboard` by hand) | `home-dashboard-5ma.pages.dev` |
 
 Target account: **`Drifter_87@live.com`** (`8660293d…`) — the main
@@ -90,8 +90,17 @@ commit as the version bump; `node _release.mjs` (section 3) does that as part of
 ## 2. Publish the Worker
 
 ```bash
-wrangler deploy
+npx wrangler deploy --tag "$(node _smoke.mjs --worker-tag)"
 ```
+
+`--tag` is not decoration. `VERSION` does not move on every Worker change: `1.14.0` went out
+more than once with different code, and the edge went on serving the older payload, so the
+version string cannot answer "is the live Worker the source in front of me?". The tag is the
+first 16 characters of the sha256 of [worker.js](worker.js) - `node _smoke.mjs --worker-tag`
+prints it - recorded on the version that goes live; `/api/health` reports it back as `build`,
+and [\_smoke.mjs](_smoke.mjs) fails when the live tag is not this tree's.
+A deploy without `--tag` is still correct - it just cannot be proven current, and the smoke
+test says exactly that rather than passing.
 
 `wrangler.toml` declares both live bindings, so a deploy cannot silently drop them. This
 matters: `wrangler deploy` driven by a config file does **not** preserve variables it does not
@@ -328,7 +337,7 @@ selector, exactly as in step 0. The job records the account it targets in its ow
 ### The manual path, unchanged and still first-class
 
 ```bash
-wrangler pages deploy deploy/ --project-name home-dashboard
+npx wrangler pages deploy deploy --project-name home-dashboard --branch main --commit-dirty=true
 ```
 
 Use this when the pipeline is wrong rather than the page — a skipped publish, a missing secret,
@@ -363,21 +372,23 @@ documented in [docs/ATTACHMENTS_AND_KEY_LOCK.md](docs/ATTACHMENTS_AND_KEY_LOCK.m
 
 A successful command is not proof that the site works. This step runs **after** publishing — the
 gate decides whether a publish may start, this decides whether it actually landed — and a deploy
-is not done until it exits 0:
+is not done until it exits 0. The same procedure written for a person rather than for a terminal,
+with the output to expect at each step: [docs/DEPLOY_AND_VERIFY.html](docs/DEPLOY_AND_VERIFY.html).
 
 ```bash
 node _smoke.mjs               # the whole check, exit 0 only if the live site matches
 node _smoke.mjs --once        # one fetch per URL: no edge-staleness re-fetch
 node _smoke.mjs --page-only   # the page only - what the CI publish job runs
 node _smoke.mjs --timeout=20000
+node _smoke.mjs --worker-tag  # the tag to pass to `wrangler deploy --tag`
 ```
 
 It asks three questions of the live site and exits **1** if any answer is wrong (2 on bad usage):
 
 | Check | What must be true |
 |---|---|
-| **Page** | Every file under `deploy/` is fetched from the page's origin and its sha256 compared with the local copy — `index.html` first, then the manifest and the five icons. The live page must also report the bundle's version. |
-| **Worker** | `/api/health` answers 200 JSON, `ok: true`, `keyResolved: true`, and the deployed `v` equals `VERSION` in [worker.js](worker.js) — a page published against an old API fails here. |
+| **Page** | Every file under `deploy/` is fetched from the page's origin and its sha256 compared with the local copy — `index.html` first, then the manifest and the five icons. The live page must also report the bundle's version, and a page still reporting an **older** version than the bundle is named as older rather than merely different. |
+| **Worker** | `/api/health` answers 200 JSON, `ok: true`, `keyResolved: true`, the deployed `v` equals `VERSION` in [worker.js](worker.js), **and** its `build` equals the sha256 of `worker.js` — so a redeploy of an unchanged `VERSION` cannot pass as the new code. A Worker that reports no `build` fails: an unprovable build is not a current one. |
 | **CORS** | `ALLOWED_ORIGIN` in [wrangler.toml](wrangler.toml) is the dashboard's own origin, that origin is echoed exactly (with `Vary: Origin`), a foreign origin is **not** echoed, and preflight answers 204 with `GET`. |
 
 A page-hash mismatch is re-fetched twice, 4s apart, before it is believed: Cloudflare can serve
@@ -392,6 +403,17 @@ local server over `deploy/` to watch the check pass before trusting it on the re
 ```bash
 SMOKE_PAGE=http://127.0.0.1:8000/ node _smoke.mjs    # a local server over deploy/
 SMOKE_API=https://<branch>.home-dashboard-api.workers.dev node _smoke.mjs
+```
+
+The build-tag comparison can be exercised without publishing anything: 
+[tools/\_smoke\_local_api.mjs](tools/_smoke_local_api.mjs) serves `worker.js` on loopback
+with a tag you choose, so both answers are one command apart.
+
+```bash
+node tools/_smoke_local_api.mjs "$(node _smoke.mjs --worker-tag)" 8791 &   # PASS: the tag is this tree's
+SMOKE_API=http://127.0.0.1:8791 node _smoke.mjs
+node tools/_smoke_local_api.mjs 0000old0000build 8792 &                    # FAIL: named as an older build
+SMOKE_API=http://127.0.0.1:8792 node _smoke.mjs
 ```
 
 ### If you need to look by hand

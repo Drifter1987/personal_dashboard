@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Publish the Home Dashboard Worker and page to Cloudflare, then prove the live site is the build you just shipped — gate, tagged Worker deploy, Pages deploy, smoke test, and the update prompt." />
+<title>Deploy and verify — Home Dashboard guide</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23122b24'/%3E%3Crect x='7' y='17' width='4' height='8' rx='1.5' fill='%2352e3b9'/%3E%3Crect x='14' y='10' width='4' height='15' rx='1.5' fill='%23ffbd62'/%3E%3Crect x='21' y='13' width='4' height='12' rx='1.5' fill='%2372a9ff'/%3E%3C/svg%3E" type="image/svg+xml" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #08110f;
+    --surface: #101c19;
+    --surface-2: #14241f;
+    --line: #294039;
+    --text: #edf8f3;
+    --muted: #a5bdb3;
+    --dim: #749286;
+    --green: #52e3b9;
+    --blue: #72a9ff;
+    --orange: #ffbd62;
+    --red: #ff7a6b;
+    --radius: 14px;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.6; }
+  a { color: var(--green); }
+  .wrap { width: min(1120px, calc(100% - 36px)); margin: 0 auto; }
+
+  /* ---- topbar (house) ---- */
+  .topbar { position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--line); background: rgba(8,17,15,.9); backdrop-filter: blur(14px); }
+  .topbar-inner { min-height: 68px; display: flex; align-items: center; gap: 22px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-weight: 800; text-decoration: none; letter-spacing: -.02em; }
+  .mark { width: 27px; height: 27px; display: inline-flex; align-items: end; gap: 2px; padding: 6px 5px; border: 1px solid #397c68; border-radius: 8px; background: #122b24; }
+  .mark i { width: 4px; border-radius: 3px 3px 1px 1px; background: var(--green); }
+  .mark i:nth-child(1) { height: 7px; }
+  .mark i:nth-child(2) { height: 14px; background: var(--orange); }
+  .mark i:nth-child(3) { height: 10px; background: var(--blue); }
+  .topnav { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+  .topnav a { color: var(--muted); font-size: 13px; text-decoration: none; }
+  .topnav a:hover { color: var(--green); }
+  .status { padding: 4px 9px; border: 1px solid #2e6e5c; border-radius: 999px; color: var(--green); font: 700 10px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+  .status.preview { border-color: #7b5b2b; color: var(--orange); }
+  .status.planned { border-color: #3d5e8e; color: var(--blue); }
+
+  /* ---- hero (house) ---- */
+  .hero { padding: 86px 0 70px; border-bottom: 1px solid var(--line); background: radial-gradient(circle at 82% 15%, rgba(82,227,185,.12), transparent 34%), radial-gradient(circle at 8% 20%, rgba(114,169,255,.09), transparent 30%); }
+  .eyebrow { margin: 0 0 16px; color: var(--green); font: 700 11px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .eyebrow.orange { color: var(--orange); }
+  h1, h2, h3 { margin: 0; line-height: 1.08; letter-spacing: -.045em; }
+  h1 { max-width: 780px; font-size: clamp(2.7rem, 7vw, 5.8rem); }
+  h1 span { color: var(--orange); }
+  h2 { font-size: clamp(2rem, 4vw, 3.35rem); }
+  h3 { font-size: 1.12rem; }
+  .lede { max-width: 700px; margin: 24px 0 0; color: var(--muted); font-size: 1.1rem; }
+  .lede code { color: var(--green); font: .82em var(--mono); }
+  .hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: 11px var(--mono); }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .pill.preview::before { background: var(--orange); }
+  .pill.planned::before { background: var(--blue); }
+  .button { display: inline-flex; align-items: center; justify-content: center; min-height: 45px; padding: 10px 16px; border: 1px solid var(--green); border-radius: 8px; background: var(--green); color: #061710; font-size: 13px; font-weight: 800; text-decoration: none; }
+  .button.secondary { border-color: var(--line); background: transparent; color: var(--text); }
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+  .fine { margin: 16px 0 0; color: var(--dim); font: 11px var(--mono); }
+
+  /* ---- sections (house) ---- */
+  section { padding: 76px 0; border-bottom: 1px solid var(--line); }
+  .section-head { display: grid; grid-template-columns: 1fr minmax(260px, .65fr); gap: 50px; align-items: end; margin-bottom: 34px; }
+  .section-head > p { margin: 0; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .card.wide { grid-column: 1 / -1; }
+  .card h3 { margin-bottom: 10px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card .label { display: inline-flex; margin-bottom: 13px; color: var(--green); font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .card .label.preview { color: var(--orange); }
+  .card .label.planned { color: var(--blue); }
+  .label + h3 { margin-top: 0; }
+  .callout { padding: 25px 28px; border: 1px solid #7b5b2b; border-radius: var(--radius); background: rgba(255,189,98,.07); }
+  .callout strong { color: var(--orange); }
+  .callout p { margin: 8px 0 0; color: var(--muted); }
+  .callout code { color: var(--orange); font: .86em var(--mono); }
+  .note { padding: 16px 18px; border: 1px solid #3d5e8e; border-radius: 12px; background: rgba(114,169,255,.06); color: var(--muted); font-size: 13px; }
+  .note b { color: var(--blue); }
+  .note code { color: var(--green); font: 12px var(--mono); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  caption { margin-bottom: 12px; color: var(--dim); font: 11px var(--mono); text-align: left; text-transform: uppercase; letter-spacing: .08em; }
+  th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--dim); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+  td { color: var(--muted); }
+  td strong { color: var(--text); }
+  td code { color: var(--green); font: 11px var(--mono); }
+  .faq { display: grid; border-top: 1px solid var(--line); }
+  details { border-bottom: 1px solid var(--line); }
+  summary { display: flex; justify-content: space-between; gap: 20px; padding: 19px 3px; color: var(--text); font-weight: 700; cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--green); font: 20px var(--mono); }
+  details[open] summary::after { content: "−"; }
+  details p { max-width: 760px; margin: -3px 40px 20px 3px; color: var(--muted); font-size: 13px; }
+  details p code { color: var(--green); font: 12px var(--mono); }
+  .footer { padding: 35px 0 60px; color: var(--dim); font-size: 12px; }
+  .footer-inner { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .footer a { color: var(--muted); }
+
+  /* ---- guide patterns (gmo-guide-me) ---- */
+  .prereqs { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .prereqs li { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: baseline; padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 14px; }
+  .prereqs li::before { content: "✓"; color: var(--green); font: 700 13px var(--mono); }
+  .prereqs .need { color: var(--dim); font: 10px var(--mono); letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+  .prereqs code { color: var(--green); font: 12px var(--mono); }
+
+  /* The counter lives on the WRAPPER, not on .steps, so numbering runs continuously across
+     every phase. A per-ol counter resets to 01 in each phase, which is the classic
+     step-guide numbering bug. */
+  .steps-run { counter-reset: step; }
+  .steps { margin: 0; padding: 0; list-style: none; }
+  .step { position: relative; padding: 24px 0 24px 62px; border-top: 1px solid var(--line); }
+  .step:first-child { border-top: 0; padding-top: 4px; }
+  .step::before { counter-increment: step; content: counter(step, decimal-leading-zero); position: absolute; left: 0; top: 22px; color: var(--orange); font: 700 15px var(--mono); letter-spacing: .02em; }
+  .step:first-child::before { top: 2px; }
+  .step > h3 { font-size: 1.28rem; letter-spacing: -.03em; }
+  .step .why { margin: 7px 0 0; color: var(--dim); font-size: 13px; }
+  .step .when { float: right; margin: 2px 0 0 14px; color: var(--dim); font: 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  .step p.action { margin: 14px 0 0; color: var(--muted); font-size: 14px; }
+  .step p.action b { color: var(--text); }
+
+  pre.cmd { margin: 13px 0 0; padding: 15px 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); overflow-x: auto; }
+  pre.cmd code { color: var(--text); font: 12.5px/1.65 var(--mono); white-space: pre; }
+  pre.cmd .c { color: var(--dim); }
+  pre.cmd .f { color: var(--green); }
+
+  .verify { margin: 13px 0 0; padding: 11px 15px; border-left: 2px solid var(--green); border-radius: 0 10px 10px 0; background: rgba(82,227,185,.05); color: var(--muted); font-size: 13px; }
+  .verify b { color: var(--green); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+  .verify code { color: var(--green); font: 12px var(--mono); }
+
+  .fallback { margin-top: 13px; border: 1px solid #3d5e8e; border-radius: 10px; background: rgba(114,169,255,.05); }
+  .fallback > summary { padding: 11px 15px; color: var(--blue); font: 700 10px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+  .fallback > summary::after { color: var(--blue); font-size: 15px; }
+  .fallback > p { max-width: none; margin: 0 15px 14px; color: var(--muted); font-size: 13px; }
+  .fallback > p code { color: var(--green); font: 12px var(--mono); }
+
+  .checkpoint { display: flex; align-items: center; gap: 16px; margin: 46px 0 30px; color: var(--dim); font: 700 10px var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .checkpoint::before, .checkpoint::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+
+  .fastpath { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .fastpath li { display: grid; grid-template-columns: 20px 1fr; gap: 12px; align-items: baseline; color: var(--muted); font-size: 14px; }
+  .fastpath li::before { content: "→"; color: var(--green); font-family: var(--mono); }
+  .fastpath code { color: var(--green); font: 12.5px var(--mono); }
+
+  .progress { display: flex; align-items: center; gap: 14px; margin: 26px 0 0; color: var(--dim); font: 11px var(--mono); }
+  .progress[hidden] { display: none; }
+  .progress .bar { flex: 1; max-width: 320px; height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .progress .bar i { display: block; height: 100%; width: 0; background: var(--green); transition: width .2s ease; }
+  .label-done { display: none; }
+  .js .label-done { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; color: var(--dim); font: 10px var(--mono); letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
+  .js .label-done input { accent-color: var(--green); width: 14px; height: 14px; }
+  .js .step:has(input:checked) { opacity: .55; }
+  .js .step:has(input:checked) > h3 { text-decoration: line-through; text-decoration-color: var(--dim); }
+  .js .copy { display: inline-flex; margin: 9px 0 0; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--dim); font: 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+  .js .copy:hover { color: var(--green); border-color: var(--green); }
+
+  @media (max-width: 850px) {
+    .grid, .grid.three, .section-head { grid-template-columns: 1fr; gap: 22px; }
+    .card.wide { grid-column: auto; }
+    .step { padding-left: 46px; }
+  }
+  @media (max-width: 560px) {
+    .topbar-inner { flex-wrap: wrap; padding: 10px 0; }
+    .topnav { order: 3; width: 100%; margin: 0; padding-top: 7px; border-top: 1px solid var(--line); }
+    .topnav a { font-size: 11px; }
+    .hero { padding-top: 60px; }
+    .step { padding-left: 38px; }
+    .step .when { float: none; display: block; margin: 6px 0 0; }
+    .prereqs li { grid-template-columns: 22px 1fr; }
+    .prereqs .need { grid-column: 2; }
+  }
+  @media print {
+    :root { color-scheme: light; --bg: #fff; --surface: #fff; --surface-2: #f5f8f6; --line: #ccd8d2; --text: #10221c; --muted: #526860; --dim: #6b7d76; }
+    .topbar { position: static; background: #fff; }
+    .topnav, .progress, .copy, .label-done { display: none !important; }
+    a { color: #087a59; }
+    .hero { background: #f4faf7; }
+    section { padding: 18px 0; break-inside: avoid; }
+    .step, pre.cmd, .verify, .card, tr { break-inside: avoid; }
+    .fallback[open] { break-inside: avoid; }
+    .step::before { color: #b45309; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Home Dashboard docs</a>
+    <span class="status">Verified · 21 Oct 2026</span>
+    <nav class="topnav" aria-label="Guide sections">
+      <a href="#before">Before</a>
+      <a href="#steps">Steps</a>
+      <a href="#fast">Short version</a>
+      <a href="#wrong">When it fails</a>
+      <a href="#not">Limits</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Guide · publishing this dashboard</p>
+      <h1>Ship it, then prove it <span>actually landed.</span></h1>
+      <p class="lede">Two things publish here, to two different Cloudflare products: the Worker API and the static page. A green deploy command proves only that an upload was accepted. This procedure ends with a check that asks the live site which build it is serving — and fails if the answer is older than the tree you just shipped.</p>
+      <div class="hero-meta">
+        <span class="pill">8 steps</span>
+        <span class="pill">About 5 minutes</span>
+        <span class="pill">wrangler 4.151.3 · Windows 11</span>
+        <span class="pill preview">Two targets, one verification</span>
+      </div>
+      <div class="hero-actions">
+        <a class="button" href="#steps">Start at step 1</a>
+        <a class="button secondary" href="#fast">Just the short version</a>
+      </div>
+      <p class="fine">Run end to end on 2026-10-21 against page v2.30.4 and Worker 1.14.0. Every output quoted below was seen in that run. Rollback is documented in <a href="../DEPLOY.md">DEPLOY.md</a> §5 and was not exercised here.</p>
+    </div>
+  </section>
+
+  <section id="before">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Before you start</p>
+          <h2>What has to be true first.</h2>
+        </div>
+        <p>Two of these are the reason a publish goes to the wrong place or dies halfway. Checking them costs a minute; discovering them at step 6 costs a release.</p>
+      </div>
+      <ul class="prereqs">
+        <li><span>A terminal in the repository root, with <code>node</code> 18 or newer — the smoke test uses <code>fetch</code> and <code>AbortSignal.timeout</code>.</span><span class="need">required</span></li>
+        <li><span>Python 3 on <code>PATH</code> — the gate's bundle check shells out to <code>_zip.py</code> to compare CRCs.</span><span class="need">required by the gate</span></li>
+        <li><span>A Cloudflare credential for the hosting account, and the user's explicit agreement to publish with it.</span><span class="need">ask first, always</span></li>
+        <li><span>Reachability to the third parties the harness reads: ECB, Yahoo, CoinGecko, IMF, the news feeds.</span><span class="need">gate only</span></li>
+        <li><span>About 5 minutes, most of it the gate. The uploads themselves take under 30 seconds together.</span><span class="need">time</span></li>
+      </ul>
+      <div class="callout" style="margin-top: 20px">
+        <strong>The account is a decision, not a default.</strong>
+        <p>A Pages deploy carries no account binding in config — the credential alone decides where the page lands. Three Cloudflare accounts exist on this machine, so the account is named out loud at step 1, before anything is written. Nothing in this guide should be run against an account the user has not chosen.</p>
+      </div>
+      <div class="note" style="margin-top: 16px">
+        <b>What the gate actually proves.</b>
+        <p style="margin: 6px 0 0">Three things, and no more: the shipped page and Worker pass the harness against real sources; the artifact about to be published is byte-identical to the artifact that was tested; and, when a release tag points at the current commit, that tag names the version the page carries. It does not publish, and it does not prove the live site changed — that is step 6.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="steps">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow orange">The procedure</p>
+          <h2>Eight steps, in order.</h2>
+        </div>
+        <p>Each step ends with something you can see. If a verify condition does not hold, stop there: every later step assumes the previous one is true.</p>
+      </div>
+
+      <div class="progress" hidden>
+        <span>Progress</span>
+        <span class="bar"><i data-fill></i></span>
+        <span data-count>0 / 0</span>
+      </div>
+
+      <div class="steps-run">
+      <ol class="steps">
+        <li class="step">
+          <span class="when">20 sec</span>
+          <h3>Name the account you are about to publish to</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">Neither deploy pins an account in config. The credential does, so this is the step that decides where everything lands.</p>
+          <pre class="cmd"><code><span class="f">npx</span> --yes wrangler@4.151.3 whoami</code></pre>
+          <p class="verify"><b>You should see</b> the email and a single account row — on this machine, <code>drifter_87@live.com</code> and <code>8660293d…</code>. If the email is not the account the user named, stop and fix the credential before anything is written.</p>
+          <details class="fallback">
+            <summary>If it says you are not logged in</summary>
+            <p>Run <code>npx wrangler login</code> and finish the browser flow. If a <em>different</em> account answers, switching credentials is a deliberate action with its own backup procedure — see <a href="CLOUDFLARE_ACCOUNTS.md">the account inventory</a> rather than overwriting the token in place.</p>
+          </details>
+        </li>
+
+        <li class="step">
+          <span class="when">2 min</span>
+          <h3>Run the gate</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">Nothing is published until this exits 0. It is the only step that runs the Worker and the page against the real sources before an upload exists.</p>
+          <pre class="cmd"><code><span class="f">node</span> _deploy.mjs</code></pre>
+          <p class="verify"><b>You should see</b> a wall of <code>PASS</code> lines ending in <code>RELEASE READY: the page, the Worker and dashboard-site.zip agree, and the harness is green.</code> and an exit code of <code>0</code>. Today's run printed 307 passing checks.</p>
+          <details class="fallback">
+            <summary>If exactly one <code>chart/live</code> check fails with an HTTP status</summary>
+            <p>That is a third party, not your change. The harness reads CoinGecko, Yahoo and the ECB for real, and a throttled public API shows up as <code>no data returned (Yahoo HTTP 404)</code> or similar. Re-run the gate once before believing it — this exact failure appeared twice on 2026-10-21 and cleared on its own.</p>
+          </details>
+        </li>
+
+        <li class="step">
+          <span class="when">10 sec</span>
+          <h3>Let the gate repair the bundle, if it said to</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">The hosted copy is not the source file: the gate pins the page's one inline script by hash, which is what lets the CSP drop <code>unsafe-inline</code>. A stale bundle is the single most common reason a correct edit never reaches the site.</p>
+          <pre class="cmd"><code><span class="f">node</span> _deploy.mjs --sync</code></pre>
+          <p class="verify"><b>You should see</b> <code>wrote deploy\index.html - index.html with its script pinned (1 hash)</code>, then <code>bundle repaired</code> and a second green bundle pass. The page's script hash and the bundle's must match — today both were <code>3f3679585ca7</code>.</p>
+        </li>
+      </ol>
+
+      <p class="checkpoint">Phase two · publish</p>
+
+      <ol class="steps">
+        <li class="step">
+          <span class="when">20 sec</span>
+          <h3>Deploy the Worker with its build tag</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">The version string cannot identify a build: <code>1.14.0</code> went out more than once with different code. The tag is the first 16 characters of the sha256 of <code>worker.js</code>, and <code>/api/health</code> reports it back so step 6 can tell an older Worker from this one.</p>
+          <pre class="cmd"><code><span class="f">npx</span> --yes wrangler@4.151.3 deploy --tag <span class="c">"$(</span><span class="f">node</span> _smoke.mjs --worker-tag<span class="c">)"</span></code></pre>
+          <p class="verify"><b>You should see</b> the binding table including <code>env.CF_VERSION_METADATA … Worker Version Metadata</code>, then <code>Uploaded home-dashboard-api</code> and <code>Current Version ID: …</code>. The id changes on every deploy; the tag is what step 6 compares.</p>
+          <details class="fallback">
+            <summary>If the deploy is rejected because of the tag</summary>
+            <p>Print it on its own first: <code>node _smoke.mjs --worker-tag</code> returns 16 lowercase hex characters. A nested quoting mistake in the shell is far more likely than the tag being invalid.</p>
+          </details>
+        </li>
+
+        <li class="step">
+          <span class="when">10 sec</span>
+          <h3>Publish the page</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">The page is a separate Cloudflare product with its own upload. Deploying the Worker does not move it, and vice versa.</p>
+          <pre class="cmd"><code><span class="f">npx</span> --yes wrangler@4.151.3 pages deploy deploy --project-name home-dashboard --branch main --commit-dirty=true</code></pre>
+          <p class="verify"><b>You should see</b> <code>Deployment complete! Take a peek over at https://&lt;hash&gt;.home-dashboard-5ma.pages.dev</code>. Note the hash: this run produced <code>62eff2dd…</code>.</p>
+          <details class="fallback">
+            <summary>If it uploads but the production URL does not change</summary>
+            <p>Check the branch flag. The production branch is <code>main</code>; deploying to another branch publishes a preview URL and leaves <code>home-dashboard-5ma.pages.dev</code> exactly where it was.</p>
+          </details>
+        </li>
+      </ol>
+
+      <p class="checkpoint">Phase three · prove it</p>
+
+      <ol class="steps">
+        <li class="step">
+          <span class="when">15 sec</span>
+          <h3>Ask the live site which build it is</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">This is the whole point of the guide. A successful upload is not a successful publish, and an edge can serve the previous deployment for a few seconds after one.</p>
+          <pre class="cmd"><code><span class="f">node</span> _smoke.mjs</code></pre>
+          <p class="verify"><b>You should see</b> <code>SMOKE PASSED: … serves the tested bundle &lt;hash&gt; (v2.30.4), all 8 files match, and the Worker serves this tree's worker.js (build &lt;tag&gt;)</code>, exit code <code>0</code>. Today: bundle <code>1b21f8475219</code>, build <code>de3c4bd21b37e087</code>.</p>
+          <details class="fallback">
+            <summary>If it fails, read which half failed</summary>
+            <p><code>the live Worker reports no build tag</code> — the Worker went out without <code>--tag</code>; repeat step 4. <code>live tag … is not the source here</code> — an older or different Worker is live. <code>live v… is older than the shipped v…</code> — the page publish did not land on this origin. Each message prints the exact command that fixes it.</p>
+          </details>
+        </li>
+
+        <li class="step">
+          <span class="when">1 min</span>
+          <h3>Accept the update in your own browser</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">A deploy cannot reach inside a service worker. Clients keep the cached shell until they take the prompt — which is why a perfectly correct deploy can look like nothing happened.</p>
+          <p class="action">Open the dashboard, wait for the bar reading <b>A new version is ready — reload to use it.</b>, and press <b>Reload</b>.</p>
+          <p class="verify"><b>You should see</b> the thing you just shipped — today, a chart button labelled <code>Clear Range</code> where the old page said <code>All</code> — and the bar gone after the reload.</p>
+          <details class="fallback">
+            <summary>If no bar ever appears</summary>
+            <p>The shell did not change, or the worker's cache name did not. <code>deploy/sw.js</code> keys its cache on <code>VERSION</code> plus <code>SHELL_REV</code>; an HTML-only change with neither bumped installs nothing. Bump <code>SHELL_REV</code>, re-sync, and publish the page again.</p>
+          </details>
+        </li>
+
+        <li class="step">
+          <span class="when">1 min</span>
+          <h3>Check it from outside the CLI</h3>
+          <label class="label-done"><input type="checkbox" data-step> Mark done</label>
+          <p class="why">The smoke test is code you could have broken. Two curl-shaped facts, taken by hand, are the independent second opinion.</p>
+          <pre class="cmd"><code><span class="c"># 1. the Worker's own answer</span>
+<span class="f">curl</span> -s https://home-dashboard-api.drifter-87.workers.dev/api/health
+
+<span class="c"># 2. the page bytes against the tested bundle</span>
+<span class="f">curl</span> -s https://home-dashboard-5ma.pages.dev/ -o /tmp/live.html
+<span class="f">cmp</span> -s /tmp/live.html deploy/index.html &amp;&amp; <span class="f">echo</span> "live == tested bundle"</code></pre>
+          <p class="verify"><b>You should see</b> <code>"ok":true</code>, <code>"build":"&lt;tag&gt;"</code> and <code>"keyResolved":true</code> in the JSON, and <code>live == tested bundle</code> on its own line. If <code>cmp</code> says nothing and exits 1, the edge is still on the previous copy.</p>
+        </li>
+      </ol>
+      </div>
+    </div>
+  </section>
+
+  <section id="fast">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Short version</p>
+          <h2>If you already know this.</h2>
+        </div>
+        <p>The same procedure with the reasoning removed. It is not a summary — every command is the one from above.</p>
+      </div>
+      <ul class="fastpath">
+        <li><code>whoami</code> — confirm the email and account id, out loud.</li>
+        <li><code>node _deploy.mjs</code> — stop on anything but <code>RELEASE READY</code>.</li>
+        <li><code>node _deploy.mjs --sync</code> — when the bundle is reported stale.</li>
+        <li><code>wrangler deploy --tag "$(node _smoke.mjs --worker-tag)"</code>.</li>
+        <li><code>wrangler pages deploy deploy --project-name home-dashboard --branch main</code>.</li>
+        <li><code>node _smoke.mjs</code> — exit 0 or you are not done.</li>
+        <li>Press <b>Reload</b> on the update bar in the browser you actually use.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="wrong">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Recovery</p>
+          <h2>When it goes wrong.</h2>
+        </div>
+        <p>Each row below is a failure that happened during the run this page is written from, with what it actually meant. None of them is theoretical.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see &rarr; what it means &rarr; what to do</caption>
+          <thead>
+            <tr><th>What you see</th><th>What it means</th><th>Do this</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>FAIL chart/live … (Yahoo HTTP 404)</code> in the gate</td><td>A public third party throttled the harness. Nothing about your change.</td><td>Re-run <code>node _deploy.mjs</code> once. If it persists for hours, the source itself is down — say so rather than editing the check.</td></tr>
+            <tr><td><code>FAIL bundle: deploy/index.html is index.html with its script pinned</code></td><td>The bundle on disk predates your edit.</td><td><code>node _deploy.mjs --sync</code>, then re-read the hash it prints.</td></tr>
+            <tr><td><code>FAIL worker: … reports no build tag</code></td><td>The Worker was deployed without <code>--tag</code>, so an older build cannot be ruled out.</td><td>Repeat step 4 with the tag. Do not delete the check to get green.</td></tr>
+            <tr><td><code>FAIL worker: … live tag … is not the source here</code></td><td>An older or different Worker is answering.</td><td>Redeploy. If it still answers with the old tag, you are on another account — back to step 1.</td></tr>
+            <tr><td><code>live v2.30.3 is older than the shipped v2.30.4</code></td><td>The page publish did not land on this origin (wrong branch, or the edge has not turned over).</td><td>The smoke test already re-fetches twice, 4 s apart. Still old: check the deployment URL, then redeploy the page.</td></tr>
+            <tr><td>Smoke passes, the browser still shows the old UI</td><td>The service worker is serving its cached shell.</td><td>Step 7. If no prompt appears, <code>SHELL_REV</code> was not bumped.</td></tr>
+            <tr><td><code>release: the release tag names the version the page ships</code></td><td>A <code>v*</code> tag points at this commit and disagrees with <code>CONFIG.VERSION</code>.</td><td>Tag the version the page actually carries, or bump the page to match. Never retag after publishing.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout" style="margin-top: 20px">
+        <strong>Never route around a red gate.</strong>
+        <p><code>--page-only</code> exists for the CI job that publishes the page and nothing else. Using it by hand to dodge a failing Worker check is how a page ships against an API that was never deployed — the exact failure the build tag was added to catch.</p>
+      </div>
+      <div class="note" style="margin-top: 16px">
+        <b>Rollback, in one line each.</b>
+        <p style="margin: 6px 0 0">Worker: <code>wrangler deployments list</code>, then <code>wrangler rollback &lt;version-id&gt;</code>. Page: republish the previous known-good <code>deploy/</code> bundle, or roll back in the Cloudflare dashboard. Both are documented in <a href="../DEPLOY.md">DEPLOY.md</a> §5 and neither was run on this page's date — treat them as documented, not tested here.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="not">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Boundaries</p>
+          <h2>What this does not do.</h2>
+        </div>
+        <p>Read before trusting a green run to mean more than it does.</p>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <span class="label planned">Not covered</span>
+          <h3>Cutting a release</h3>
+          <p>Nothing here bumps a version, writes release notes or creates a tag. That is <code>node _release.mjs</code> plus the changelog, and a versioned release is a different procedure with its own gate.</p>
+        </article>
+        <article class="card">
+          <span class="label planned">Not covered</span>
+          <h3>The CI publish path</h3>
+          <p>Pushing a <code>v*</code> tag publishes the page automatically. That path is described in <a href="PUBLISHING.html">the publishing guide</a>; this page is the by-hand route and the one to use when the pipeline itself is what is broken.</p>
+        </article>
+        <article class="card">
+          <span class="label preview">Partial</span>
+          <h3>What a second device sees</h3>
+          <p>Step 7 updates one browser profile. The verification cannot see another phone's service-worker cache, a CDN in another country, or an installed app that has not been opened since the deploy.</p>
+        </article>
+        <article class="card">
+          <span class="label preview">Partial</span>
+          <h3>The Worker, from CI</h3>
+          <p>The automated publish job runs <code>_smoke.mjs --page-only</code>, so it checks the page and not the API. A release that changes only <code>worker.js</code> is verified by hand or not at all.</p>
+        </article>
+        <article class="card">
+          <span class="label planned">Not covered</span>
+          <h3>The other two accounts</h3>
+          <p>Everything here assumes the main hosting account. The legacy client account and the empty one have their own projects and are never the target of these commands.</p>
+        </article>
+        <article class="card">
+          <span class="label planned">Not covered</span>
+          <h3>Secrets and bindings</h3>
+          <p>This guide never sets a key. Deploys preserve the declared bindings in <code>wrangler.toml</code>, but rotating a secret or adding a binding is its own action with its own consent step.</p>
+        </article>
+      </div>
+      <div class="note" style="margin-top: 16px">
+        <b>How current is this?</b>
+        <p style="margin: 6px 0 0">Run 2026-10-21 with wrangler 4.151.3 on Windows 11, against page v2.30.4 and Worker 1.14.0. The counts and hashes quoted are from that run and will differ next time; the commands and the verify conditions will not. The gate reads live third parties, so its runtime depends on them.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span>Deploy &amp; verify guide — 2026-10-21 · publish path run end to end; rollback documented, not run</span>
+    <a href="../DEPLOY.md">Deploy runbook</a>
+    <a href="PUBLISHING.html">Publishing guide</a>
+    <a href="repo-audit-executive-summary.html">Repo audit</a>
+  </div>
+</footer>
+
+<!--
+  Progressive enhancement only: the page is complete and readable with JavaScript
+  disabled. Every command is a real <pre> the reader can select; this adds a tick
+  box, a progress count and a copy button. Deliberately last, so a printed copy
+  never shows it.
+-->
+<script>
+  (function () {
+    document.documentElement.classList.add("js");
+    var key = "gmo:" + location.pathname;
+    var boxes = [].slice.call(document.querySelectorAll("[data-step]"));
+    var bar = document.querySelector("[data-fill]");
+    var count = document.querySelector("[data-count]");
+    var wrap = document.querySelector(".progress");
+    if (wrap) wrap.hidden = false;
+
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { saved = {}; }
+
+    function sync() {
+      var done = 0;
+      boxes.forEach(function (b, i) {
+        if (saved[i]) b.checked = true;
+        if (b.checked) done++;
+      });
+      if (bar) bar.style.width = (boxes.length ? (done / boxes.length) * 100 : 0) + "%";
+      if (count) count.textContent = done + " / " + boxes.length;
+    }
+    boxes.forEach(function (b, i) {
+      b.addEventListener("change", function () {
+        saved[i] = b.checked;
+        try { localStorage.setItem(key, JSON.stringify(saved)); } catch (e) {}
+        sync();
+      });
+    });
+    sync();
+
+    if (!navigator.clipboard) return;
+    [].slice.call(document.querySelectorAll("pre.cmd")).forEach(function (pre) {
+      var b = document.createElement("button");
+      b.className = "copy";
+      b.type = "button";
+      b.textContent = "Copy";
+      b.addEventListener("click", function () {
+        navigator.clipboard.writeText(pre.innerText).then(function () {
+          b.textContent = "Copied";
+          setTimeout(function () { b.textContent = "Copy"; }, 1400);
+        });
+      });
+      pre.parentNode.insertBefore(b, pre.nextSibling);
+    });
+  })();
+</script>
+</body>
+</html>

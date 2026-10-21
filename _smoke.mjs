@@ -7,6 +7,7 @@
      node _smoke.mjs --once             one fetch per URL, no edge-staleness retries
      node _smoke.mjs --timeout=20000    per-request timeout in ms (default 15000)
      node _smoke.mjs --page-only        the page only, skip the Worker and CORS (CI publish)
+     node _smoke.mjs --worker-tag       print the build tag to deploy with, and exit
      node _smoke.mjs --help
 
    --page-only exists for the CI publish job, which deploys the page and nothing else: on a
@@ -19,10 +20,15 @@
      1. PAGE   is what the edge serves the exact file the gate tested? Every file under
                deploy/ is fetched and its sha256 compared with the local copy, so a stale
                page, a stale icon or a stale manifest all fail - not just index.html.
-               Cloudflare can serve an older copy for a few seconds after a deploy, so a
-               mismatch is re-fetched before it is believed (see --once).
+               The live page's version is also compared with the bundle's, and a page that
+               reports a lower version than the shipped one is named as older rather than
+               merely different. Cloudflare can serve an older copy for a few seconds after
+               a deploy, so a mismatch is re-fetched before it is believed (see --once).
      2. WORKER is /api/health up, is the metals key resolving, and is the deployed Worker
-               the version in worker.js?
+               the source in front of you? The version string alone cannot answer that
+               (1.14.0 was deployed more than once with different code), so the Worker
+               reports the build tag its version was deployed with and this compares it
+               with the sha256 of worker.js - an older build fails here.
      3. CORS   does the API allow the dashboard's own origin, and refuse a foreign one?
 
    URLs come from the constants below; override them to smoke a preview or a local server:
@@ -57,16 +63,17 @@ const PROD_API = "https://home-dashboard-api.drifter-87.workers.dev";
    live URL to compare against. */
 const NOT_SERVED = new Set(["_headers", "_redirects"]);
 
-const HELP = `Post-deploy smoke test: live page bytes, Worker health, CORS origin.
+const HELP = `Post-deploy smoke test: live page bytes, Worker build and health, CORS origin.
 
   node _smoke.mjs                    check production, byte-for-byte
   node _smoke.mjs --once             one fetch per URL, no edge-staleness retries
   node _smoke.mjs --timeout=20000    per-request timeout in ms (default 15000)
   node _smoke.mjs --page-only        the page only, skip the Worker and CORS (CI publish)
+  node _smoke.mjs --worker-tag       print the build tag to pass to 'wrangler deploy --tag', and exit
 
-Exits 0 only when the live site matches the tested bundle and the API is healthy and
-correctly pinned to the dashboard's origin; 1 otherwise. With --page-only, only the first
-half of that sentence is claimed.
+Exits 0 only when the live site matches the tested bundle and the API is the source in this
+working tree, healthy and correctly pinned to the dashboard's origin; 1 otherwise. With
+--page-only, only the page half of that sentence is claimed.
 
   SMOKE_PAGE=<url>   page to compare against deploy/ (default ${PROD_PAGE})
   SMOKE_API=<url>    Worker to check (default ${PROD_API}) - unused with --page-only`;
@@ -79,13 +86,19 @@ if (argv.includes("--help") || argv.includes("-h")) {
 const ONCE = argv.includes("--once");
 const PAGE_ONLY = argv.includes("--page-only");
 const timeoutArg = argv.find((a) => a.startsWith("--timeout="));
-const unknown = argv.filter((a) => a !== "--once" && a !== "--page-only" && !a.startsWith("--timeout="));
+const unknown = argv.filter((a) => a !== "--once" && a !== "--page-only" && a !== "--worker-tag" && !a.startsWith("--timeout="));
 const TIMEOUT = timeoutArg ? Number(timeoutArg.slice("--timeout=".length)) : 15000;
 if (unknown.length || !Number.isFinite(TIMEOUT) || TIMEOUT <= 0) {
   console.error("_smoke.mjs: " + (unknown.length ? "unknown flag(s) " + unknown.join(" ") : "bad --timeout value")
     + "\n\n" + HELP);
   process.exit(2);
 }
+
+/* The build tag is the first 16 characters of the sha256 of worker.js, so it names the source
+   and nothing else: no clock, no commit, no account. The deploy records it on the version that goes live
+   (`wrangler deploy --tag "$(node _smoke.mjs --worker-tag)"`) and /api/health reports it back,
+   which is what lets this file tell an older Worker from the one in front of it. */
+const buildTag = (src) => sha(Buffer.from(src, "utf8")).slice(0, 16);
 
 const PAGE_URL = (process.env.SMOKE_PAGE || PROD_PAGE + "/").replace(/\/?$/, "/");
 const API_URL = (process.env.SMOKE_API || PROD_API).replace(/\/$/, "");
@@ -109,6 +122,18 @@ const read = (rel) => {
   const p = join(ROOT, rel);
   return existsSync(p) ? readFileSync(p) : null;
 };
+
+/* Answered down here, not at the top of the file: it reads worker.js through `read` and hashes
+   it with `sha`, and a branch that runs before either is declared throws instead of printing. */
+if (argv.includes("--worker-tag")) {
+  const src = read("worker.js");
+  if (!src) {
+    console.error("_smoke.mjs: worker.js not found next to this file");
+    process.exit(2);
+  }
+  console.log(buildTag(src));
+  process.exit(0);
+}
 
 /* one request, never throwing: a dead site is a FAIL to report, not a crash to debug */
 async function get(url, init) {
@@ -145,6 +170,19 @@ const liveVersion = (html) => {
   const t = html.match(/<title>\s*Home Dashboard v([0-9.]+)\s*<\/title>/i);
   const v = t ? t[1] : (html.match(/VERSION:\s*"([0-9.]+)"/) || [])[1];
   return v || "unknown";
+};
+
+/* Which of two dotted versions is newer. A page still serving 2.30.3 while the bundle is
+   2.30.4 is the failure this names: "different" and "older" deserve different sentences,
+   because one is a stale edge and the other is a publish that never took. */
+const newerThan = (a, b) => {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0;
+  }
+  return false;
 };
 
 console.log("── smoke: " + PAGE_URL + "  →  " + API_URL + " ──");
@@ -204,6 +242,16 @@ if (!check("page: " + PAGE_URL + " answers 200 text/html",
   check("page: live reports v" + testedVersion,
     liveVer === testedVersion,
     liveVer === testedVersion ? "v" + liveVer : "live says v" + liveVer + " - the page did not publish, or the bundle is stale");
+  /* Bytes already prove a difference; this says which way it went, so a deploy that quietly
+     served yesterday's page reads as "older", not as an unexplained hash mismatch. */
+  check("page: the live page is not older than the shipped v" + testedVersion,
+    liveVer !== "unknown" && testedVersion !== "unknown" && !newerThan(testedVersion, liveVer),
+    liveVer === "unknown" ? "the live page carries no readable version"
+      : newerThan(testedVersion, liveVer)
+        ? "live v" + liveVer + " is older than the shipped v" + testedVersion
+          + " - the publish did not land on this origin"
+        : "v" + liveVer + (newerThan(liveVer, testedVersion)
+          ? " is newer than the bundle here - deploy/ is behind the edge" : " == shipped"));
 
   /* the rest of the bundle: icons, manifest, headers - each compared on its own.
 
@@ -261,6 +309,21 @@ if (!PAGE_ONLY) {
       !!srcVersion && healthJson.v === srcVersion,
       "live v" + healthJson.v + " vs source " + (srcVersion || "unknown")
         + (healthJson.v === srcVersion ? "" : " - run wrangler deploy"));
+
+    /* The version string cannot tell two builds apart: this Worker answered 1.14.0 before and
+       after a real code change, and the edge kept serving the older payload. The tag the
+       deploy stamped on the live version is the only thing that can, so it is required - a
+       Worker that reports no tag is a Worker that cannot be shown to be current. */
+    const srcTag = workerSrc ? buildTag(workerSrc) : null;
+    const liveTag = typeof healthJson.build === "string" ? healthJson.build : "";
+    check("worker: live build is the worker.js in this tree (tag " + brief(srcTag) + ")",
+      !!srcTag && liveTag === srcTag,
+      !liveTag
+        ? "the live Worker reports no build tag, so an older build cannot be ruled out - deploy with: "
+          + "wrangler deploy --tag " + srcTag
+        : liveTag === srcTag ? liveTag
+          : "live tag " + liveTag + " is not the source here (" + srcTag + ") - an older or "
+            + "different Worker is serving; redeploy with: wrangler deploy --tag " + srcTag);
   }
 
   /* ── 3/3  CORS: the dashboard's origin in, everything else out ─────────────────── */
@@ -317,5 +380,6 @@ console.log("\nSMOKE PASSED: " + PAGE_URL + " serves the tested bundle " + brief
   + (testedVersion === "unknown" ? "" : " (v" + testedVersion + ")") + ", all " + files.length
   + " files match"
   + (PAGE_ONLY ? " (page only - the Worker and CORS were not checked)."
-    : ", the Worker is healthy and its origin is pinned to " + allowedOrigin + "."));
+    : ", and the Worker serves this tree's worker.js (build " + buildTag(read("worker.js"))
+      + ") with its origin pinned to " + allowedOrigin + "."));
 process.exit(0);

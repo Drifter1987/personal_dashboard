@@ -14,7 +14,9 @@ import vm from "node:vm";
 const ORIGIN = "https://app.test";
 const SRC = fs.readFileSync("deploy/sw.js", "utf8");
 const V = (SRC.match(/const VERSION\s*=\s*"([^"]+)"/) || [])[1];
-const CACHE = "home-dashboard-" + V;
+/* the cache is named for the release and the shell revision, so this has to read both */
+const REV = (SRC.match(/const SHELL_REV\s*=\s*"([^"]+)"/) || [])[1];
+const CACHE = "home-dashboard-" + V + (REV ? "-" + REV : "");
 
 /* ── the world the worker runs in ─────────────────────────────────────────────── */
 function makeWorld(bodies) {

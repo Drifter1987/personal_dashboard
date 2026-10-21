@@ -9,8 +9,8 @@
 # Why every binding is spelled out here: `wrangler deploy` driven by a config file does
 # NOT preserve variables it does not know about (keep_vars defaults to false). An
 # undeclared ALLOWED_ORIGIN would be dropped, and an undeclared secrets-store binding
-# would be dropped too - which would take /api/metals down with it. Both live bindings
-# are therefore declared below, exactly as they exist in production today.
+# would be dropped too - which would take /api/metals down with it. Every live binding is
+# therefore declared below, exactly as it exists in production today.
 #
 # compatibility_date is pinned to the date the live Worker is already running, so this
 # deploy does not also change runtime behaviour.
@@ -22,6 +22,13 @@ compatibility_date = "2026-10-11"
 # Stated explicitly so a deploy does not silently enable versioned preview URLs for this
 # API. Without this line wrangler turns them on by default (workers.dev route enabled).
 preview_urls = false
+
+# The build stamp. `wrangler deploy --tag "$(node _smoke.mjs --worker-tag)"` records the
+# sha256 of worker.js on the version that goes live, and /api/health reports it as `build`.
+# Without it a redeploy of unchanged VERSION is invisible: two different sources have
+# answered /api/health as 1.14.0, which is why _smoke.mjs needs more than a version string.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [vars]
 # The only origin allowed to read this API. Must match the page's own host.
@@ -59,6 +66,20 @@ secret_name = "personal_dashboard"
 [[kv_namespaces]]
 binding = "PUSH"
 id = "b06e13f1ee2347559cf87635d5fd6393"
+
+# Cloud backup. One private namespace holds one value per device plus that device's 8 MiB
+# attachment chunks. KV rather than R2 because R2 needs a billing profile even on its free tier and
+# this account has none. The trade is KV's free plan - 1 GB, 25 MiB per value, 100,000 reads and
+# 1,000 writes a day across the whole account. A first backup of 27 MB costs four chunk writes plus
+# one log write; the page therefore stops automatic saves at its own daily budget instead of
+# discovering the limit through failed writes. Nothing public: the namespace is reachable only
+# through this Worker, which demands the device's own key.
+#
+#   npx wrangler kv namespace create BACKUP      # wrangler 4.151.3+; 4.151.1 answers code 10000
+#   npx wrangler secret put BACKUP_OWNER_KEY     # the only key that can list every device
+[[kv_namespaces]]
+binding = "BACKUP"
+id = "7c3c06f2236344d1934dc32fc51fc44b"
 
 # The reminder tick. Every 15 minutes, so the first tick at or after the hour a device chose
 # is the one that fires - a missed tick delays a reminder by minutes instead of a day.

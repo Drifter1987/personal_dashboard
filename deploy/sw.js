@@ -20,7 +20,14 @@
  * home-dashboard cache, so an old shell can never be served after an update.
  */
 const VERSION = "2.30.4";
-const CACHE = "home-dashboard-" + VERSION;
+/* The cache carries the shell's own revision as well as the release number. A deploy that
+   changed the page without bumping VERSION used to leave every installed client on the cached
+   shell for good: a browser only installs a new worker when this file's bytes change, and with
+   the version untouched they did not, so the update prompt never appeared. Bump SHELL_REV on
+   any deploy that changes index.html; activating deletes the previous cache, so the old shell
+   can never be served after an update. */
+const SHELL_REV = "2026-10-21";
+const CACHE = "home-dashboard-" + VERSION + "-" + SHELL_REV;
 /* absolute, so a cache key never depends on a worker's base-URL rules */
 const at = (p) => new URL(p, self.location.href).href;
 const SHELL = at("./index.html");

@@ -89,6 +89,68 @@ async () => {
 """
 
 
+# Where the picture actually is on screen, and what a stored file measures: a crop is only saved
+# if the bytes in IndexedDB are the size the viewer promised, so this reads the file back rather
+# than trusting the picture in the viewer.
+IMG_RECT = (
+    "(() => {const r=document.querySelector('#fvImg').getBoundingClientRect();"
+    "return [r.left,r.top,r.width,r.height]})()"
+)
+FILE_PX = """async (id) => {
+  const rec = await fileGet(id);
+  if (!rec) return null;
+  return await new Promise(res => {const u = URL.createObjectURL(rec.blob); const i = new Image();
+    i.onload = () => res({w: i.naturalWidth, h: i.naturalHeight, size: rec.blob.size});
+    i.onerror = () => res(null); i.src = u})}
+"""
+def drag_crop(page, start, end, left_of=0):
+    """Arm Crop and drag a box across the picture, returning the size the viewer promises.
+
+    The picture's own rect is read after Crop is armed, not before: an edit re-fits the picture,
+    so a rectangle measured a drag earlier is stale by the next one. `left_of` starts the stroke
+    that many pixels outside the photo, in the grey the stage leaves around a fitted picture.
+    """
+    if not page.evaluate("!!document.querySelector('.fvcrop')"):
+        # Crop toggles: pressing it while a box is armed disarms it, which is how an earlier save
+        # that kept the box (a copy, a clipboard copy) would swallow the next stroke
+        click_text(page, "#viewBox .fvbar", "Crop")
+        page.wait_for_timeout(150)
+    r = page.evaluate(IMG_RECT)
+    page.mouse.move(r[0] - left_of + r[2] * start[0], r[1] + r[3] * start[1])
+    page.mouse.down()
+    page.mouse.move(r[0] + r[2] * end[0], r[1] + r[3] * end[1], steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(150)
+    return page.evaluate("(document.querySelector('.fvsize')||{}).textContent||''")
+
+
+def crop_px(text):
+    """'240 × 156' as (240, 156); None when the reader has no usable size on screen."""
+    n = [int(v) for v in re.findall(r"\d+", text or "")]
+    return (n[0], n[1]) if len(n) == 2 else None
+
+
+PHONE_PHOTO = """
+async () => {
+  const db = await new Promise((res, rej) => {
+    const r = indexedDB.open('pd_files', 1);
+    r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'}); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  const c = document.createElement('canvas'); c.width = 3024; c.height = 4032;
+  const x = c.getContext('2d'); x.fillStyle = '#d03030'; x.fillRect(0, 0, 3024, 4032);
+  const png = await new Promise(r => c.toBlob(r, 'image/png'));
+  await new Promise((res, rej) => {const t = db.transaction('files', 'readwrite');
+    t.objectStore('files').put({id: 'aPhone', name: 'photo.png', type: 'image/png', size: png.size, blob: png});
+    t.oncomplete = res; t.onerror = () => rej(t.error)});
+  tasks.push({id: 'tPhone', text: 'a photo from the phone', done: false, due: '', status: 'todo',
+    att: [{id: 'aPhone', name: 'photo.png', type: 'image/png', size: png.size}]});
+  store.set('pd_tasks', tasks); renderTasks(true);
+  return {png: png.size};
+}
+"""
+
+
 def open_file(page, name):
     """Open one attachment of the seeded card, straight through the viewer's own entry point."""
     page.evaluate(
@@ -946,8 +1008,9 @@ def cases(browser, base):
                   all(x in st["bar"] for x in ("\u2212", "+", "Fit", "Crop")) and len(chips) == 5,
                   " · ".join(st["bar"]))
             foot = page.evaluate(FOOT_VISIBLE)
-            check("…and the crop's own two buttons stay off the bar until there is a crop",
-                  "Save a copy" not in foot and "Original" not in foot and "Download" in foot,
+            check("…and the footer offers save & replace and save a copy, with the crop tools off the bar",
+                  "Save & replace" in foot and "Save a copy" in foot and "Original" not in foot
+                  and "Download" in foot,
                   " · ".join(foot))
             # the card's own list is the other door into a file, and it must not close under it
             page.evaluate("fvClose(); attModal(tasks.find(x=>x.id==='tSeed1'))")
@@ -996,10 +1059,13 @@ def cases(browser, base):
             overlay = page.evaluate("!!document.querySelector('.fvcrop')")
             check("Crop arms a drag on the picture itself",
                   armed and overlay, "crop pressed=%s · overlay=%s" % (armed, overlay))
-            box = page.locator("#fvStage").bounding_box()
-            page.mouse.move(box["x"] + 40, box["y"] + 40)
+            # the drag is taken on the picture, not on the stage around it: the box is clamped to
+            # the photo, so a stroke that starts in the grey beside it picks only what is over the
+            # photo - which is what the case below is about
+            pic = page.evaluate(IMG_RECT)
+            page.mouse.move(pic[0] + 40, pic[1] + 40)
             page.mouse.down()
-            page.mouse.move(box["x"] + 200, box["y"] + 140, steps=6)
+            page.mouse.move(pic[0] + 200, pic[1] + 140, steps=6)
             page.mouse.up()
             page.wait_for_timeout(150)
             marked = page.evaluate("fvState.crop ? [Math.round(fvState.crop.w), Math.round(fvState.crop.h)] : null")
@@ -1018,8 +1084,9 @@ def cases(browser, base):
             check("a drag on the picture crops it, at full resolution rather than what is on screen",
                   100 < crop["nw"] < 800 and 80 < crop["nh"] < 520,
                   "160x100 of the screen came out %dx%d" % (crop["nw"], crop["nh"]))
-            check("…and a crop offers a copy and a way back to the original",
-                  "Save a copy" in crop["foot"] and "Original" in crop["foot"], " · ".join(crop["foot"]))
+            check("…and a crop offers Undo and the two saving actions",
+                  "Undo" in crop["foot"] and "Save & replace" in crop["foot"]
+                  and "Save a copy" in crop["foot"], " · ".join(crop["foot"]))
             click_text(page, "#viewBox .fvfoot", "Copy")
             page.wait_for_timeout(500)
             clip = clipboard_image(page)
@@ -1027,8 +1094,7 @@ def cases(browser, base):
             check("Copy takes the picture you are looking at - cropped, and in the grey it was filtered to",
                   bool(clip) and clip["w"] == crop["nw"] and clip["h"] == crop["nh"] and grey,
                   ("%s %dx%d pixel %s" % (clip["type"], clip["w"], clip["h"], clip["px"])) if clip else "nothing on the clipboard")
-            click_text(page, "#viewBox .fvfoot", "Save a copy")
-            page.wait_for_timeout(600)
+            # the crop is the file: same record, same name, smaller bytes, and no fourth attachment
             saved = page.evaluate(
                 """async () => {
                   const c = tasks.find(x => x.id === 'tSeed1');
@@ -1036,13 +1102,271 @@ def cases(browser, base):
                   const n = await new Promise(res => { const r = indexedDB.open('pd_files', 1);
                     r.onsuccess = () => { const q = r.result.transaction('files', 'readonly').objectStore('files').getAllKeys();
                       q.onsuccess = () => res(q.result.length); }; });
-                  return {att: (c.att || []).length, keys: n, orig: rec.blob.size, name: c.att[c.att.length - 1].name};
+                  return {att: (c.att || []).length, keys: n, size: rec.blob.size, name: rec.name,
+                          type: rec.type, ids: (c.att || []).map(a => a.id),
+                          meta: (c.att || [])[0], last: (c.att || [])[c.att.length - 1].name};
                 }"""
             )
-            check("a crop can be kept as a copy on the card, and the file it came from is untouched",
-                  saved["att"] == 4 and saved["keys"] == 4 and saved["orig"] == seeded["png"],
-                  "4th file %r · %d records in the store · original still %d bytes"
-                  % (saved["name"], saved["keys"], saved["orig"]))
+            check("a crop is written over the card's own file: no fourth attachment, smaller bytes",
+                  saved["att"] == 3 and saved["keys"] == 3 and saved["size"] < seeded["png"]
+                  and saved["name"] == "Q3 invoice.png" and saved["type"] == "image/png"
+                  and saved["ids"] == ["aSeed1", "aSeed2", "aSeed3"]
+                  and saved["meta"]["size"] == saved["size"] and saved["last"] == "plan.xlsx",
+                  "%d attachments · %d records · stored %d of %d bytes as %r (%s) · card says %d"
+                  % (saved["att"], saved["keys"], saved["size"], seeded["png"], saved["name"],
+                     saved["type"], saved["meta"]["size"]))
+            # and the original is not gone: Undo writes the uploaded bytes back over the same record
+            click_text(page, "#viewBox .fvfoot", "Undo")
+            page.wait_for_function(
+                "() => {const i=document.querySelector('#fvImg');return !!i && i.naturalWidth === 800}",
+                timeout=4000)
+            page.wait_for_timeout(250)
+            undone = page.evaluate(
+                """async () => {
+                  const c = tasks.find(x => x.id === 'tSeed1');
+                  const rec = await fileGet('aSeed1');
+                  return {size: rec.blob.size, att: (c.att || []).length, meta: (c.att || [])[0].size,
+                          nw: document.querySelector('#fvImg').naturalWidth};
+                }"""
+            )
+            check("Undo puts the uploaded bytes back over the same file, and the picture is whole again",
+                  undone["size"] == seeded["png"] and undone["att"] == 3
+                  and undone["meta"] == seeded["png"] and undone["nw"] == 800,
+                  "stored %d of %d bytes · %d attachments · card says %d · %dpx wide"
+                  % (undone["size"], seeded["png"], undone["att"], undone["meta"], undone["nw"]))
+        finally:
+            ctx.close()
+
+    # ── 7a. an armed crop is the edit, whichever button saves it ───────────────────────────────
+    # The bar's Apply is not the only way to finish a crop: the footer carries Save & replace
+    # right below it. Pressing that with a box still armed used to write the whole photo and say
+    # it had been saved, which is the report "cropping does not save what I edited". The box is
+    # also taken on the stage, which is wider than a fitted photo - so a drag that began in the
+    # grey had its left edge pinned to the picture while keeping its full width, and the crop
+    # arrived shifted and wider than what was picked.
+    def an_armed_crop_is_what_gets_saved():
+        ctx, page = boot(browser, base, 941, 760, clipboard=True)
+        try:
+            if not check("contract: the card can be given files to open", bool(page.evaluate(SEED_FILES))):
+                return
+            open_file(page, "Q3 invoice.png")
+            page.wait_for_function(
+                "() => {const i=document.querySelector('#fvImg');return !!i && i.naturalWidth === 800}", timeout=3000)
+            page.wait_for_timeout(200)
+            # a drag that starts 30px left of the picture: the part over the photo is the crop
+            promised = drag_crop(page, (0, .3), (.25, .6), left_of=30)
+            click_text(page, "#viewBox .fvchips", "Apply")
+            page.wait_for_timeout(600)
+            edge = page.evaluate(FILE_PX, "aSeed1")
+            edge_want = crop_px(promised)
+            check("a crop dragged from the grey beside the photo saves the part that is over the photo",
+                  bool(edge) and edge_want == (edge["w"], edge["h"]) and abs(edge["w"] - 200) <= 2,
+                  "promised %s · stored %sx%s (a 25%% slice is 200 wide; the whole stroke was 241)"
+                  % (promised, edge and edge["w"], edge and edge["h"]))
+            # and an armed box is honoured by the footer's own save, not only by Apply
+            click_text(page, "#viewBox .fvfoot", "Undo")
+            page.wait_for_function(
+                "() => {const i=document.querySelector('#fvImg');return !!i && i.naturalWidth === 800}", timeout=4000)
+            page.wait_for_timeout(250)
+            promised = drag_crop(page, (.4, .25), (.7, .6))
+            click_text(page, "#viewBox .fvfoot", "Save & replace")
+            page.wait_for_function(
+                "() => {const i=document.querySelector('#fvImg');return !!i && i.naturalWidth < 800}", timeout=4000)
+            page.wait_for_timeout(250)
+            saved = page.evaluate(FILE_PX, "aSeed1")
+            want = crop_px(promised)
+            check("a crop dragged but not yet applied is what Save & replace writes",
+                  bool(saved) and want == (saved["w"], saved["h"]) and saved["w"] < 800,
+                  "armed %s · stored %sx%s" % (promised, saved and saved["w"], saved and saved["h"]))
+            # the same box, kept as a copy: the card grows one file, at the box's size
+            promised = drag_crop(page, (.1, .1), (.35, .35))
+            click_text(page, "#viewBox .fvfoot", "Save a copy")
+            # a copy is written through the same store as every other file, so wait for the card
+            # to carry it rather than for a fixed number of milliseconds
+            try:
+                page.wait_for_function("tasks.find(x=>x.id==='tSeed1').att.length === 4", timeout=4000)
+            except Exception:
+                pass
+            copy = page.evaluate("""async () => {const a=tasks.find(x=>x.id==='tSeed1').att;
+              return {n:a.length, id:a[a.length-1].id, name:a[a.length-1].name}}""")
+            copied = page.evaluate(FILE_PX, copy["id"])
+            want2 = crop_px(promised)
+            check("…and Save a copy takes the box, not the whole picture",
+                  copy["n"] == 4 and want2 == (copied and copied["w"], copied and copied["h"]),
+                  "%d files · armed %s · copy %s"
+                  % (copy["n"], promised, copied and "%dx%d" % (copied["w"], copied["h"])))
+            # and Copy puts the box on the clipboard
+            promised = drag_crop(page, (.5, .5), (.8, .8))
+            want3 = crop_px(promised)
+            click_text(page, "#viewBox .fvfoot", "Copy")
+            # the write is async and the system clipboard is shared by every case in this browser,
+            # so a single read can return what was left there a moment ago: poll until the box
+            # lands, and report the toast if it never does
+            clip = None
+            for _ in range(10):
+                page.wait_for_timeout(250)
+                try:
+                    clip = clipboard_image(page)
+                except Exception:
+                    clip = None
+                if clip and want3 == (clip["w"], clip["h"]):
+                    break
+            said = page.evaluate("(document.querySelector('#toast')||{}).textContent||''")
+            check("…and Copy puts the box on the clipboard, cropped exactly as it reads",
+                  bool(clip) and want3 == (clip["w"], clip["h"]),
+                  "armed %s · clipboard %s · toast %r"
+                  % (promised, clip and "%dx%d" % (clip["w"], clip["h"]), said))
+        finally:
+            ctx.close()
+
+    # ── 7d. a file picked into a new card, opened and cropped before the card exists ────────────
+    # A file picked in the card form lands in the list inside More fields - so the form has to
+    # open that half, or the file is attached but unreachable. Its edit is held in memory and
+    # written when the card is saved, which is what the viewer's own toast promises.
+    def a_file_picked_for_a_new_card_is_visible_and_crops_before_saving():
+        ctx, page = boot(browser, base, 941, 760)
+        try:
+            page.evaluate("() => {tasks=[];persistAll();taskModal(null,'')}")
+            page.wait_for_selector("#modalBox #kAttFile", state="attached", timeout=3000)
+            page.evaluate("""async () => {
+              const c=document.createElement('canvas'); c.width=800; c.height=520;
+              const x=c.getContext('2d'); x.fillStyle='#3aa'; x.fillRect(0,0,800,520);
+              const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+              const dt=new DataTransfer(); dt.items.add(new File([blob],'photo.png',{type:'image/png'}));
+              const i=document.querySelector('#kAttFile'); i.files=dt.files;
+              i.dispatchEvent(new Event('change'));
+            }""")
+            page.wait_for_timeout(200)
+            shown = page.evaluate(
+                "(() => {const b=document.querySelector('#kAttList .attopen');"
+                " return !!b && b.getClientRects().length > 0 && !!document.querySelector('#kMore').offsetParent})()")
+            check("a file picked into a new card is on screen, not behind More fields",
+                  shown, "open button visible and the long half of the form open")
+            page.click("#kAttList .attopen")
+            page.wait_for_function(
+                "() => (document.querySelector('#fvImg')||{}).naturalWidth === 800", timeout=4000)
+            page.wait_for_timeout(200)
+            click_text(page, "#viewBox .fvbar", "Crop")
+            page.wait_for_timeout(150)
+            r = page.evaluate(IMG_RECT)
+            page.mouse.move(r[0] + r[2] * .2, r[1] + r[3] * .2)
+            page.mouse.down()
+            page.mouse.move(r[0] + r[2] * .6, r[1] + r[3] * .6, steps=6)
+            page.mouse.up()
+            page.wait_for_timeout(150)
+            click_text(page, "#viewBox .fvchips", "Apply")
+            page.wait_for_function(
+                "() => {const i=document.querySelector('#fvImg');return !!i && i.naturalWidth < 800}", timeout=4000)
+            click_text(page, "#viewBox .fvfoot", "Close")
+            page.wait_for_timeout(200)
+            page.fill("#kText", "card from a photo")
+            page.click("#kSave")
+            page.wait_for_timeout(800)
+            held = page.evaluate("""async () => {const t=tasks.find(x=>x.text==='card from a photo');
+              if(!t||!(t.att||[]).length)return null; const a=t.att[0]; const r=await fileGet(a.id);
+              if(!r)return null;
+              return await new Promise(res => {const u=URL.createObjectURL(r.blob); const i=new Image();
+                i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight,n:t.att.length,name:a.name});
+                i.onerror=()=>res(null); i.src=u})}""")
+            check("…and the card saves the crop, not the file as it was picked",
+                  bool(held) and held["w"] < 800 and held["n"] == 1 and held["name"] == "photo.png",
+                  held and "%s %dx%d from %d attachment(s)"
+                  % (held["name"], held["w"], held["h"], held["n"]))
+        finally:
+            ctx.close()
+
+    # ── 7c. Fit fits: a 3024px phone photo inside a 390px phone ────────────────────────────────
+    def a_phone_photo_fits_inside_its_phone():
+        ctx, page = boot(browser, base, 390, 844)
+        try:
+            if not check("contract: a phone photo can be attached", bool(page.evaluate(PHONE_PHOTO))):
+                return
+            page.evaluate("() => attView(tasks.find(x=>x.id==='tPhone'), tasks.find(x=>x.id==='tPhone').att[0])")
+            page.wait_for_function(
+                "() => (document.querySelector('#fvImg')||{}).naturalWidth === 3024", timeout=5000)
+            page.wait_for_timeout(350)
+            m = page.evaluate("""(() => {const st=document.querySelector('#fvStage');
+              const i=document.querySelector('#fvImg').getBoundingClientRect();
+              const s=st.getBoundingClientRect();
+              return {img:[Math.round(i.width),Math.round(i.height)], stage:Math.round(s.width),
+                zoom:document.querySelector('.fvzlab').textContent,
+                over:st.scrollWidth-st.clientWidth}})()""")
+            check("Fit fits a 3024px photo into a 390px phone instead of stopping at 25%",
+                  m["img"][0] <= m["stage"] and m["over"] <= 1 and m["zoom"] != "25%",
+                  "%dpx wide in a %dpx stage at %s, sideways overflow %dpx"
+                  % (m["img"][0], m["stage"], m["zoom"], m["over"]))
+        finally:
+            ctx.close()
+
+    # ── 7b. a card form is three fields until the rest is asked for ────────────────────────────
+    def a_card_form_is_short_until_it_is_asked_to_be_long():
+        ctx, page = boot(browser, base, 941, 760)
+        try:
+            page.wait_for_function("() => typeof taskModal === 'function'")
+            measure = (
+                "() => {const b=document.querySelector('#modalBox');"
+                " const on=id=>{const n=b.querySelector('#'+id);return !!n&&n.getClientRects().length>0};"
+                " const tg=b.querySelector('#kToggle, #eToggle');"
+                " return {fields:['kText','kDue','kPrio','kProj','kRep','kAss','kResp','kLoc','kStart','kMail','kPhone','kNotes'].filter(on),"
+                "  toggle:tg.textContent,"
+                "  expanded:tg.getAttribute('aria-expanded'),"
+                "  less:(() => {const l=b.querySelector('#kLess, #eLess');"
+                "    return l ? {text:l.textContent, shown:l.getClientRects().length > 0} : null})(),"
+                "  time:on('eH'),title:b.querySelector('h3').textContent}}"
+            )
+            page.evaluate("() => {tasks=[];persistAll();taskModal(null,'')}")
+            page.wait_for_selector("#modalBox #kToggle", timeout=3000)
+            short = page.evaluate(measure)
+            check("card form: a new task opens as what it is, when it is due and how urgent",
+                  short["fields"] == ["kText", "kDue", "kPrio"] and short["expanded"] == "false",
+                  " · ".join(short["fields"]) + " · toggle %r" % short["toggle"])
+            page.click("#kToggle")
+            page.wait_for_timeout(150)
+            wide = page.evaluate(measure)
+            check("…and More fields opens the rest, with the same button naming the way back",
+                  len(wide["fields"]) == 12 and wide["expanded"] == "true"
+                  and wide["toggle"] != short["toggle"],
+                  "%d fields · toggle %r" % (len(wide["fields"]), wide["toggle"]))
+            check("…and a Less fields button waits at the end of the long half, not only at its top",
+                  bool(wide["less"]) and wide["less"]["shown"] and wide["less"]["text"] == "Less fields"
+                  and not (short["less"] and short["less"]["shown"]),
+                  "expanded: %r shown=%s · collapsed: %s"
+                  % (wide["less"] and wide["less"]["text"],
+                     wide["less"] and wide["less"]["shown"],
+                     short["less"] and short["less"]["shown"]))
+            page.evaluate("() => document.querySelector('#kLess').click()")
+            page.wait_for_timeout(150)
+            back = page.evaluate(measure)
+            check("…and it folds the form back to the three fields it opened with",
+                  back["fields"] == ["kText", "kDue", "kPrio"] and back["expanded"] == "false",
+                  " · ".join(back["fields"]) + " · toggle %r" % back["toggle"])
+            page.evaluate(
+                "() => {closeModal();tasks=[{id:'tX',text:'Call the plumber',done:false,due:'',status:'todo',"
+                "  project:'Home',phone:'0500'}];taskModal(tasks[0])}")
+            page.wait_for_selector("#modalBox #kToggle", timeout=3000)
+            full = page.evaluate(measure)
+            check("a card that already carries extra fields opens with them showing, not hidden",
+                  full["expanded"] == "true" and "kProj" in full["fields"] and "kPhone" in full["fields"],
+                  "toggle %r · %d fields" % (full["toggle"], len(full["fields"])))
+            page.evaluate("() => {closeModal();eventModal()}")
+            page.wait_for_selector("#modalBox #eToggle", timeout=3000)
+            ev = page.evaluate(measure)
+            check("event form: a title and a day, with the time behind the same toggle",
+                  not ev["time"] and ev["expanded"] == "false",
+                  "time showing: %s · toggle %r" % (ev["time"], ev["toggle"]))
+            page.click("#eToggle")
+            page.wait_for_timeout(150)
+            ev2 = page.evaluate(measure)
+            check("…and More fields brings the time out", ev2["time"],
+                  "time showing: %s" % (ev2["time"],))
+            check("…with the Less fields button at its end",
+                  bool(ev2["less"]) and ev2["less"]["shown"] and ev2["less"]["text"] == "Less fields",
+                  "less: %r" % (ev2["less"],))
+            page.evaluate("() => document.querySelector('#eLess').click()")
+            page.wait_for_timeout(150)
+            ev3 = page.evaluate(measure)
+            check("…and it puts the time away again",
+                  not ev3["time"] and ev3["expanded"] == "false", "time showing: %s" % (ev3["time"],))
         finally:
             ctx.close()
 
@@ -1389,11 +1713,12 @@ def cases(browser, base):
             # the line is painted by the boot before the first snapshot exists, so it must be
             # repainted when one lands: "No device backup yet" over a real backup is a lie the
             # reader would act on
-            check("storage: the Settings card says a device backup exists and offers it explicitly",
-                  full["restoreBtn"]
-                  and ("Saved" in full["backupLine"] or "حُفظت" in full["backupLine"])
-                  and "No device backup" not in full["backupLine"],
-                  "restore button: %s · line: %r" % (full["restoreBtn"], full["backupLine"][:80]))
+            # the card no longer advertises the local mirror: it is the safety net behind the
+            # records, not a second backup the reader has to manage. What matters is that the
+            # mirror exists and was written on this boot.
+            check("storage: the device keeps its own mirror behind the records",
+                  full["saved"] and full["n"] >= 2,
+                  "snapshot taken: %s · restored %d" % (full["saved"], full["n"]))
             check("storage: the browser is asked to keep this origin's storage, not treat it as best-effort",
                   full["persist"] in ("persistent", "best-effort"),
                   "persist requested: %r" % full["persist"])
@@ -1496,6 +1821,52 @@ def cases(browser, base):
                 ctx.close()
         check("the desktop packs cards down its columns, in order and without a hole",
               ok, "; ".join(detail) or "3 widths × 6 sections · no card stretched, no overlap, columns contiguous and in page order")
+
+    def a_tablet_is_a_phone_until_it_is_wide():
+        """The tablet is the device a breakpoint gets wrong: a portrait iPad is 768-834 wide, under
+        the 900px line where the desktop grid starts, so it must get the phone shell - one column,
+        six swipeable tabs, every card inside the screen. Turned on its side at 1180 it must switch
+        to the desktop grid with no reload. Both are measured by the same promise: no card and no
+        page wider than the window, and a different layout mode on each side of the line."""
+        checks = []
+        ok = True
+        for (width, height, want_desktop) in ((820, 1180, False), (1180, 820, True)):
+            ctx, page = boot(browser, base, width, height, tasks=4)
+            try:
+                page.evaluate("goPage(0)")
+                wait_for(page, "curPage", 0)
+                page.wait_for_timeout(160)
+                st = page.evaluate("""(() => {
+                  const de = document.documentElement;
+                  const inner = document.getElementById('page0');
+                  const cards = [...inner.querySelectorAll(':scope > [data-widget]')];
+                  const bar = document.querySelector('#tabbar');
+                  const pager = document.querySelector('#pbar');
+                  return {
+                    desktop: isDesktop(),
+                    overflow: de.scrollWidth - de.clientWidth,
+                    outside: cards.filter(c => {const r = c.getBoundingClientRect();
+                      return r.right > innerWidth + 1 || r.left < -1}).length,
+                    columns: new Set(cards.map(c => Math.round(c.getBoundingClientRect().left))).size,
+                    cardWidth: Math.round(cards[0].getBoundingClientRect().width),
+                    tabs: bar.querySelectorAll('button').length,
+                    tabsReachable: bar.scrollWidth <= bar.clientWidth + 1 || getComputedStyle(bar).overflowX !== 'visible',
+                    pagerShown: getComputedStyle(pager).display !== 'none'
+                  };
+                })()""")
+                good = (st["desktop"] == want_desktop and st["overflow"] <= 0 and st["outside"] == 0
+                        and st["tabs"] == 6 and st["tabsReachable"]
+                        and st["pagerShown"] != want_desktop
+                        and st["columns"] >= (2 if want_desktop else 1))
+                ok = ok and good
+                checks.append("%dpx %s · desktop=%s cols=%d card=%dpx overflow=%d outside=%d tabs=%d pager=%s"
+                              % (width, "landscape" if width > height else "portrait", st["desktop"],
+                                 st["columns"], st["cardWidth"], st["overflow"], st["outside"],
+                                 st["tabs"], "on" if st["pagerShown"] else "off"))
+            finally:
+                ctx.close()
+        check("a tablet gets the phone shell in portrait and the desktop grid on its side",
+              ok, "; ".join(checks))
 
     # ── 10. a stretched card spends its slack on the reading ────────────────────────────────
     def a_stretched_card_spends_its_slack_on_the_reading():
@@ -1696,162 +2067,485 @@ def cases(browser, base):
 
     # ── 10f. the encrypted cloud copy: two phones, two slots, a real wipe ────────────────
     def a_cloud_backup_restores_a_phone_that_lost_everything():
-        """Ten phones hold ten different dashboards, so the copy is per device: each phone writes
-        its own slot under an account derived from the phrase, and a phone that lost everything
-        lists the slots and picks its own. A shared record would make one phone's restore replace
-        another phone's work, which is the failure this case exists to catch.
+        """One log per device: written automatically, overwritten in place, restored after a wipe.
 
         The Worker is faked in this process rather than called: the contract is the page's, and a
-        live network would make a wipe-and-restore test depend on somebody else's uptime. The fake
-        keeps the one server rule that matters - a write whose baseAt is not the slot it holds is
-        refused - so the stale path is exercised rather than assumed.
+        wipe-and-restore test should not depend on somebody else's uptime. The fake keeps the two
+        server rules that matter - exactly one object per device id, overwritten on every save,
+        and the device key is the only way in - so neither is assumed here.
+
+        The passphrase is a switch, not a requirement: the first half of this case runs with
+        encryption off, then turns it on and proves the records are no longer readable on the
+        server, then turns it back off.
         """
-        MARK1 = "CLOUD-PHONE-ONE-77f2"
-        MARK2 = "CLOUD-PHONE-TWO-91c4"
-        PASS = "two-phones-one-phrase"
-        remote = {}
-        index = {}
+        MARK = "CLOUD-LOG-ONE-4d2e"
+        PASS = "backup-passphrase-2026"
+        devices = {}
+        chunks = {}
         seen = []
 
         def api(route):
             req = route.request
-            cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type",
+            cors = {"Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Content-Type, X-Log-Dev, X-Log-Key, X-Log-File, X-Log-Chunk, X-Log-Owner",
                     "Access-Control-Allow-Methods": "POST"}
             if req.method == "OPTIONS":
                 route.fulfill(status=204, headers=cors)
+                return
+            path = req.url.split("?")[0]
+            head = dict(cors, **{"Content-Type": "application/json"})
+            raw = req.post_data_buffer or b""
+            seen.append(raw)
+            if path.endswith("/file/put"):
+                dev, key = req.headers.get("x-log-dev"), req.headers.get("x-log-key")
+                rec = devices.get(dev)
+                if not rec or rec["key"] != key:
+                    route.fulfill(status=403, headers=head, body=json.dumps({"error": "wrong key"}))
+                    return
+                k = (dev, req.headers.get("x-log-file"), req.headers.get("x-log-chunk"))
+                chunks[k] = raw
+                route.fulfill(status=200, headers=head,
+                              body=json.dumps({"ok": True, "backup": True, "size": len(raw)}))
                 return
             try:
                 body = json.loads(req.post_data or "{}")
             except Exception:
                 body = {}
-            seen.append(req.post_data or "")
-            head = dict(cors, **{"Content-Type": "application/json"})
-            path = req.url.split("?")[0]
-            acct, dev = body.get("account"), body.get("dev")
-            slot = "%s:%s" % (acct, dev)
+            if path.endswith("/file/get"):
+                k = (body.get("dev"), body.get("id"), str(body.get("chunk")))
+                rec = devices.get(body.get("dev"))
+                if not rec or rec["key"] != body.get("key"):
+                    route.fulfill(status=403, headers=head, body=json.dumps({"error": "wrong key"}))
+                elif k not in chunks:
+                    route.fulfill(status=404, headers=head, body=json.dumps({"error": "no chunk"}))
+                else:
+                    route.fulfill(status=200, headers=dict(cors, **{"Content-Type": "application/octet-stream"}),
+                                  body=chunks[k])
+                return
+            if path.endswith("/file/del"):
+                gone = [k for k in list(chunks) if k[0] == body.get("dev") and k[1] == body.get("id")]
+                for k in gone:
+                    chunks.pop(k)
+                route.fulfill(status=200, headers=head,
+                              body=json.dumps({"ok": True, "backup": True, "deleted": len(gone)}))
+                return
+            dev, key = req.headers.get("x-log-dev"), req.headers.get("x-log-key")
             if path.endswith("/put"):
-                rec = remote.get(slot)
-                if rec and not body.get("force") and int(body.get("baseAt") or 0) != int(rec["at"]):
-                    route.fulfill(status=409, headers=head,
-                                  body=json.dumps({"error": "stale", "at": rec["at"]}))
+                rec = devices.get(dev)
+                if rec and rec["key"] != key:
+                    route.fulfill(status=403, headers=head, body=json.dumps({"error": "device belongs to another key"}))
                     return
                 at = int(time.time() * 1000)
-                remote[slot] = {"at": at, "v": body.get("v", ""), "blob": body["blob"]}
-                index.setdefault(acct, {})[dev] = at
+                devices[dev] = {"key": key, "at": at, "v": body.get("v"), "items": body.get("items", 0),
+                                "enc": bool(body.get("enc")), "payload": body.get("payload")}
                 route.fulfill(status=200, headers=head,
                               body=json.dumps({"ok": True, "backup": True, "at": at,
-                                               "v": body.get("v", ""), "dev": dev}))
-            elif path.endswith("/get"):
-                rec = remote.get(slot)
+                                               "items": body.get("items", 0), "dev": dev}))
+                return
+            if path.endswith("/get"):
+                rec = devices.get(body.get("dev"))
                 if not rec:
-                    route.fulfill(status=404, headers=head, body=json.dumps({"error": "no backup"}))
+                    route.fulfill(status=404, headers=head, body=json.dumps({"error": "no backup for that device"}))
+                elif rec["key"] != body.get("key"):
+                    route.fulfill(status=403, headers=head, body=json.dumps({"error": "wrong key"}))
                 else:
                     route.fulfill(status=200, headers=head,
-                                  body=json.dumps({"ok": True, "backup": True, "dev": dev,
-                                                   "at": rec["at"], "v": rec["v"], "blob": rec["blob"]}))
-            elif path.endswith("/list"):
-                devices = [{"dev": d, "at": t} for d, t in
-                           sorted(index.get(acct, {}).items(), key=lambda kv: -kv[1])]
+                                  body=json.dumps({"ok": True, "backup": True, "dev": body.get("dev"),
+                                                   "at": rec["at"], "v": rec["v"], "items": rec["items"],
+                                                   "enc": rec["enc"], "payload": rec["payload"]}))
+                return
+            if path.endswith("/del"):
+                rec = devices.get(body.get("dev"))
+                if not rec or rec["key"] != body.get("key"):
+                    route.fulfill(status=403, headers=head, body=json.dumps({"error": "wrong key"}))
+                    return
+                devices.pop(body.get("dev"), None)
+                gone = [k for k in list(chunks) if k[0] == body.get("dev")]
+                for k in gone:
+                    chunks.pop(k)
                 route.fulfill(status=200, headers=head,
-                              body=json.dumps({"ok": True, "backup": True, "devices": devices}))
-            else:
-                remote.pop(slot, None)
-                index.get(acct, {}).pop(dev, None)
-                route.fulfill(status=200, headers=head,
-                              body=json.dumps({"ok": True, "backup": True, "deleted": 1}))
-
-        def enable(pg, phrase):
-            return pg.evaluate("async (p) => {const r = await syncEnable(p);"
-                               "  const c = syncConf(); return {ok: r.ok, dev: c && c.dev, at: c && c.at}}", phrase)
-
-        def restore(pg, phrase, dev):
-            pg.evaluate("() => {const b=[...document.querySelectorAll('#wb_data button')]"
-                        ".find(x=>/Restore from cloud|استعادة من السحابة/.test(x.textContent));"
-                        " if(!b) throw new Error('no restore button'); b.click()}")
-            pg.fill("#modalBox input", phrase)
-            pg.click("#lkS")
-            pg.wait_for_selector("#spRow button", timeout=8000)
-            pg.evaluate("(d) => {const b=[...document.querySelectorAll('#spRow button')]"
-                        ".find(x => x.textContent.indexOf(d) >= 0); if(!b) throw new Error('no slot ' + d); b.click()}",
-                        dev[-4:])
+                              body=json.dumps({"ok": True, "backup": True, "deleted": 1, "chunks": len(gone)}))
 
         ctx1, page1 = boot(browser, base, 941, 720)
         try:
-            page1.route("**/api/backup/**", api)
+            page1.route("**/api/log/**", api)
             page1.wait_for_function("() => snapChecked === true")
-            page1.evaluate("(m) => {tasks = [{id: 'c1', text: m, done: false, due: '', status: 'todo'}];"
-                           "  persistAll(); settings.weekSpan = 30; saveSettings()}", MARK1)
-            one = enable(page1, PASS)
-            check("cloud: turning it on sends ciphertext and takes a slot of this device's own",
-                  one["ok"] is True and re.fullmatch(r"[a-f0-9]{8}", one["dev"] or "") is not None
-                  and len(remote) == 1 and MARK1 not in json.dumps(remote)
-                  and MARK1 not in "".join(seen),
-                  "device %s · one slot · marker absent from every request: %s"
-                  % (one["dev"], MARK1 not in "".join(seen)))
-            slot1 = json.dumps(remote["%s:%s" % (list(index)[0], one["dev"])])
+            # the first visit registers the device and saves its one log without a tap
+            page1.wait_for_function("() => {const c = logConf(); return !!c && c.at > 0}", timeout=15000)
+            first = page1.evaluate("() => {const c = logConf(); return {dev: c.dev, key: c.key, enc: c.enc, at: c.at}}")
+            check("cloud: the first visit registers this device and writes its one log by itself",
+                  re.fullmatch(r"[a-f0-9]{16}", first["dev"] or "") is not None
+                  and re.fullmatch(r"[a-f0-9]{64}", first["key"] or "") is not None
+                  and first["enc"] is False and len(devices) == 1,
+                  "device %s… · %d log object · encryption off" % (first["dev"][:8], len(devices)))
 
-            # the second phone, on the same phrase, must get its own slot and leave the first alone
-            ctx2, page2 = boot(browser, base, 390, 720)
-            try:
-                page2.route("**/api/backup/**", api)
-                page2.wait_for_function("() => snapChecked === true")
-                page2.evaluate("(m) => {tasks = [{id: 'c2', text: m, done: false, due: '', status: 'todo'}];"
-                               "  persistAll()}", MARK2)
-                two = enable(page2, PASS)
-                acct = list(index)[0]
-                slot2 = json.dumps(remote["%s:%s" % (acct, two["dev"])])
-                check("cloud: a second phone gets a second slot and cannot touch the first",
-                      two["ok"] is True and two["dev"] != one["dev"] and len(remote) == 2
-                      and json.dumps(remote["%s:%s" % (acct, one["dev"])]) == slot1
-                      and MARK2 not in slot2 and MARK2 not in slot1,
-                      "device %s and %s · two slots · first slot byte-identical: %s"
-                      % (one["dev"], two["dev"],
-                         json.dumps(remote["%s:%s" % (acct, one["dev"])]) == slot1))
-            finally:
-                ctx2.close()
+            page1.evaluate(
+                "(m) => {tasks = [{id: 'c1', text: m, done: false, due: '', status: 'todo'}];"
+                "  persistAll(); settings.weekSpan = 30; saveSettings()}", MARK)
+            saved = page1.evaluate("async () => {const ok = await logSave(true);"
+                                   " const c = logConf(); return {ok: ok, at: c.at, items: c.items}}")
+            stored = json.dumps(devices[first["dev"]])
+            check("cloud: a save is one object, plaintext by default, holding the records",
+                  saved["ok"] is True and len(devices) == 1 and MARK in stored
+                  and devices[first["dev"]]["enc"] is False and saved["items"] >= 1,
+                  "1 object · %d items · marker present: %s" % (saved["items"], MARK in stored))
 
-            # a second tab on the first phone saves after this one: the stale write must be refused
-            acct = list(index)[0]
-            remote["%s:%s" % (acct, one["dev"])]["at"] += 5000
-            page1.evaluate("() => {tasks.push({id: 'c3', text: 'local edit', done: false, due: ''}); persistAll()}")
-            stale = page1.evaluate("async () => {const ok = await syncSave(false);"
-                                   "  const c = syncConf(); return {ok: ok, stale: c && c.stale, note: syncLine()}}")
-            check("cloud: a stale write is told, instead of overwriting the newer copy",
-                  stale["ok"] is False and stale["stale"] > 0
-                  and ("newer copy" in stale["note"] or "أحدث" in stale["note"]),
-                  "push refused · note: %s" % stale["note"][:72])
+            page1.evaluate("renderData()")
+            panel = page1.evaluate(
+                "() => ({note: (document.querySelector('#logNote') || {}).textContent || '',"
+                "  buttons: [...document.querySelectorAll('#wb_data .row button')].map(b => b.textContent)})")
+            check("cloud: the card shows when it was saved and how many items, with the two buttons",
+                  "Backed up" in panel["note"] and "items" in panel["note"]
+                  and "Back up now" in panel["buttons"] and "Restore from backup" in panel["buttons"],
+                  panel["note"][:64] + " · " + " · ".join(panel["buttons"]))
+
+            # an attachment: its bytes must reach the cloud and come back byte for byte
+            ATT_ID, ATT_MARK = "attcloud1", "PRIVATE-DOC-3f9a"
+            ATT_TEXT = ("%s line of a private document kept in a file\n" % ATT_MARK) * 900
+            page1.evaluate(
+                "async (a) => {const b = new TextEncoder().encode(a.text);"
+                "  await filePut({id: a.id, name: 'notes.txt', type: 'text/plain', size: b.length,"
+                "    blob: new Blob([b], {type: 'text/plain'})});"
+                "  const big = new Uint8Array(20 * 1024 * 1024);"
+                "  for (let i = 0; i < big.length; i++) big[i] = (i * 31 + 7) & 255;"
+                "  await filePut({id: 'attbig1', name: 'scan.bin', type: 'application/octet-stream', size: big.length,"
+                "    blob: new Blob([big], {type: 'application/octet-stream'})});"
+                "  tasks.find(x => x.text === '" + MARK + "').att = ["
+                "    {id: a.id, name: 'notes.txt', type: 'text/plain', size: b.length},"
+                "    {id: 'attbig1', name: 'scan.bin', type: 'application/octet-stream', size: big.length}];"
+                "  persistAll(); const ok = await logSave(true); if (!ok) throw new Error('save refused')}",
+                {"id": ATT_ID, "text": ATT_TEXT})
+            check("cloud: attachments are stored as chunks in the same log, and the file text never travels in clear",
+                  len([k for k in chunks if k[1] == "attbig1"]) == 3
+                  and len([k for k in chunks if k[1] == ATT_ID]) == 1,
+                  "20 MB → %d chunks · text file → %d chunk"
+                  % (len([k for k in chunks if k[1] == "attbig1"]), len([k for k in chunks if k[1] == ATT_ID])))
 
             # a new phone: nothing in localStorage, no IndexedDB, no key in memory
             page1.evaluate(
                 "async () => {removeEventListener('pagehide', flushState); flushState = () => {};"
-                "  snapSave = () => {}; snapSoon = () => {}; SYNC_AES = null; SYNC_LOG = null;"
-                "  localStorage.clear();"
+                "  snapSave = () => {}; snapSoon = () => {}; LOG_AES = null;"
+                "  localStorage.clear(); try{if(fdbP){fdbP.close();fdbP=null}}catch(e){}"
                 "  await new Promise(r => {const q = indexedDB.deleteDatabase('pd_backup');"
+                "    q.onsuccess = q.onerror = q.onblocked = () => r(true)});"
+                "  await new Promise(r => {const q = indexedDB.deleteDatabase('pd_files');"
                 "    q.onsuccess = q.onerror = q.onblocked = () => r(true)})}")
             page1.reload()
             page1.wait_for_function("() => typeof tasks !== 'undefined' && snapChecked === true")
-            wiped = page1.evaluate("() => ({n: tasks.length, conf: !!syncConf()})")
-            check("cloud: the wipe really removes both copies on the device",
-                  wiped["n"] == 0 and not wiped["conf"],
-                  "tasks %d · sync config present: %s" % (wiped["n"], wiped["conf"]))
+            wiped = page1.evaluate("async () => ({n: tasks.length, conf: logConf() && logConf().dev,"
+                                   "  files: (await fileAll()).length})")
+            check("cloud: the wipe removes the records and attachments and leaves a fresh device id",
+                  wiped["n"] == 0 and wiped["conf"] != first["dev"] and wiped["files"] == 0,
+                  "tasks %d · fresh id %s… · old log kept in the bucket: %s"
+                  % (wiped["n"], (wiped["conf"] or "?")[:8], first["dev"] in devices))
 
-            restore(page1, PASS, one["dev"])
-            page1.wait_for_function("(m) => tasks.some(x => x.text === m)", arg=MARK1, timeout=10000)
-            back = page1.evaluate("() => ({mine: tasks.some(x => x.text === 'CLOUD-PHONE-ONE-77f2'),"
-                                  "  other: tasks.some(x => x.text === 'CLOUD-PHONE-TWO-91c4'),"
-                                  "  span: settings.weekSpan, on: !!syncConf(),"
-                                  "  dev: syncConf() && syncConf().dev,"
-                                  "  note: (document.querySelector('#syncNote') || {}).textContent || ''})")
-            check("cloud: the wiped phone restores its own slot, and not the other phone's",
-                  back["mine"] and not back["other"] and back["span"] == 30 and back["on"],
-                  "own records back · other phone's absent: %s · window %s · %s"
-                  % (not back["other"], back["span"], back["note"][:56]))
-            check("cloud: after a restore the phone continues the slot it restored",
-                  back["dev"] == one["dev"], "slot %s" % (back["dev"],))
+            # restore: with no id on this phone the one log is found by the code the card carries
+            code = first["dev"] + "-" + first["key"]
+            page1.evaluate("renderData()")
+            page1.evaluate("() => {const b=[...document.querySelectorAll('#wb_data .row button')]"
+                           ".find(x => /Restore from backup/.test(x.textContent));"
+                           " if(!b) throw new Error('no restore button'); b.click()}")
+            page1.wait_for_selector("#lcCode", timeout=5000)
+            styled = page1.evaluate(
+                "() => {const b = document.querySelector('#modalBox');"
+                " return {card: b.classList.contains('passcard'), centered: document.querySelector('#modalBack').classList.contains('center'),"
+                "  align: getComputedStyle(document.querySelector('#modalBack')).alignItems}}")
+            check("cloud: the restore-code dialog is a centred card, not a bottom sheet",
+                  styled["card"] and styled["centered"] and styled["align"] == "center",
+                  "card %s · centred %s · align %s" % (styled["card"], styled["centered"], styled["align"]))
+            page1.fill("#lcCode", code)
+            page1.click("#lcS")
+            page1.wait_for_selector("#mYes", timeout=5000)
+            warn = page1.evaluate("() => document.querySelector('#modalBox p').textContent")
+            check("cloud: restore warns that this device is replaced before it does anything",
+                  "replace" in warn.lower() and "lost" in warn.lower(),
+                  warn[:80])
+            page1.click("#mYes")
+            page1.wait_for_function("(m) => tasks.some(x => x.text === m)", arg=MARK, timeout=15000)
+            back = page1.evaluate("() => ({mine: tasks.some(x => x.text === 'CLOUD-LOG-ONE-4d2e'),"
+                                  "  span: settings.weekSpan, dev: logConf() && logConf().dev,"
+                                  "  note: (document.querySelector('#logNote') || {}).textContent || ''})")
+            check("cloud: the wiped phone restores its own records and settings, and keeps its own id",
+                  back["mine"] and back["span"] == 30 and back["dev"] == first["dev"],
+                  "records back · review window %s · device %s…" % (back["span"], (back["dev"] or "?")[:8]))
+            check("cloud: the restore adopts the one log instead of leaving an empty second one",
+                  len(devices) == 1 and first["dev"] in devices,
+                  "%d log object(s) in the bucket" % len(devices))
+            back_file = page1.evaluate(
+                "async (id) => {const r = await fileGet(id); if (!r || !r.blob) return {ok: false, size: 0, text: ''};"
+                "  return {ok: true, size: r.blob.size, text: await r.blob.text()}}", ATT_ID)
+            check("cloud: the restored attachment is byte for byte the file that was backed up",
+                  back_file["ok"] and back_file["text"] == ATT_TEXT,
+                  "%s · %d bytes" % ("identical" if back_file["text"] == ATT_TEXT else "different", back_file["size"]))
+            big_ok = page1.evaluate(
+                "async () => {const r = await fileGet('attbig1'); if (!r || !r.blob) return false;"
+                "  const got = new Uint8Array(await r.blob.arrayBuffer());"
+                "  if (got.length !== 20 * 1024 * 1024) return false;"
+                "  for (let i = 0; i < got.length; i++) if (got[i] !== ((i * 31 + 7) & 255)) return false;"
+                "  return true}")
+            check("cloud: a 20 MB attachment comes back through three chunks unchanged", big_ok,
+                  "identical: %s" % big_ok)
+
+            # a copy made before attachments were included in the log: the records restore, but
+            # the file they point at is not in the copy. That has to be said before the swap,
+            # otherwise the only symptom is "no longer on this device" on every tap.
+            legacy = json.loads(devices[first["dev"]]["payload"])
+            legacy.pop("files", None)
+            tdata = json.loads(legacy["data"]["pd_tasks"])
+            tdata[0].setdefault("att", []).append(
+                {"id": "ghostatt1", "name": "gone.png", "type": "image/png", "size": 10})
+            legacy["data"]["pd_tasks"] = json.dumps(tdata)
+            devices[first["dev"]]["payload"] = json.dumps(legacy)
+
+            before = page1.evaluate("() => tasks.map(x => x.text)")
+            page1.evaluate("renderData()")
+            page1.evaluate(
+                "() => {const b = [...document.querySelectorAll('#wb_data .row button')]"
+                ".find(x => /Restore from backup/.test(x.textContent)); if(!b) throw new Error('no button'); b.click()}")
+            page1.wait_for_selector("#mYes", timeout=5000)
+            page1.click("#mYes")
+            page1.wait_for_function(
+                "() => {const p = document.querySelector('#modalBox p');"
+                "  return !!p && /cannot supply/.test(p.textContent)}", timeout=10000)
+            gap = page1.evaluate("() => document.querySelector('#modalBox p').textContent")
+            check("cloud: a copy that cannot supply an attachment says so before replacing the device",
+                  "cannot supply" in gap and "1 " in gap,
+                  gap[:80])
+            page1.click("#mNo")
+            after = page1.evaluate("() => tasks.map(x => x.text)")
+            check("cloud: refusing that warning leaves the device exactly as it was",
+                  after == before, "%d cards kept" % len(after))
+
+            # a copy that carries one of the two files: the other is already on this device and
+            # the restored records still point at it, so the cleanup must not take it away
+            cf = page1.evaluate("() => logConf().files")
+            partial = json.loads(devices[first["dev"]]["payload"])
+            td = json.loads(partial["data"]["pd_tasks"])
+            for t in td:
+                if t.get("text") == MARK:
+                    t["att"] = [
+                        {"id": ATT_ID, "name": "notes.txt", "type": "text/plain", "size": len(ATT_TEXT)},
+                        {"id": "attbig1", "name": "scan.bin",
+                         "type": "application/octet-stream", "size": 20 * 1024 * 1024}]
+            partial["data"]["pd_tasks"] = json.dumps(td)
+            st = json.loads(partial["data"]["pd_settings"])
+            st["weekSpan"] = 7
+            partial["data"]["pd_settings"] = json.dumps(st)
+            partial["files"] = [{"id": ATT_ID, "name": "notes.txt", "type": "text/plain",
+                                 "size": len(ATT_TEXT), "ver": cf[ATT_ID]["ver"],
+                                 "n": cf[ATT_ID]["n"], "enc": False}]
+            devices[first["dev"]]["payload"] = json.dumps(partial)
+            page1.evaluate("renderData()")
+            page1.evaluate(
+                "() => {const b = [...document.querySelectorAll('#wb_data .row button')]"
+                ".find(x => /Restore from backup/.test(x.textContent)); if(!b) throw new Error('no button'); b.click()}")
+            page1.wait_for_selector("#mYes", timeout=5000)
+            page1.click("#mYes")
+            page1.wait_for_function("() => settings.weekSpan === 7", timeout=20000)
+            kept = page1.evaluate(
+                "async () => {const r = await fileGet('attbig1'); if (!r || !r.blob) return false;"
+                "  const g = new Uint8Array(await r.blob.arrayBuffer());"
+                "  if (g.length !== 20 * 1024 * 1024) return false;"
+                "  for (let i = 0; i < g.length; i++) if (g[i] !== ((i * 31 + 7) & 255)) return false;"
+                "  return true}")
+            check("cloud: a file the copy omits but this device already holds survives the cleanup",
+                  kept, "20 MB local file kept: %s" % kept)
+            check("cloud: the file's own text never left the phone in clear",
+                  ATT_MARK.encode() not in b"".join(seen),
+                  "marker absent from every request")
+
         finally:
             ctx1.close()
 
-    return [rebuild_keeps_offset, reorder_keeps_offset, hiding_a_card_above_holds_the_card_below,
+    # ── the price chart's cursor ─────────────────────────────────────────────────────────────
+    # The card's own network is blocked here, so the series is seeded and the card is redrawn
+    # through its slider - which is the same draw() a drag calls. The peak and the trough are
+    # known by construction, so the marker can be measured against them rather than assumed.
+    def the_cursor_lands_on_the_price_it_names():
+        ctx, page = boot(browser, base, 941, 760)
+        try:
+            page.evaluate("goPage(1)")
+            wait_for(page, "curPage", 1)
+            page.wait_for_selector("#wb_chart canvas", timeout=5000)
+            page.evaluate("""() => {
+              const pts = [];
+              for (let i = 0; i < 40; i++) pts.push([Date.UTC(2024,0,1) + i*86400000,
+                i === 7 ? 500 : i === 31 ? 100 : 200 + i]);
+              chartData = {pts: pts, label: 'SEED', unit: 'USD', source: 'ECB', cadence: 'daily',
+                first: '2024-01-01', last: '2024-02-09', count: 40, total: 40, note: '', local: false};
+              const sl = document.querySelector('#wb_chart input.chartbar');
+              sl.dispatchEvent(new Event('input'));   /* the first draw re-ranges the slider to
+                                                         the new series and parks it on the last
+                                                         point; the cursor is set after that, the
+                                                         way a drag is */
+            }""")
+            page.evaluate("""() => {
+              const sl = document.querySelector('#wb_chart input.chartbar');
+              sl.value = '7'; sl.dispatchEvent(new Event('input'));
+            }""")
+            geo = page.evaluate("""() => {
+              const cv = document.querySelector('#wb_chart canvas');
+              const dot = document.querySelector('#wb_chart .xdot');
+              const lab = document.querySelector('#wb_chart .xlab');
+              const sl = document.querySelector('#wb_chart input.chartbar');
+              const c = cv.getBoundingClientRect(), d = dot.getBoundingClientRect(), s = sl.getBoundingClientRect();
+              return {cl: c.left, cr: c.right, ct: c.top, cb: c.bottom,
+                dx: d.left + d.width/2, dy: d.top + d.height/2, dw: d.width,
+                sl0: s.left + 6, sl1: s.right - 6, label: lab.textContent};
+            }""")
+            PL, PR, PT, PB = 56, 12, 14, 24
+            check("the chart's marker sits on the peak it names, as a ringed dot",
+                  abs(geo["dy"] - (geo["ct"] + PT)) <= 1.5 and geo["dw"] >= 13,
+                  "marker y %.1f · peak y %.1f · %.0fpx" % (geo["dy"], geo["ct"] + PT, geo["dw"]))
+            check("…and the label on it is that point's own price",
+                  "500" in geo["label"], geo["label"])
+            trough = page.evaluate("""() => {
+              const sl = document.querySelector('#wb_chart input.chartbar');
+              sl.value = '31'; sl.dispatchEvent(new Event('input'));
+              const c = document.querySelector('#wb_chart canvas').getBoundingClientRect();
+              const d = document.querySelector('#wb_chart .xdot').getBoundingClientRect();
+              return {dy: d.top + d.height/2, cb: c.bottom};
+            }""")
+            check("…and on the trough, at the foot of the plot rather than short of it",
+                  abs(trough["dy"] - (trough["cb"] - PB)) <= 1.5,
+                  "marker y %.1f · trough y %.1f" % (trough["dy"], trough["cb"] - PB))
+            check("the slider's travel starts and ends on the plot's own edges",
+                  abs(geo["sl0"] - (geo["cl"] + PL)) <= 1.5 and abs(geo["sl1"] - (geo["cr"] - PR)) <= 1.5,
+                  "thumb %d…%d · plot %d…%d" % (geo["sl0"], geo["sl1"], geo["cl"] + PL, geo["cr"] - PR))
+            # the two month inputs are filters: a window narrows the drawn points, and Clear
+            # Range puts the whole series back rather than merely reselecting the ends
+            rng = page.evaluate("""() => {
+              const host = document.querySelector('#wb_chart');
+              const [from, to] = host.querySelectorAll('input[type=month]');
+              const sl = host.querySelector('input.chartbar');
+              const btn = [...host.querySelectorAll('button.mini')].find(b => /Clear Range/.test(b.textContent));
+              from.value = '2024-02'; from.dispatchEvent(new Event('change'));
+              to.value = '2024-02'; to.dispatchEvent(new Event('change'));
+              const narrowed = +sl.max + 1;
+              btn.click();
+              return {label: btn.textContent, narrowed: narrowed, full: +sl.max + 1,
+                from: from.value, to: to.value};
+            }""")
+            check("the two month pickers filter the drawn series",
+                  rng["narrowed"] == 9, "February holds %d of the 40 seeded points" % rng["narrowed"])
+            check("Clear Range shows the whole history again, from the first date the source has",
+                  rng["label"] == "Clear Range" and rng["full"] == 40
+                  and rng["from"] == "2024-01" and rng["to"] == "2024-02",
+                  "%r · %d points · %s → %s" % (rng["label"], rng["full"], rng["from"], rng["to"]))
+        finally:
+            ctx.close()
+
+    # ── the market cards' grids ──────────────────────────────────────────────────────────────
+    # Every host is blocked, so each card is painted with a known answer - the same paint
+    # function the fetch calls on success - and the layout it produces is measured.
+    def the_market_cards_keep_an_even_grid():
+        ctx, page = boot(browser, base, 941, 760)
+        try:
+            page.evaluate("goPage(1)")
+            wait_for(page, "curPage", 1)
+            page.wait_for_selector("#wb_chart canvas", timeout=5000)
+            fx = page.evaluate("""() => {
+              const host = document.querySelector('#wb_fx');
+              const rates = (base) => Object.fromEntries(FX_ROW_ORDER.filter(c => c !== base).map(c => [c, 1.5]));
+              paintFx(host, 'USD', rates('USD'), {}, false);
+              const usd = [...host.querySelectorAll('.kv')].length;
+              paintFx(host, 'EUR', rates('EUR'), {}, false);
+              const rows = [...host.querySelectorAll('.kv')];
+              const lefts = [...new Set(rows.map(r => Math.round(r.getBoundingClientRect().left)))];
+              return {usd: usd, eur: rows.length, cols: lefts.length,
+                dollar: rows.some(r => /^USD/.test(r.textContent))};
+            }""")
+            check("currencies: eight rows whatever the base - no ninth row and a half-empty column",
+                  fx["usd"] == 8 and fx["eur"] == 8 and fx["cols"] == 2,
+                  "base USD %d rows · base EUR %d rows · %d columns" % (fx["usd"], fx["eur"], fx["cols"]))
+            check("…and the dollar is one of them once it is not the base",
+                  fx["dollar"], "USD row present under a EUR base: %s" % fx["dollar"])
+            mt = page.evaluate("""() => {
+              const rows = [...document.querySelectorAll('#wb_metals .kv')];
+              const cols = [...new Set(rows.map(r => Math.round(r.getBoundingClientRect().left)))];
+              const per = cols.map(l => rows.filter(r => Math.round(r.getBoundingClientRect().left) === l).length);
+              return {n: rows.length, cols: cols.length, per: per};
+            }""")
+            check("metals: six rows in two even columns of three",
+                  mt["n"] == 6 and mt["cols"] == 2 and max(mt["per"]) == 3,
+                  "%d rows · columns %s" % (mt["n"], mt["per"]))
+            crypto = page.evaluate("""() => {
+              coinCache = {ts: Date.now(), data: ['BTC','ETH','BNB','XRP','SOL','DOGE','ADA','TRX'].map((s, i) =>
+                ({id: s.toLowerCase(), symbol: s, name: s + ' token', current_price: 100 + i, price_change_percentage_24h: i % 2 ? -1.5 : 2.5}))};
+              renderCrypto();
+              const items = [...document.querySelectorAll('#wb_crypto li')];
+              const prices = items.map(l => l.querySelector('.cpx').getBoundingClientRect().left);
+              const colA = prices.filter((_, i) => i % 2 === 0), colB = prices.filter((_, i) => i % 2 === 1);
+              const spread = a => Math.round((Math.max(...a) - Math.min(...a)) * 10) / 10;
+              return {n: items.length, spreadA: spread(colA), spreadB: spread(colB)};
+            }""")
+            check("crypto: eight coins in a grid whose prices line up in each column",
+                  crypto["n"] == 8 and crypto["spreadA"] <= 0.5 and crypto["spreadB"] <= 0.5,
+                  "%d rows · price edges within %.1fpx / %.1fpx" % (crypto["n"], crypto["spreadA"], crypto["spreadB"]))
+            gen = page.evaluate("""() => {
+              const tiles = [...document.querySelectorAll('#wb_gen .gentile')];
+              const cs = tiles.length ? getComputedStyle(tiles[0]) : null;
+              return {n: tiles.length, shadow: cs && cs.boxShadow,
+                left: cs && cs.borderInlineStartWidth, top: cs && cs.borderTopWidth};
+            }""")
+            check("AI tools: every tile is ringed on the left and the top edge",
+                  gen["n"] > 0 and gen["shadow"] not in (None, "none")
+                  and gen["left"] == "3px" and gen["top"] == "3px",
+                  "%d tiles · left %s · top %s" % (gen["n"], gen["left"], gen["top"]))
+            news = page.evaluate("""() => {
+              const host = document.querySelector('#wb_auto');
+              const ul = document.createElement('ul'); ul.className = 'list'; host.appendChild(ul);
+              paintNews(ul, [1,2,3,4,5].map(i => ({title: 'Headline ' + i, link: 'x' + i, source: 'S', time: ''})));
+              return [...ul.querySelectorAll('li')].length;
+            }""")
+            check("automotive: five headlines fit the card when the feed sends five",
+                  news == 5, "%d rows painted" % news)
+        finally:
+            ctx.close()
+
+    # ── the weather card's two lists ───────────────────────────────────────────────────────
+    # The card's host is blocked here, so a payload of the shape open-meteo returns is painted
+    # through the card's own painter: the geometry is the shipped geometry either way.
+    def the_weather_card_fits_a_week_and_a_compact_day():
+        ctx, page = boot(browser, base, 941, 760)
+        try:
+            page.evaluate("goPage(0)")
+            page.wait_for_selector("#wb_weather #wxOut", timeout=5000)
+            geo = page.evaluate("""() => {
+              const t0 = new Date(); t0.setMinutes(0, 0, 0);
+              const iso = h => new Date(t0.getTime() + h*3600000).toISOString().slice(0, 13) + ':00';
+              const day = n => new Date(t0.getTime() + n*86400000).toISOString().slice(0, 10);
+              const j = {current: {temperature_2m: 7, apparent_temperature: 5, relative_humidity_2m: 95,
+                  wind_speed_10m: 4, weather_code: 3},
+                hourly: {time: Array.from({length: 30}, (_, h) => iso(h)),
+                  temperature_2m: Array.from({length: 30}, (_, h) => 6 + h % 5),
+                  weather_code: Array.from({length: 30}, () => 61)},
+                daily: {time: Array.from({length: 7}, (_, n) => day(n)),
+                  temperature_2m_max: Array.from({length: 7}, (_, n) => 10 + n),
+                  temperature_2m_min: Array.from({length: 7}, (_, n) => 3 + n),
+                  weather_code: Array.from({length: 7}, () => 61),
+                  sunrise: ['2026-10-21T07:43'], sunset: ['2026-10-21T18:13']}};
+              paintWx(document.querySelector('#wb_weather #wxOut'), j, false);
+              const rows = [...document.querySelectorAll('#wb_weather .wxh')];
+              const strip = document.querySelector('#wb_weather .wxstrip');
+              return {tiles: document.querySelectorAll('#wb_weather .wxd').length,
+                rows: rows.length, maxRow: Math.max(...rows.map(r => Math.round(r.getBoundingClientRect().height))),
+                stripH: Math.round(strip.getBoundingClientRect().height),
+                cols: getComputedStyle(strip).gridTemplateColumns.split(' ').length,
+                label: (document.querySelector('#wb_weather .wxdays').previousElementSibling || {}).textContent};
+            }""")
+            check("weather: the whole week - seven tiles, one per day",
+                  geo["tiles"] == 7, "%d tiles · label %r" % (geo["tiles"], geo["label"]))
+            check("weather: twelve hours as a compact list, one line each",
+                  geo["rows"] == 12 and geo["maxRow"] <= 26,
+                  "%d rows · tallest %dpx · strip %dpx in %d columns"
+                  % (geo["rows"], geo["maxRow"], geo["stripH"], geo["cols"]))
+        finally:
+            ctx.close()
+
+    return [rebuild_keeps_offset, the_cursor_lands_on_the_price_it_names,
+            the_market_cards_keep_an_even_grid, the_weather_card_fits_a_week_and_a_compact_day,
+            reorder_keeps_offset, hiding_a_card_above_holds_the_card_below,
             shortening_page_clamps_but_never_snaps_to_the_top, hiding_a_card_above_holds_the_reading_on_home,
             section_change_starts_at_the_top, phone_keeps_section_and_offset,
             only_the_document_scrolls_vertically, a_phone_card_is_only_as_tall_as_its_content,
@@ -1865,9 +2559,13 @@ def cases(browser, base):
             a_shortcut_link_opens_its_section,
             buttons_do_not_move_the_view, today_button, search_suggestion_marks_the_word,
             a_file_name_is_a_search_result, the_file_viewer_zooms_filters_crops_and_copies,
+            an_armed_crop_is_what_gets_saved, a_phone_photo_fits_inside_its_phone,
+            a_file_picked_for_a_new_card_is_visible_and_crops_before_saving,
+            a_card_form_is_short_until_it_is_asked_to_be_long,
             the_file_viewer_shows_text_and_says_what_it_cannot_show,
             a_phone_section_is_as_tall_as_its_content, a_phone_page_grows_with_what_you_add,
             the_desktop_packs_cards_into_columns,
+            a_tablet_is_a_phone_until_it_is_wide,
             the_shipped_page_runs_under_its_pinned_script_hash,
             a_passphrase_seals_the_files_and_the_provider_key,
             a_cleared_localStorage_comes_back_from_the_device_backup,

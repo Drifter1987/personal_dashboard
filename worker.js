@@ -58,13 +58,19 @@ const PROVIDER_DEFAULT = "fastforex";   // used when a key is available
 const PROVIDER_KEYLESS = "gold-api";    // used when no key is available
 const TTL_METALS = 12 * 3600;
 
-const NEWS_CARDS = { auto: 3, ai: 5, fin: 3 };
+/* Five cards per feed: the automotive card is read as a morning digest, and three left it
+ * thinner than the AI card beside it. The feeds below carry more than five items each, so the
+ * extra two come from the same interleave and the card has no filler. */
+const NEWS_CARDS = { auto: 5, ai: 5, fin: 3 };
 const NEWS_TTL = 3600;                    /* 1h; the page caches each card for 1h too */
 const NEWS_CONCURRENCY = 5;               /* Workers allows 6 open outbound connections per request */
 /* The edge cache key has to be an absolute URL. The old "news-v1" key made
  * new Request() throw, so /api/news silently skipped both the read and the write
  * and every page load refetched all the feeds. v1 to v2 is also the cache bust. */
-const NEWS_CACHE_KEY = "https://news-cache.internal/news/v4";
+/* v5: the payload's shape did not change, but its length did - the automotive card went from
+ * three headlines to five, and a v4 entry cached at the edge would keep serving three for an
+ * hour after the deploy. The key is the cache bust, as it was for v1 to v2. */
+const NEWS_CACHE_KEY = "https://news-cache.internal/news/v5";
 
 /* Feeds verified live (HTTP 200 + parseable items) on 2026-10-11. The old registry
  * shipped two dead automotive feeds — motorauthority.com/rss answers 403 and
@@ -1024,7 +1030,7 @@ function cors(origin, allowed) {
   const ok = a === "*" || a === origin;
   const h = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, X-Provider",
+    "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, X-Provider, X-Log-Dev, X-Log-Key, X-Log-File, X-Log-Chunk, X-Log-Owner",
     "Access-Control-Max-Age": "86400",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -1455,135 +1461,224 @@ async function runPushDigests(env, now) {
   return out;
 }
 
-/* ─────────────── Encrypted cloud backup ───────────────
- * One slot per DEVICE, grouped by an account derived from the user's passphrase. A dashboard
- * opened on ten phones holds ten different sets of tasks; a single shared record would make a
- * restore on one phone replace another phone's work, which is the opposite of the thing this is
- * for. So each device writes only its own slot, and a phone that lost everything can list the
- * slots in the account, recognise its own by id and time, and pull that one.
+/* ─────────────── Cloud backup: one log per device ───────────────
+ * One object per device, overwritten on every save. Not one object per save and not one object per
+ * file: a device that saves a hundred times still holds exactly one log, so there is never a second
+ * copy to pick between and nothing accumulates. The page owns the device id and the key to it; the
+ * Worker stores only an object named by that id, holding a SHA-256 of the key and the payload.
  *
- * The page seals a slot before it leaves the device (AES-GCM under a key from PBKDF2), and the
- * account name is PBKDF2 output too. This Worker therefore holds: a 32-hex account, a short
- * device id, two timestamps, and ciphertext it cannot read.
+ * The payload is plaintext unless the device turned encryption on, in which case it is an
+ * AES-GCM envelope the Worker cannot open. That is the whole choice the user makes: convenience or
+ * secrecy. The namespace is private either way - no public URL and no anonymous read.
  *
- *   POST /api/backup/put   {account, dev, at, v, blob:{iv,ct}, baseAt, force?}
- *   POST /api/backup/get   {account, dev}
- *   POST /api/backup/list  {account}
- *   POST /api/backup/del   {account, dev}
+ * KV rather than R2: R2 needs a billing profile even on its free tier, and this account has none.
+ * One value per device log and one per 8 MiB attachment chunk fits KV's 25 MiB value limit; the
+ * trade is KV's 1,000 writes a day, which the page budgets for rather than discovering the hard
+ * way. Reads are cheap (100,000 a day) and a 27 MB backup is four chunk writes plus one log write.
  *
- * POST for reads as well as writes, deliberately: an account in a query string is an account
- * written into a proxy log and a `Referer`, and it is the only thing guarding the slots.
- * `baseAt` is the copy this device last saw. Because slots are per device, a stale write means
- * two tabs on one phone rather than two phones fighting; it is refused with 409 and the server's
- * timestamp instead of replacing the newer copy, and the page says so.
+ *   POST /api/log/put        X-Log-Dev, X-Log-Key   {at,v,items,enc,payload}
+ *   POST /api/log/get        {dev,key}
+ *   POST /api/log/del        {dev,key}
+ *   POST /api/log/list       X-Log-Owner           -> every device, newest first
+ *   POST /api/log/file/put   X-Log-Dev, X-Log-Key, X-Log-File, X-Log-Chunk   raw bytes
+ *   POST /api/log/file/get   {dev,key,id,chunk}    -> raw bytes
+ *   POST /api/log/file/del   {dev,key,id}
  *
- * The store is the KV namespace the reminders already use, under its own `bk:` prefix: no second
- * namespace to provision, and the push sweep only ever lists `p:`. A dedicated BACKUP binding, if
- * one is ever declared in wrangler.toml, takes precedence without touching this code.
+ * Reads are POSTs for the same reason the old routes were: an id or key in a query string is a
+ * credential written into a proxy log. The owner key is a Worker secret, never a query string.
  */
-const BACKUP_PREFIX = "bk:";
-const BACKUP_ACCOUNT = /^[a-f0-9]{32,64}$/;
-const BACKUP_DEV = /^[a-f0-9]{6,32}$/;
-/* readJson refuses a body over 64 KiB, so this is the real ceiling rather than a round number */
-const BACKUP_CT_MAX = 60000;
-const BACKUP_IV = /^[A-Za-z0-9+/]{16,24}={0,2}$/;
-/* one index per account, so a phone can find its own slot without knowing the id in advance.
-   A hundred devices is within the free tier's KV value limit by a wide margin (an entry is an id
-   and a timestamp); 256 keeps the list useful without turning the answer into a directory. */
-const BACKUP_SLOTS_MAX = 256;
-/* the index is refreshed at most hourly per device: a save costs one KV write, not two, and the
-   timestamp in the list is a hint for recognising a phone, not a ledger */
-const BACKUP_INDEX_REFRESH = 3600000;
-const backupStore = (env) => env.BACKUP || env.PUSH || null;
-const backupKey = (account, dev) => BACKUP_PREFIX + account + ":" + dev;
-const backupIndexKey = (account) => BACKUP_PREFIX + account + ":index";
+const LOG_DEVICE_PREFIX = "devices/";
+const LOG_FILE_PREFIX = "files/";
+const LOG_DEV = /^[a-f0-9]{16}$/;
+const LOG_KEY = /^[a-f0-9]{64}$/;
+/* a snapshot is the records plus the attachment manifest, never the attachment bytes */
+const LOG_JSON_MAX = 8 * 1024 * 1024;
+const LOG_PLAIN_MAX = 4 * 1024 * 1024;
+const LOG_CT_MAX = 6 * 1024 * 1024;
+/* R2 takes a single put of up to 5 GiB; 8 MiB keeps a chunk small enough to retry cheaply, and a
+   25 MB attachment is four of them */
+const LOG_CHUNK_MAX = 8 * 1024 * 1024 + 64;
+const LOG_CHUNKS_MAX = 256;
+const LOG_FILE = /^[A-Za-z0-9_-]{1,64}$/;
+const LOG_DEVICES_MAX = 64;
+const logStore = (env) => env.BACKUP || null;
+const logObjectKey = (dev) => LOG_DEVICE_PREFIX + dev + ".json";
+const logFilePrefix = (dev, id) => LOG_FILE_PREFIX + dev + "/" + (id ? id + "/" : "");
+const logFileKey = (dev, id, n) => logFilePrefix(dev, id) + n;
 
-async function backupIndexRead(kv, account) {
-  const rec = await kv.get(backupIndexKey(account), "json");
-  return (rec && Array.isArray(rec.devices)) ? rec.devices : [];
+const logHex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function logHash(key) {
+  return logHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(key))));
 }
-async function backupIndexWrite(kv, account, devices) {
-  const kept = devices.filter((d) => d && BACKUP_DEV.test(d.dev))
-    .sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, BACKUP_SLOTS_MAX)
-    .map((d) => ({ dev: d.dev, at: Number(d.at) || 0 }));
-  await kv.put(backupIndexKey(account), JSON.stringify({ devices: kept }));
-  return kept;
+/* constant-time enough for two short strings: never returns on the first mismatch */
+function logSame(a, b) {
+  const x = String(a), y = String(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0);
+  return diff === 0;
 }
-
-async function backupPut(env, json) {
-  const kv = backupStore(env);
-  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
-  const account = String(json.account || ""), dev = String(json.dev || "");
-  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
-  if (!BACKUP_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "6-32 lowercase hex" } };
-  const blob = json.blob || {};
-  const iv = String(blob.iv || ""), ct = String(blob.ct || "");
-  if (!BACKUP_IV.test(iv)) return { status: 400, body: { error: "bad iv" } };
-  if (!ct || ct.length > BACKUP_CT_MAX) return { status: 413, body: { error: "ciphertext too large", max: BACKUP_CT_MAX } };
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(ct)) return { status: 400, body: { error: "bad ciphertext encoding" } };
-  const key = backupKey(account, dev);
-  const prev = await kv.get(key, "json");
-  /* baseAt 0 matches only the first write of a slot, so two tabs racing from empty still end with
-     one 409 rather than one silent overwrite */
-  if (prev && !json.force && Number(json.baseAt || 0) !== Number(prev.at || 0)) {
-    return { status: 409, body: { error: "stale", at: prev.at || 0, v: prev.v || "" } };
-  }
+async function logRead(env, dev) {
+  const txt = await env.BACKUP.get(logObjectKey(dev));
+  if (!txt) return null;
+  try { return JSON.parse(txt); } catch (e) { return null; }
+}
+/* The page uploads a new device's files before it writes the log, so the first chunk arrives
+   before any record exists. Claiming the id here keeps that order safe: the key that writes first
+   owns the device, exactly as a log put would have decided it. A claimed-but-never-saved device is
+   not a restorable copy - logGet answers 404 while its payload is null. */
+async function logClaim(env, dev, key) {
+  const rec = { dev, key: await logHash(key), at: Date.now(), v: "", items: 0, enc: false, size: 0, payload: null };
+  await env.BACKUP.put(logObjectKey(dev), JSON.stringify(rec));
+  return rec;
+}
+async function logAuth(env, dev, key) {
+  if (!LOG_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "16 lowercase hex" } };
+  if (!LOG_KEY.test(key)) return { status: 400, body: { error: "bad key", rule: "64 lowercase hex" } };
+  const rec = await logRead(env, dev);
+  if (!rec) return { status: 404, body: { error: "no backup for that device" } };
+  if (!logSame(rec.key, await logHash(key))) return { status: 403, body: { error: "wrong key" } };
+  return { rec };
+}
+async function logPut(env, request) {
+  if (!logStore(env)) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const dev = request.headers.get("X-Log-Dev") || "";
+  const key = request.headers.get("X-Log-Key") || "";
+  if (!LOG_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "16 lowercase hex" } };
+  if (!LOG_KEY.test(key)) return { status: 400, body: { error: "bad key", rule: "64 lowercase hex" } };
+  const txt = await request.text();
+  if (txt.length > LOG_JSON_MAX) return { status: 413, body: { error: "body too large", max: LOG_JSON_MAX } };
+  let json;
+  try { json = JSON.parse(txt); } catch (e) { return { status: 400, body: { error: "bad json" } }; }
+  if (!json || typeof json !== "object") return { status: 400, body: { error: "bad json" } };
+  const hash = await logHash(key);
+  /* a device id is claimed by the first key that writes it: a second key cannot take a log over */
+  const prev = await logRead(env, dev);
+  if (prev && !logSame(prev.key, hash)) return { status: 403, body: { error: "device belongs to another key" } };
   const at = Date.now();
-  const rec = { at, v: String(json.v || "").slice(0, 20), iv, ct };
-  await kv.put(key, JSON.stringify(rec));
-  const slots = await backupIndexRead(kv, account);
-  const known = slots.find((d) => d.dev === dev);
-  if (!known || at - (Number(known.at) || 0) > BACKUP_INDEX_REFRESH) {
-    await backupIndexWrite(kv, account, slots.filter((d) => d.dev !== dev).concat([{ dev, at }]));
+  const rec = {
+    dev,
+    key: hash,
+    at,
+    v: String(json.v || "").slice(0, 20),
+    items: Number.isInteger(json.items) && json.items >= 0 ? json.items : 0,
+    enc: json.enc === true
+  };
+  if (rec.enc) {
+    const p = json.payload || {};
+    const iv = String(p.iv || ""), ct = String(p.ct || "");
+    if (!/^[A-Za-z0-9+/]{16,24}={0,2}$/.test(iv)) return { status: 400, body: { error: "bad iv" } };
+    if (!ct || !/^[A-Za-z0-9+/]+={0,2}$/.test(ct)) return { status: 400, body: { error: "bad payload" } };
+    if (ct.length > LOG_CT_MAX) return { status: 413, body: { error: "payload too large", max: LOG_CT_MAX } };
+    rec.size = ct.length;
+    rec.payload = { iv, ct };
+  } else {
+    if (typeof json.payload !== "string") return { status: 400, body: { error: "payload must be a string" } };
+    if (json.payload.length > LOG_PLAIN_MAX) return { status: 413, body: { error: "payload too large", max: LOG_PLAIN_MAX } };
+    rec.size = json.payload.length;
+    rec.payload = json.payload;
   }
-  /* `backup:true` is not decoration: a Worker deployed before these routes existed answers any
-     unknown path with the 200 index, and without a marker the page would believe a save it never
-     made. The client refuses an answer that does not carry it. */
-  return { status: 200, body: { ok: true, backup: true, at, v: rec.v, dev } };
+  /* one object, written over its own name: no second copy, no history, no duplicate */
+  await env.BACKUP.put(logObjectKey(dev), JSON.stringify(rec));
+  return { status: 200, body: { ok: true, backup: true, at, items: rec.items, dev } };
 }
-
-async function backupGet(env, json) {
-  const kv = backupStore(env);
-  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
-  const account = String(json.account || ""), dev = String(json.dev || "");
-  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
-  if (!BACKUP_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "6-32 lowercase hex" } };
-  const rec = await kv.get(backupKey(account, dev), "json");
-  if (!rec || !rec.ct) return { status: 404, body: { error: "no backup" } };
-  return { status: 200, body: { ok: true, backup: true, dev, at: rec.at, v: rec.v, blob: { iv: rec.iv, ct: rec.ct } } };
+async function logGet(env, json) {
+  if (!logStore(env)) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const dev = String(json.dev || ""), key = String(json.key || "");
+  const auth = await logAuth(env, dev, key);
+  if (auth.status) return auth;
+  const rec = auth.rec;
+  if (rec.payload == null) return { status: 404, body: { error: "no backup yet" } };
+  return { status: 200, body: { ok: true, backup: true, dev, at: rec.at, v: rec.v, items: rec.items || 0, enc: !!rec.enc, size: rec.size || 0, payload: rec.payload } };
 }
-
-/* Only ids and times - never a label a person typed, and never anything from inside a slot. A
-   phone that lost its data can still see which slots exist and when each was last saved. */
-async function backupList(env, json) {
-  const kv = backupStore(env);
-  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
-  const account = String(json.account || "");
-  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
-  const devices = await backupIndexRead(kv, account);
-  return { status: 200, body: { ok: true, backup: true, devices } };
+async function logDel(env, json) {
+  if (!logStore(env)) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const dev = String(json.dev || ""), key = String(json.key || "");
+  const auth = await logAuth(env, dev, key);
+  if (auth.status) return auth;
+  await env.BACKUP.delete(logObjectKey(dev));
+  let chunks = 0, cursor;
+  do {
+    const page = await env.BACKUP.list({ prefix: logFilePrefix(dev, ""), cursor, limit: 1000 });
+    for (const k of page.keys) { await env.BACKUP.delete(k.name); chunks++; }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return { status: 200, body: { ok: true, backup: true, deleted: 1, chunks } };
 }
-
-async function backupDel(env, json) {
-  const kv = backupStore(env);
-  if (!kv) return { status: 503, body: { error: "this Worker has no backup store bound" } };
-  const account = String(json.account || ""), dev = String(json.dev || "");
-  if (!BACKUP_ACCOUNT.test(account)) return { status: 400, body: { error: "bad account", rule: "32-64 lowercase hex" } };
-  if (!BACKUP_DEV.test(dev)) return { status: 400, body: { error: "bad device", rule: "6-32 lowercase hex" } };
-  await kv.delete(backupKey(account, dev));
-  const left = (await backupIndexRead(kv, account)).filter((d) => d.dev !== dev);
-  await backupIndexWrite(kv, account, left);
-  return { status: 200, body: { ok: true, backup: true, deleted: 1, left: left.length } };
+/* Owner access is the only listing there is, and it needs the Worker secret. Without the secret the
+   route answers 503 instead of guessing: a deployment that has not finished setup exposes nothing. */
+async function logList(env, request) {
+  if (!logStore(env)) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const want = env.BACKUP_OWNER_KEY || "";
+  if (!want) return { status: 503, body: { error: "owner key is not configured on this Worker" } };
+  if (!logSame(request.headers.get("X-Log-Owner") || "", want)) return { status: 403, body: { error: "owner key did not match" } };
+  const page = await env.BACKUP.list({ prefix: LOG_DEVICE_PREFIX, limit: LOG_DEVICES_MAX });
+  const devices = [];
+  for (const k of page.keys) {
+    const txt = await env.BACKUP.get(k.name);
+    if (!txt) continue;
+    let rec = null;
+    try { rec = JSON.parse(txt); } catch (e) { continue; }
+    if (!rec || rec.payload == null || !LOG_DEV.test(rec.dev || "")) continue;
+    devices.push({ dev: rec.dev, at: rec.at || 0, v: rec.v || "", items: rec.items || 0, enc: !!rec.enc, size: rec.size || 0 });
+  }
+  devices.sort((a, b) => (b.at || 0) - (a.at || 0));
+  return { status: 200, body: { ok: true, backup: true, devices, truncated: !page.list_complete } };
+}
+async function logFilePut(env, request) {
+  if (!logStore(env)) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const dev = request.headers.get("X-Log-Dev") || "";
+  const key = request.headers.get("X-Log-Key") || "";
+  const id = request.headers.get("X-Log-File") || "";
+  const raw = request.headers.get("X-Log-Chunk") || "";
+  if (!LOG_DEV.test(dev)) return { status: 400, body: { error: "bad device" } };
+  if (!LOG_KEY.test(key)) return { status: 400, body: { error: "bad key" } };
+  if (!LOG_FILE.test(id)) return { status: 400, body: { error: "bad file" } };
+  const n = /^\d{1,3}$/.test(raw) ? Number(raw) : -1;
+  if (n < 0 || n >= LOG_CHUNKS_MAX) return { status: 400, body: { error: "bad chunk", max: LOG_CHUNKS_MAX } };
+  let auth = await logAuth(env, dev, key);
+  if (auth.status === 404) auth = { rec: await logClaim(env, dev, key) };
+  else if (auth.status) return auth;
+  const bytes = await request.arrayBuffer();
+  if (!bytes.byteLength) return { status: 400, body: { error: "empty chunk" } };
+  if (bytes.byteLength > LOG_CHUNK_MAX) return { status: 413, body: { error: "chunk too large", max: LOG_CHUNK_MAX } };
+  await env.BACKUP.put(logFileKey(dev, id, n), bytes);
+  return { status: 200, body: { ok: true, backup: true, id, chunk: n, size: bytes.byteLength } };
+}
+async function logFileGet(env, json) {
+  if (!logStore(env)) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const dev = String(json.dev || ""), key = String(json.key || ""), id = String(json.id || "");
+  const n = json.chunk;
+  if (!LOG_FILE.test(id)) return { status: 400, body: { error: "bad file" } };
+  if (!Number.isInteger(n) || n < 0 || n >= LOG_CHUNKS_MAX) return { status: 400, body: { error: "bad chunk" } };
+  const auth = await logAuth(env, dev, key);
+  if (auth.status) return auth;
+  const buf = await env.BACKUP.get(logFileKey(dev, id, n), "arrayBuffer");
+  if (!buf) return { status: 404, body: { error: "no chunk" } };
+  return { status: 200, raw: buf };
+}
+async function logFileDel(env, json) {
+  if (!logStore(env)) return { status: 503, body: { error: "this Worker has no backup store bound" } };
+  const dev = String(json.dev || ""), key = String(json.key || ""), id = String(json.id || "");
+  if (!LOG_FILE.test(id)) return { status: 400, body: { error: "bad file" } };
+  const auth = await logAuth(env, dev, key);
+  if (auth.status) return auth;
+  let deleted = 0, cursor;
+  do {
+    const page = await env.BACKUP.list({ prefix: logFilePrefix(dev, id), cursor, limit: 1000 });
+    for (const k of page.keys) { await env.BACKUP.delete(k.name); deleted++; }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return { status: 200, body: { ok: true, backup: true, deleted } };
 }
 
 /* what a currency or coin ticker may look like, checked wherever one becomes part of an upstream
    request or a cache key */
 const TICKER = /^[A-Za-z0-9]{2,12}$/;
 const MAX_BODY = 65536;
-async function readJson(request) {
+async function readJson(request, max) {
   try {
     const txt = await request.text();
-    if (txt.length > MAX_BODY) return { error: "body too large" };
+    if (txt.length > (max || MAX_BODY)) return { error: "body too large" };
     const json = JSON.parse(txt);
     return json && typeof json === "object" ? { json } : { error: "bad json" };
   } catch (e) { return { error: "bad json" }; }
@@ -1604,12 +1699,18 @@ export default {
       return J({
         ok: true,
         v: VERSION,
+        /* The tag the deploy stamped this source with (`wrangler deploy --tag`), read back from
+           the version metadata binding. VERSION alone cannot tell two builds apart - 1.14.0
+           was deployed several times with different code - so the post-deploy smoke test
+           compares this against the sha256 of worker.js and calls an older build older. */
+        build: (env.CF_VERSION_METADATA && typeof env.CF_VERSION_METADATA.tag === "string")
+          ? env.CF_VERSION_METADATA.tag : "",
         hasMetalsKey: kind !== "none",
         keyKind: kind,
         keyResolved: resolved,
         defaultProvider: (env.METALS_PROVIDER || "").trim() || (kind === "none" ? PROVIDER_KEYLESS : PROVIDER_DEFAULT),
         providers: PROVIDER_IDS.map((id) => ({ id, label: P[id].label, needsKey: P[id].needsKey })),
-        backup: !!backupStore(env),
+        backup: !!logStore(env),
         byok: "send X-Provider and X-Api-Key headers to /api/metals"
       }, H);
     }
@@ -1787,29 +1888,46 @@ export default {
       return J({ error: "unknown push route" }, H, 404);
     }
 
-    /* ── encrypted cloud backup ─────────────────────────────────────────────────
+    /* ── cloud backup ───────────────────────────────────────────────────────────
      * The same rule as reminders: a write from a foreign page is refused outright, not merely
      * hidden behind CORS, because the browser would still let the write land. */
-    if (path.startsWith("/api/backup")) {
+    if (path.startsWith("/api/log")) {
       const origin = request.headers.get("Origin") || "";
       if (allowed !== "*" && origin !== allowed) {
         return J({ error: "origin not allowed" }, H, 403);
       }
       if (request.method !== "POST") return J({ error: "method not allowed", method: "POST" }, H, 405);
+      /* the binary route is read before any JSON parsing: its body is bytes, not text */
+      if (path === "/api/log/file/put") {
+        const put = await logFilePut(env, request);
+        return J(put.body, H, put.status);
+      }
+      if (path === "/api/log/put") {
+        const put = await logPut(env, request);
+        return J(put.body, H, put.status);
+      }
+      /* the device list is the one route that authenticates a header, so it keeps the request */
+      if (path === "/api/log/list") {
+        const out = await logList(env, request);
+        return J(out.body, H, out.status);
+      }
       const { json, error } = await readJson(request);
-      if (error) return J({ error }, H, 400);
-      const out = path === "/api/backup/put" ? await backupPut(env, json)
-        : path === "/api/backup/get" ? await backupGet(env, json)
-        : path === "/api/backup/list" ? await backupList(env, json)
-        : path === "/api/backup/del" ? await backupDel(env, json)
+      if (error) return J({ error }, H, error === "body too large" ? 413 : 400);
+      const out = path === "/api/log/get" ? await logGet(env, json)
+        : path === "/api/log/del" ? await logDel(env, json)
+        : path === "/api/log/file/get" ? await logFileGet(env, json)
+        : path === "/api/log/file/del" ? await logFileDel(env, json)
         : { status: 404, body: { error: "unknown backup route" } };
+      if (out.raw) {
+        return new Response(out.raw, { status: out.status, headers: Object.assign({ "Content-Type": "application/octet-stream", "Cache-Control": "no-store" }, H) });
+      }
       return J(out.body, H, out.status);
     }
 
     return J({
       ok: true,
       v: VERSION,
-      routes: ["/api/health", "/api/metals", "/api/metals/history", "/api/history", "/api/rates", "/api/news", "/api/repos", "/api/generators", "/api/push/key", "/api/push/register", "/api/push/test", "/api/push/off", "/api/backup/put", "/api/backup/get", "/api/backup/list", "/api/backup/del"],
+      routes: ["/api/health", "/api/metals", "/api/metals/history", "/api/history", "/api/rates", "/api/news", "/api/repos", "/api/generators", "/api/push/key", "/api/push/register", "/api/push/test", "/api/push/off", "/api/log/put", "/api/log/get", "/api/log/list", "/api/log/del"],
       providers: PROVIDER_IDS
     }, H);
   },

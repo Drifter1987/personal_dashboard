@@ -31,6 +31,19 @@ const WVER = (readW("./worker.js", "utf8").match(/const VERSION = "([0-9.]+)"/) 
 check("health: 200 + the version the shipped Worker source declares",
   hres.status === 200 && !!WVER && h.v === WVER, "status " + hres.status + " v=" + h.v + " source=" + WVER);
 check("health: metals providers still registered", (h.providers || []).length === 11, (h.providers || []).length + " providers");
+/* VERSION cannot identify a build - 1.14.0 was deployed more than once with different code -
+   so the post-deploy smoke test compares a build tag instead. It has to come from the version
+   metadata binding, and it has to be absent rather than invented when there is no binding: a
+   guessed tag would let an old Worker pass as current. */
+const taggedHealth = await body(await worker.fetch(new Request("https://worker.test/api/health"),
+  { CF_VERSION_METADATA: { tag: "abc123def4567890" } }));
+check("health: reports the build tag the deployed version carries (what _smoke.mjs compares)",
+  taggedHealth.build === "abc123def4567890", "build = " + JSON.stringify(taggedHealth.build));
+check("health: no build tag without the version metadata binding (an untagged deploy is not called current)",
+  h.build === "", "build = " + JSON.stringify(h.build));
+const smokeDocs = (readW("./DEPLOY.md", "utf8").match(/wrangler deploy[^\n]*--tag/g) || []).length;
+check("smoke: DEPLOY.md tells you to deploy the Worker with the tag the smoke test checks",
+  smokeDocs > 0 && /--worker-tag/.test(readW("./_smoke.mjs", "utf8")), smokeDocs + " deployment command(s) carry --tag");
 
 /* ── news, first (uncached) call ──────────────────────────────────────── */
 const t0 = Date.now();
@@ -1113,9 +1126,44 @@ check("rates: the endpoint is routed and defaults to the currencies the ECB neve
   "route + default list + version " + WVER);
 check("currencies card: LBP is a base, a row, and read through the Worker when the ECB cannot serve it",
   /const FX_EXTRA=\["LBP"\]/.test(pageSrc) && /const ECB_BASES=\["USD","EUR","GBP","JPY","CHF","AUD","CAD","CNY"\]/.test(pageSrc)
-  && /FX_BASES\(\)\.forEach/.test(pageSrc) && /const rows=FX_EXTRA\.concat\(TOP8\)/.test(pageSrc)
+  && /FX_BASES\(\)\.forEach/.test(pageSrc) && /const rows=FX_ROW_ORDER\.filter\(c=>c!==base\)\.slice\(0,8\)/.test(pageSrc)
   && /\/api\/rates\?base="\+encodeURIComponent\(base\)\+"&to="/.test(pageSrc)
   && /ECB_BASES\.indexOf\(base\)>=0/.test(pageSrc));
+check("currencies card: eight rows in two even columns, and USD is one of them whenever it is not the base",
+  /const FX_ROW_ORDER=\["USD","EUR","GBP","JPY","CHF","AUD","CAD","CNY","LBP","HKD"\]/.test(pageSrc)
+  && /const rows=FX_ROW_ORDER\.filter\(c=>c!==base\)\.slice\(0,8\)/.test(pageSrc)
+  && /const half=Math\.ceil\(rows\.length\/2\)/.test(pageSrc),
+  "row order starts at USD · 8 rows · half split");
+check("metals card: six rows, three per column, and aluminium is named as the IMF month it comes from",
+  /const METAL_LIST=\[\["XAU","Gold"\],\["XAG","Silver"\],\["XPT","Platinum"\],\["XPD","Palladium"\],\["HG","Copper"\],\["ALU","Aluminium"\]\]/.test(pageSrc)
+  && /const half=Math\.ceil\(METAL_LIST\.length\/2\)/.test(pageSrc)
+  && /\/api\/history\?kind=metal&symbol=ALU/.test(pageSrc)
+  && /metalName\("ALU"\)\+" · "\+t\("srcIMF"\)/.test(pageSrc));
+check("chart: the marker is placed in the plot's pixels at a pixel offset, and the slider shares its axis",
+  /xh\.style\.top=\(PT\+1\)\+"px"/.test(pageSrc) && /dot\.style\.top=\(fy-PT-7\)\+"px"/.test(pageSrc)
+  && /sl\.style\.marginLeft=\(PL-5\)\+"px"/.test(pageSrc) && /sl\.className="chartbar"/.test(pageSrc)
+  && /\.chartbar::-webkit-slider-thumb/.test(pageSrc) && /\.xhair \.xdot\{position:absolute;left:-7px;width:14px/.test(pageSrc),
+  "marker centred on the plotted pixel · thumb travels the plot box");
+check("automotive news card: five headlines from the same interleave",
+  /const NEWS_CARDS = \{ auto: 5, ai: 5, fin: 3 \}/.test(wsrc) && /auto: interleave\(feeds\.auto, NEWS_CARDS\.auto\)/.test(wsrc));
+check("weather card: a full week of tiles and twelve hours as a one-line list",
+  /forecast_days=7&timezone=auto/.test(pageSrc) && /slice\(0,7\)/.test(pageSrc)
+  && /\.wxdays\{display:grid;grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/.test(pageSrc)
+  && /\.wxstrip\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(pageSrc)
+  && /\.wxh\{display:grid;grid-template-columns:3\.1em 18px minmax\(0,1fr\)/.test(pageSrc)
+  && /ic\.className="wi"/.test(pageSrc));
+check("time-travel chart: the pickers filter the series, and Clear Range restores the whole span",
+  /chartClear:"Clear Range"/.test(pageSrc) && /chartClear:"مسح المدى"/.test(pageSrc)
+  && /allBtn\.onclick=\(\)=>\{const p=chartData\.pts\|\|\[\];const a=fromIn\.min\|\|/.test(pageSrc)
+  && /fromIn\.value=a;toIn\.value=b;applyRange\(\)\}/.test(pageSrc)
+  && !/chartAll:/.test(pageSrc));
+check("service worker: the cache carries the shell revision, so a deploy that changes the page installs a new worker",
+  (() => { const sw = readFileSync(new URL("./deploy/sw.js", import.meta.url), "utf8");
+    return /const SHELL_REV = "[0-9-]+"/.test(sw)
+      && /const CACHE = "home-dashboard-" \+ VERSION \+ "-" \+ SHELL_REV/.test(sw); })());
+check("AI tool tiles are ringed on the left and the top edge, not the left alone",
+  /\.gentile\{[^\n]*border-inline-start:3px solid color-mix/.test(pageSrc)
+  && /\.gentile\{[^\n]*border-block-start:3px solid color-mix/.test(pageSrc));
 check("currencies card: a rate under a hundredth (1 LBP in EUR) stays readable, not 0",
   /num\(rates\[k\],Math\.abs\(rates\[k\]\)>=0\.01\?4:8\)/.test(pageSrc));
 check("currencies card: rows read from outside the ECB's table are named under the grid",
@@ -1230,25 +1278,44 @@ check("attachments: a card takes files, the bytes live in IndexedDB, and the rec
   && /indexedDB\.open\("pd_files",1\)/.test(pageSrc)
   && /async function filePut\(rec\)/.test(pageSrc) && /async function fileDel\(ids\)/.test(pageSrc)
   && /if\(all\.length\)o\.att=all; else delete o\.att;/.test(pageSrc)
+  && /paintAtt\(\);if\(pending\.length\)setMore\(true\)/.test(pageSrc)
   && /attChip\(x\)/.test(pageSrc)
   && (pageSrc.match(/const gone=\(x\.att\|\|\[\]\)\.map\(a=>a\.id\)/g) || []).length >= 2,
   "file input · pd_files store · metadata on the card · chip in the list and on the board · delete removes the bytes");
 /* The viewer is the half of the attachment feature nobody could see before: a name that is a
    search result, and a file that opens as something you can actually read. Each control is
-   asserted where it would break quietly - the crop has to write a new picture rather than
-   overwrite the stored one, and the copy has to be an image of what is on screen. */
-check("file viewer: a file opens as a picture you can zoom, filter, crop and copy",
-  /async function attView\(x,a,blob\)\{/.test(pageSrc)
+   asserted where it would break quietly - a crop is written back over the card's own attachment
+   rather than kept beside it, the original is one Undo away, and the copy has to be an image of
+   what is on screen. */
+check("file viewer: a file opens as a picture you can turn, tone, crop, save over it or save a copy",
+  /async function attView\(x,a,blob,pending,onchange,addPending\)\{/.test(pageSrc)
   && /const FV_FILTERS=\[\["fvOrig"/.test(pageSrc)
   && /function fvSetZoom\(z,pdfFit\)\{/.test(pageSrc) && /function fvFit\(\)\{/.test(pageSrc)
   && /async function fvCropApply\(\)\{/.test(pageSrc)
   && /ctx\.drawImage\(s\.img,sx,sy,sw,sh,0,0,sw,sh\)/.test(pageSrc)
   && /new ClipboardItem\(\{"image\/png":blob\}\)/.test(pageSrc)
-  && /async function fvSaveCopy\(\)\{/.test(pageSrc) && /s\.task\.att=\(s\.task\.att\|\|\[\]\)\.concat/.test(pageSrc)
+  /* the extended editor: rotate, flip, four adjustments, one composed filter string */
+  && /async function fvTurn\(deg\)\{/.test(pageSrc) && /async function fvFlip\(\)\{/.test(pageSrc)
+  && /function fvCss\(s\)\{/.test(pageSrc) && /fvBright/.test(pageSrc) && /fvContrast/.test(pageSrc)
+  && /fvSat/.test(pageSrc) && /fvTemp/.test(pageSrc) && /fvAuto/.test(pageSrc)
+  /* Save & replace writes over the record already on the card; Save a copy is the only path that
+     adds a second one, and it is explicit */
+  && /async function fvWrite\(sx,sy,sw,sh,kind\)\{/.test(pageSrc)
+  && /await filePut\(\{id:s\.att\.id,name,type,size,blob\}\)/.test(pageSrc)
+  && /async function fvSaveReplace\(\)\{/.test(pageSrc) && /async function fvSaveCopy\(\)\{/.test(pageSrc)
+  && /s\.task\.att=\(s\.task\.att\|\|\[\]\)\.concat\(\[meta\]\)/.test(pageSrc)
+  /* an armed crop is the edit, not a preview: every path that writes or copies pixels asks the
+     same question, so the footer's Save & replace cannot put the uncropped photo in the file
+     over the box that was just dragged - and the box is clamped to the picture, so a drag that
+     began in the grey beside it cannot arrive shifted */
+  && /function fvRegion\(\)\{/.test(pageSrc)
+  && (pageSrc.match(/const g=fvRegion\(\);/g) || []).length === 4
+  && /Math\.max\(r\.left,i\.left\)/.test(pageSrc)
+  && /async function fvUndo\(\)\{/.test(pageSrc) && /s\.pend\.file=new File/.test(pageSrc)
   && /attView\(x,a\);/.test(pageSrc) && /attView\(src,a\)/.test(pageSrc)
   && /attView\(x,a\),420\)/.test(pageSrc)
   && /tasks\.forEach\(x=>\(x\.att\|\|\[\]\)\.forEach\(a=>out\.push\(\{ic:"\u{1F4CE}",label:a\.name/u.test(pageSrc),
-  "zoom + fit · 5 colour filters · a drag cropped at the file's own resolution · copy as PNG · a crop kept as a copy · opened from the list, the card form and the search box");
+  "rotate + flip · 5 looks + 4 sliders + auto · a drag written back over the attachment at full resolution · save & replace vs save a copy · undo · copy as PNG");
 /* The viewer paints from blob: URLs, and the page's own CSP decides whether that is allowed at
    all. A CSP without blob: in img-src leaves every file rendering as nothing, silently - and the
    header is written by hand, so it is exactly the kind of line that drifts away from the code. */
@@ -1898,107 +1965,287 @@ check("the browser contract sweeps a reload in every section at three widths",
   && (uiSrc.match(/a_refresh_that_starts_a_new_session_keeps_its_place/g) || []).length >= 2,
   "6 sections × 390/1280/1600 · the offset and the card under it · one run with no frames · one in a new session");
 
-/* ── the encrypted cloud backup: one slot per device, and a Worker that cannot read any of them ──
+/* ── cloud backup: one log per device, private bucket, owner key ──
    What this pins is the whole contract, because the failures it exists to prevent are silent: a
-   copy that stores plaintext, or one phone's restore landing in another phone's slot. The shapes
-   are checked here; the browser case in _ui.test.py seals, wipes and restores for real. */
-const bkKV = new Map();
+   second copy of a device's log, a log another device could read or overwrite, a plaintext copy
+   that was supposed to be sealed, and a listing anyone could ask for. The shapes are checked
+   here; the browser case in _ui.test.py saves, wipes and restores for real. */
+const bkObj = new Map();
+/* KV's API, not R2's: get returns the value itself, list returns { keys, list_complete, cursor }.
+   The fake keeps those two shapes honest so a Worker that still expects R2 objects fails here. */
 const fakeKV = {
-  async get(k, type) { const v = bkKV.get(k); return v === undefined ? null : (type === "json" ? JSON.parse(v) : v); },
-  async put(k, v) { bkKV.set(k, v); },
-  async delete(k) { bkKV.delete(k); }
+  async get(k, type) {
+    if (!bkObj.has(k)) return null;
+    const v = bkObj.get(k);
+    if (type === "arrayBuffer") {
+      if (typeof v === "string") return new TextEncoder().encode(v).buffer;
+      if (v instanceof ArrayBuffer) return v;
+      return v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength);
+    }
+    if (type === "json") return JSON.parse(typeof v === "string" ? v : new TextDecoder().decode(v));
+    return typeof v === "string" ? v : new TextDecoder().decode(v);
+  },
+  async put(k, v) { bkObj.set(k, v); },
+  async delete(k) { bkObj.delete(k); },
+  async list({ prefix, cursor, limit }) {
+    const all = [...bkObj.keys()].filter((k) => k.startsWith(prefix || "")).sort();
+    const start = cursor ? Number(cursor) : 0;
+    const keys = all.slice(start, start + (limit || 1000)).map((name) => ({ name }));
+    return { keys, list_complete: start + keys.length >= all.length, cursor: String(start + keys.length) };
+  }
 };
+const logKeys = (prefix) => [...bkObj.keys()].filter((k) => k.startsWith(prefix));
 const bpost = (path, obj, env, headers) => worker.fetch(new Request("https://worker.test" + path, {
   method: "POST",
   headers: Object.assign({ "Content-Type": "application/json" }, headers || {}),
   body: JSON.stringify(obj)
-}), env || { PUSH: fakeKV });
+}), env || { BACKUP: fakeKV });
 const BJ = async (p, o, env, h) => { const r = await bpost(p, o, env, h); return { status: r.status, j: await r.json() }; };
-const ACCT = "a".repeat(32);
-const DEV1 = "11111111", DEV2 = "22222222";
-const IV = "AAAAAAAAAAAAAAAA";
-const CT1 = Buffer.from("slot-for-phone-one").toString("base64");
-const CT2 = Buffer.from("slot-for-phone-two").toString("base64");
+const DEV_A = "0123456789abcdef", DEV_B = "fedcba9876543210";
+const KEY_A = "a".repeat(64), KEY_B = "b".repeat(64);
+const hA = { "X-Log-Dev": DEV_A, "X-Log-Key": KEY_A };
+const hB = { "X-Log-Dev": DEV_B, "X-Log-Key": KEY_B };
+const putLog = (headers, body, env, extra) => BJ("/api/log/put", body, env, Object.assign({}, headers, extra || {}));
 
-const hb = await (await worker.fetch(new Request("https://worker.test/api/health"), { PUSH: fakeKV })).json();
+const hb = await (await worker.fetch(new Request("https://worker.test/api/health"), { BACKUP: fakeKV })).json();
 const hb0 = await (await worker.fetch(new Request("https://worker.test/api/health"), {})).json();
-check("backup: the Worker says whether it has a store, and does not invent one",
+check("backup: the Worker says whether it has a bucket bound, and does not invent one",
   hb.backup === true && hb0.backup === false,
-  "with PUSH bound: " + hb.backup + " · unbound: " + hb0.backup);
+  "with BACKUP bound: " + hb.backup + " · unbound: " + hb0.backup);
 
-const put1 = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 1, v: "2.31.0", blob: { iv: IV, ct: CT1 }, baseAt: 0 });
-const put2 = await BJ("/api/backup/put", { account: ACCT, dev: DEV2, at: 1, v: "2.31.0", blob: { iv: IV, ct: CT2 }, baseAt: 0 });
-const get1 = await BJ("/api/backup/get", { account: ACCT, dev: DEV1 });
-const get2 = await BJ("/api/backup/get", { account: ACCT, dev: DEV2 });
-const stored1 = JSON.parse(bkKV.get("bk:" + ACCT + ":" + DEV1));
-const listed = await BJ("/api/backup/list", { account: ACCT });
-check("backup: ten devices hold ten slots - one put never touches another phone's copy",
-  put1.status === 200 && put1.j.backup === true && put2.status === 200
-  && get1.j.blob.ct === CT1 && get2.j.blob.ct === CT2 && get1.j.dev === DEV1
-  && Object.keys(stored1).sort().join(",") === "at,ct,iv,v"
-  && listed.j.devices.length === 2 && listed.j.devices.every((d) => /^[0-9a-f]{6,32}$/.test(d.dev))
-  && [...bkKV.keys()].filter((k) => k.indexOf("bk:" + ACCT) === 0).length === 3,
-  "2 slots + index · phone1 kept its own ciphertext · stored fields " + Object.keys(stored1).sort().join(","));
+const p1 = await putLog(hA, { v: "2.31.0", items: 12, enc: false, payload: "phone-one-records" });
+const p2 = await putLog(hB, { v: "2.31.0", items: 7, enc: false, payload: "phone-two-records" });
+const g1 = await BJ("/api/log/get", { dev: DEV_A, key: KEY_A });
+const g2 = await BJ("/api/log/get", { dev: DEV_B, key: KEY_B });
+const storedOne = JSON.parse(bkObj.get("devices/" + DEV_A + ".json"));
+check("backup: each device holds exactly one object, and one device can never read another's",
+  p1.status === 200 && p1.j.backup === true && p2.status === 200
+  && g1.j.payload === "phone-one-records" && g2.j.payload === "phone-two-records"
+  && g1.j.dev === DEV_A && logKeys("devices/").length === 2
+  && Object.keys(storedOne).sort().join(",") === "at,dev,enc,items,key,payload,size,v",
+  "2 devices → " + logKeys("devices/").length + " objects · fields " + Object.keys(storedOne).sort().join(","));
 
-const again = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 2, v: "2.31.0", blob: { iv: IV, ct: CT1 }, baseAt: get1.j.at });
-const stale = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 3, v: "2.31.0", blob: { iv: IV, ct: CT1 }, baseAt: 7 });
-const forced = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, at: 4, v: "2.31.1", blob: { iv: IV, ct: CT1 }, baseAt: 7, force: true });
-check("backup: a stale write from a second tab is refused with the server's copy named, and force wins",
-  again.status === 200 && stale.status === 409 && stale.j.error === "stale" && stale.j.at === again.j.at
-  && forced.status === 200 && forced.j.v === "2.31.1",
-  "matching baseAt 200 · stale 409 at=" + stale.j.at + " · force 200 v=" + forced.j.v);
+/* the whole point of "one log": saving again overwrites that object rather than adding a second */
+const p3 = await putLog(hA, { v: "2.31.1", items: 15, enc: false, payload: "phone-one-newer" });
+const g3 = await BJ("/api/log/get", { dev: DEV_A, key: KEY_A });
+check("backup: saving again overwrites the same object — never a duplicate, never a second copy",
+  p3.status === 200 && logKeys("devices/").length === 2 && g3.j.payload === "phone-one-newer"
+  && g3.j.items === 15 && bkObj.has("devices/" + DEV_A + ".json"),
+  "after 2 saves: " + logKeys("devices/" + DEV_A).length + " object for this device · items " + g3.j.items);
+
+const wrongKey = await BJ("/api/log/get", { dev: DEV_A, key: KEY_B });
+const otherKeyWrite = await putLog(Object.assign({}, hA, { "X-Log-Key": KEY_B }), { v: "2.31.1", items: 1, enc: false, payload: "hijack" });
+const missing = await BJ("/api/log/get", { dev: "00000000000000ff", key: KEY_A });
+check("backup: the device key is the credential — a wrong key reads nothing and cannot take the log over",
+  wrongKey.status === 403 && wrongKey.j.error === "wrong key"
+  && otherKeyWrite.status === 403 && missing.status === 404,
+  "wrong key " + wrongKey.status + " · wrong-key write " + otherKeyWrite.status + " · unknown device " + missing.status);
 
 const bad = await Promise.all([
-  BJ("/api/backup/put", { account: "nope", dev: DEV1, blob: { iv: IV, ct: CT1 } }),
-  BJ("/api/backup/put", { account: ACCT, dev: "zz", blob: { iv: IV, ct: CT1 } }),
-  BJ("/api/backup/put", { account: ACCT, dev: DEV1, blob: { iv: "short", ct: CT1 } }),
-  BJ("/api/backup/put", { account: ACCT, dev: DEV1, blob: { iv: IV, ct: "x".repeat(61000) } }),
-  BJ("/api/backup/get", { account: ACCT, dev: DEV1 })
+  putLog({ "X-Log-Dev": "zz", "X-Log-Key": KEY_A }, { v: "2.31.0", enc: false, payload: "x" }),
+  putLog({ "X-Log-Dev": DEV_A, "X-Log-Key": "short" }, { v: "2.31.0", enc: false, payload: "x" }),
+  putLog(hA, { v: "2.31.0", enc: false, payload: "x".repeat(4 * 1024 * 1024 + 1) }),
+  putLog(hA, { v: "2.31.0", enc: true, payload: { iv: "short", ct: "AAAA" } }),
+  putLog(hA, { v: "2.31.0", enc: false, payload: { not: "a string" } })
 ]);
-const missing = await BJ("/api/backup/get", { account: ACCT, dev: "abcdef" });
-check("backup: a bad account, device or iv, or an oversized body, is refused; unknown slot is 404",
-  bad[0].status === 400 && bad[1].status === 400 && bad[2].status === 400 && bad[3].status === 413
-  && bad[4].status === 200 && missing.status === 404,
-  bad.map((r) => r.status).join("/") + " · missing " + missing.status);
+const foreign = await putLog(hA, { v: "2.31.0", enc: false, payload: "x" },
+  { BACKUP: fakeKV, ALLOWED_ORIGIN: "https://home-dashboard-5ma.pages.dev" }, { Origin: "https://evil.example" });
+const asGet = await worker.fetch(new Request("https://worker.test/api/log/get?dev=" + DEV_A), { BACKUP: fakeKV });
+check("backup: bad ids, an oversized or shaped payload and a foreign origin are refused; reads are POSTs",
+  bad[0].status === 400 && bad[1].status === 400 && bad[2].status === 413 && bad[3].status === 400 && bad[4].status === 400
+  && foreign.status === 403 && asGet.status === 405,
+  bad.map((r) => r.status).join("/") + " · foreign " + foreign.status + " · GET " + asGet.status);
 
-const foreign = await BJ("/api/backup/put", { account: ACCT, dev: DEV1, blob: { iv: IV, ct: CT1 }, baseAt: 0, force: true },
-  { PUSH: fakeKV, ALLOWED_ORIGIN: "https://home-dashboard-5ma.pages.dev" }, { Origin: "https://evil.example" });
-const ownOrigin = await BJ("/api/backup/list", { account: ACCT },
-  { PUSH: fakeKV, ALLOWED_ORIGIN: "https://home-dashboard-5ma.pages.dev" }, { Origin: "https://home-dashboard-5ma.pages.dev" });
-const asGet = await worker.fetch(new Request("https://worker.test/api/backup/get?account=" + ACCT), { PUSH: fakeKV });
-const del = await BJ("/api/backup/del", { account: ACCT, dev: DEV1 });
-const afterDel = await BJ("/api/backup/get", { account: ACCT, dev: DEV1 });
-const stillThere = await BJ("/api/backup/get", { account: ACCT, dev: DEV2 });
-check("backup: a foreign origin is refused, reads are POSTs, and delete removes one slot only",
-  foreign.status === 403 && ownOrigin.status === 200 && ownOrigin.j.devices.length === 2 && asGet.status === 405
-  && del.status === 200 && del.j.left === 1 && afterDel.status === 404 && stillThere.status === 200
-  && !/\/api\/backup\/(get|list)\?/.test(pageSrc) && /syncCall\("\/api\/backup\/list"/.test(pageSrc),
-  "403 foreign · 405 on GET · one slot deleted, the other kept · no account in any query string");
+/* encryption is optional: off, the Worker stores readable JSON; on, it stores an envelope it cannot open */
+const sealedPayload = { iv: "AAAAAAAAAAAAAAAA", ct: Buffer.from("sealed-device-records").toString("base64") };
+const pEnc = await putLog(hA, { v: "2.31.1", items: 3, enc: true, payload: sealedPayload });
+const gEnc = await BJ("/api/log/get", { dev: DEV_A, key: KEY_A });
+const onDisk = JSON.parse(bkObj.get("devices/" + DEV_A + ".json"));
+check("backup: encryption is a per-device switch — off stores the records, on stores an envelope nothing can read",
+  pEnc.status === 200 && gEnc.j.enc === true && gEnc.j.payload.ct === sealedPayload.ct
+  && typeof onDisk.payload === "object" && onDisk.payload.iv === sealedPayload.iv
+  && JSON.stringify(onDisk).indexOf("sealed-device-records") === -1,
+  "off: plaintext string · on: iv+ct only · records absent from the stored object");
 
-check("backup: the page derives an account and a key from the phrase, and keeps the key off the disk",
-  /const SYNC_KEY="pd_sync", SYNC_ITER=310000/.test(pageSrc)
-  && /deriveBits\(\{name:"PBKDF2",salt:new TextEncoder\(\)\.encode\(SYNC_SALT\),iterations:SYNC_ITER,hash:"SHA-256"\},base,512\)/.test(pageSrc)
-  && /bits\.slice\(0,16\)\]\.map\(b=>b\.toString\(16\)/.test(pageSrc)
-  && /importKey\("raw",bits\.slice\(16,48\),"AES-GCM",false,\["encrypt","decrypt"\]\)/.test(pageSrc)
-  /* a device keeps its own slot, and a new device takes a fresh id */
-  && /function syncNewDev\(\)\{ const b=crypto\.getRandomValues\(new Uint8Array\(4\)\)/.test(pageSrc)
-  && /const dev=\(prev&&prev\.account===account&&prev\.dev\)\?prev\.dev:syncNewDev\(\);/.test(pageSrc)
-  /* the payload leaves pd_sync out, so a push cannot look like an edit and loop */
-  && /if\(k===SYNC_KEY\)return;/.test(pageSrc)
-  /* and nothing on disk is the passphrase or the key */
-  && !/localStorage[^\n]{0,80}(SYNC_PASS|syncPass|SYNC_AES)/.test(pageSrc)
-  && /let SYNC_AES=null/.test(pageSrc),
-  "PBKDF2 310k → account||key · per-device slot id · payload without pd_sync · key in memory only");
+/* the owner key is the only way to see every device, and an unconfigured Worker answers 503 */
+const noOwner = await BJ("/api/log/list", {});
+const badOwner = await BJ("/api/log/list", {}, { BACKUP: fakeKV, BACKUP_OWNER_KEY: "owner-secret" }, { "X-Log-Owner": "guess" });
+const goodOwner = await BJ("/api/log/list", {}, { BACKUP: fakeKV, BACKUP_OWNER_KEY: "owner-secret" }, { "X-Log-Owner": "owner-secret" });
+check("backup: listing every device needs the owner key; without it nothing is listed",
+  noOwner.status === 503 && badOwner.status === 403 && goodOwner.status === 200
+  && goodOwner.j.devices.length === 2
+  && goodOwner.j.devices.every((d) => /^[0-9a-f]{16}$/.test(d.dev) && typeof d.at === "number" && typeof d.items === "number")
+  && goodOwner.j.devices.some((d) => d.dev === DEV_A && d.enc === true),
+  "unset " + noOwner.status + " · wrong " + badOwner.status + " · owner " + goodOwner.j.devices.length + " devices");
 
-check("backup: the copy holds this device's records, not the attachments, and the card says so",
-  /if\(k!==SYNC_KEY&&typeof data\[k\]==="string"\)/.test(pageSrc)
-  && !/pd_files|fileAll\(\)/.test((pageSrc.match(/function syncPayload\(\)\{[\s\S]{0,400}/) || ["}"])[0])
-  && /syncHint:"Each device keeps its own encrypted copy/.test(pageSrc)
-  && /syncHint:"لكل جهاز نسخته المشفّرة الخاصة/.test(pageSrc)
-  /* a pull that lands in the page must not have its own pagehide flush undo it */
-  && /function flushState\(\)\{ if\(SYNC_HOLD\)return;/.test(pageSrc)
-  && /SYNC_HOLD=true;/.test(pageSrc),
-  "records only · attachments excluded · en+ar wording · flush held during a pull");
+/* attachments: one prefix per device, bytes stored as sent, a delete touching one file only */
+{
+  const CHUNK = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+  const OTHER = new Uint8Array([9, 8, 7, 6]);
+  const fput = (dev, key, id, n, body, origin, env) => worker.fetch(new Request("https://worker.test/api/log/file/put", {
+    method: "POST",
+    headers: Object.assign({ "Content-Type": "application/octet-stream", "X-Log-Dev": dev, "X-Log-Key": key, "X-Log-File": id, "X-Log-Chunk": String(n) }, origin ? { Origin: origin } : {}),
+    body
+  }), env || { BACKUP: fakeKV });
+  const fget = (dev, key, id, n) => bpost("/api/log/file/get", { dev, key, id, chunk: n });
+  const putA = await fput(DEV_A, KEY_A, "a1b2c3", 0, CHUNK);
+  const putB = await fput(DEV_A, KEY_A, "a1b2c4", 0, OTHER);
+  const got = await fget(DEV_A, KEY_A, "a1b2c3", 0);
+  const gotBytes = new Uint8Array(await got.arrayBuffer());
+  const wrong = await fget(DEV_A, KEY_B, "a1b2c3", 0);
+  const badName = await fput(DEV_A, KEY_A, "../x", 0, OTHER);
+  const badChunk = await fput(DEV_A, KEY_A, "a1b2c3", 999, OTHER);
+  const tooBig = await fput(DEV_A, KEY_A, "a1b2c3", 1, new Uint8Array(8 * 1024 * 1024 + 65));
+  const foreignFile = await fput(DEV_A, KEY_A, "a1b2c3", 2, OTHER, "https://evil.example", { BACKUP: fakeKV, ALLOWED_ORIGIN: "https://home-dashboard-5ma.pages.dev" });
+  check("backup: an attachment chunk round-trips byte for byte; a wrong key, bad name, oversize or foreign origin is refused",
+    putA.status === 200 && (await putA.clone().json()).backup === true
+    && gotBytes.length === CHUNK.length && gotBytes.every((b, i) => b === CHUNK[i])
+    && wrong.status === 403 && badName.status === 400 && badChunk.status === 400
+    && tooBig.status === 413 && foreignFile.status === 403,
+    "put " + putA.status + " · get " + got.status + " · wrong key " + wrong.status + " · bad name " + badName.status
+    + " · oversize " + tooBig.status + " · foreign " + foreignFile.status);
+
+  /* a device's very first save uploads files before it writes the log, so the first chunk has to
+     claim the device; without that every first backup fails 404 and stores nothing */
+  const DEV_C = "0011223344556677", KEY_C = "c".repeat(64);
+  const cold = await fput(DEV_C, KEY_C, "cold1", 0, CHUNK);
+  const coldLog = await BJ("/api/log/get", { dev: DEV_C, key: KEY_C });
+  const coldWrong = await fget(DEV_C, KEY_B, "cold1", 0);
+  check("backup: the first chunk claims a device with no log, and a claimed device is not a copy",
+    cold.status === 200 && coldLog.status === 404 && coldWrong.status === 403,
+    "first chunk " + cold.status + " · log before a save " + coldLog.status + " · other key " + coldWrong.status);
+  await BJ("/api/log/del", { dev: DEV_C, key: KEY_C });
+  const delFile = await BJ("/api/log/file/del", { dev: DEV_A, key: KEY_A, id: "a1b2c3" });
+  const gone = await fget(DEV_A, KEY_A, "a1b2c3", 0);
+  const sibling = await fget(DEV_A, KEY_A, "a1b2c4", 0);
+  const delDevice = await BJ("/api/log/del", { dev: DEV_A, key: KEY_A });
+  const afterDel = await BJ("/api/log/get", { dev: DEV_A, key: KEY_A });
+  const otherDevice = await BJ("/api/log/get", { dev: DEV_B, key: KEY_B });
+  check("backup: deleting one file takes its chunks, deleting a device takes its log and files and no other device's",
+    delFile.j.deleted === 1 && gone.status === 404 && sibling.status === 200
+    && delDevice.status === 200 && delDevice.j.chunks === 1
+    && afterDel.status === 404 && otherDevice.status === 200
+    && logKeys("devices/" + DEV_A).length === 0 && logKeys("files/" + DEV_A + "/").length === 0
+    && logKeys("devices/" + DEV_B).length === 1,
+    "file delete " + delFile.j.deleted + " · device delete chunks " + delDevice.j.chunks
+    + " · other device kept " + otherDevice.status);
+}
+
+check("backup: the page keeps one id and one key per device, and the key never reaches the disk",
+  /const LOG_KEY="pd_log", LOG_ITER=310000/.test(pageSrc)
+  && /function logNewConf\(\)\{/.test(pageSrc)
+  && /dev:hex\(8\),key:hex\(32\)/.test(pageSrc)
+  && /async function logDerive\(pass,dev\)/.test(pageSrc)
+  && /LOG_SALT\+dev/.test(pageSrc)
+  && /let LOG_AES=null/.test(pageSrc)
+  /* the key is in pd_log because it is the credential; the passphrase is never stored */
+  && !/localStorage[^\n]{0,80}(LOG_PASS|logPass)/.test(pageSrc),
+  "random 16-hex id + 64-hex key · PBKDF2 salt bound to the device · passphrase in memory only");
+
+const fileFirst=pageSrc.indexOf("for(const rec of recs)await filePutRaw(rec)");
+const dataAfter=pageSrc.indexOf("logDataKeys().forEach(k=>{ try{ if(typeof data[k]===\"string\")");
+check("backup: a restore stores attachments before records, and names any the copy cannot supply",
+  /function logAttRefs\(data\)/.test(pageSrc)
+  && /const refs=logAttRefs\(data\)/.test(pageSrc)
+  && /const missing=refs\.filter/.test(pageSrc)
+  && /if\(missing\.length&&!\(await confirmModal/.test(pageSrc)
+  && fileFirst>-1 && dataAfter>fileFirst,
+  "files first · records second · a missing attachment is named before the swap");
+
+check("backup: automatic saves stop at a daily write budget instead of exhausting KV",
+  /const LOG_WRITES_MAX=300/.test(pageSrc)
+  && /logWritesToday\(\)>=LOG_WRITES_MAX/.test(pageSrc)
+  && /logWriteSpent\(1\)/.test(pageSrc),
+  "300 writes/day this device · a tapped save still runs");
+
+check("backup: the store speaks KV - values, key listings and arrayBuffer reads, no R2 objects",
+  /\.get\(logFileKey\(dev, id, n\), "arrayBuffer"\)/.test(wsrc)
+  && /for \(const k of page\.keys\)/.test(wsrc)
+  && /page\.list_complete/.test(wsrc),
+  "KV get/put/list shapes · pagination by list_complete");
+
+check("backup: the page writes one log per device, restores it, and offers exactly the two buttons",
+  /function logSave\(manual\)/.test(pageSrc)
+  && /async function logSaveRun\(manual\)/.test(pageSrc)
+  && /await env\.BACKUP\.put/.test(wsrc)
+  && /logObjectKey\(dev\)/.test(wsrc)
+  && /async function logRestore\(\)/.test(pageSrc)
+  && /logNowDone/.test(pageSrc) && /logRestoreWarn/.test(pageSrc)
+  && /function renderLog\(el\)/.test(pageSrc)
+  && /"\/api\/log\/put"/.test(pageSrc) && /"\/api\/log\/file\/put"/.test(pageSrc)
+  && !/\/api\/backup\//.test(pageSrc)
+  /* a pull that lands in the page must not have its own flush undo it */
+  && /function flushState\(\)\{ if\(LOG_HOLD\)return;/.test(pageSrc),
+  "save + restore + two buttons · chunk route · one object per device · flush held during a pull");
+
+/* ── the deploy guide says what the runbook says ──────────────────────────────
+   docs/DEPLOY_AND_VERIFY.html is the same procedure written for a person: a step, its command, a
+   verify condition. Prose drifts quietly - a flag renamed in a script, a command that only ever
+   existed on the page, a success line quoted after the script stopped printing it - so the page is
+   read as data here. Every command it shows has to be a command DEPLOY.md shows (after folding the
+   pinned npx version and a trailing comment away), every script it runs has to exist and accept
+   the flags it passes, every phrase it tells the reader to look for has to be printed by the script
+   that prints it, every step has to carry a verify condition, and every link has to resolve. */
+const guideSrc = readW("./docs/DEPLOY_AND_VERIFY.html", "utf8");
+const deploySrc = readW("./DEPLOY.md", "utf8");
+const unent = (s) => s.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+  .replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+const crush = (s) => s.replace(/\s+/g, " ").trim();
+/* the pinned npx version is noise when the question is whether the guide and the runbook run the
+   same procedure, and so is the trailing comment that explains it */
+const sameCmd = (l) => crush(l)
+  .replace(/^npx\s+(?:--yes\s+)?wrangler@[\d.]+\s+/, "wrangler ")
+  .replace(/^npx\s+wrangler\s+/, "wrangler ")
+  .replace(/^wrangler\s+pages\s+deploy\s+deploy\/?/, "wrangler pages deploy deploy")
+  .replace(/\s+#.*$/, "").trim();
+const guideCmds = [...guideSrc.matchAll(/<pre class="cmd">([\s\S]*?)<\/pre>/g)]
+  .flatMap((m) => unent(m[1]).split("\n")).map((l) => l.trim())
+  .filter((l) => l && !l.startsWith("#"));
+const mdCmds = new Set([...deploySrc.matchAll(/```(?:bash)?\n([\s\S]*?)```/g)]
+  .flatMap((m) => m[1].split("\n")).map(sameCmd).filter(Boolean));
+const strayCmd = guideCmds.filter((c) => !mdCmds.has(sameCmd(c)));
+check("docs: every command in the deploy guide is a command DEPLOY.md shows",
+  guideCmds.length >= 6 && !strayCmd.length,
+  guideCmds.length + " commands · " + (strayCmd.length ? "not in DEPLOY.md: " + strayCmd.join(" | ") : "all present"));
+/* a command in the page is also a claim about a script: it has to be a script in this tree, and a
+   flag it does not parse is a step that cannot work however carefully it is described */
+const guideRuns = [...guideCmds.join("\n").matchAll(/node\s+([\w./-]+\.m?js)([^"\n;)]*)/g)]
+  .map((m) => ({ file: m[1], flags: [...m[2].matchAll(/(?:^|\s)(--[a-z][\w-]*)/g)].map((x) => x[1]) }));
+const badRuns = guideRuns.filter((r) => !existsSync(new URL("./" + r.file, import.meta.url))
+  || r.flags.some((f) => !readW("./" + r.file, "utf8").includes(f)));
+check("docs: the deploy guide only runs scripts that exist, with flags they accept",
+  guideRuns.length >= 3 && !badRuns.length,
+  guideRuns.length + " invocation(s) · " + (badRuns.length
+    ? "no such script or flag: " + badRuns.map((r) => r.file + " " + r.flags.join(" ")).join(" | ")
+    : [...new Set(guideRuns.map((r) => r.file))].join(", ")));
+/* a verify condition that quotes a line is a promise that the tool still says it: rename a success
+   message in a script and the step sends the reader hunting for a phrase nothing prints */
+const guideQuotes = [["RELEASE READY", "_deploy.mjs"], ["SMOKE PASSED", "_smoke.mjs"], ["bundle repaired", "_deploy.mjs"]];
+const unprinted = guideQuotes.filter(([p, f]) => !guideSrc.includes(p) || !readW("./" + f, "utf8").includes(p));
+check("docs: the guide's verify conditions quote lines the scripts still print",
+  !unprinted.length,
+  unprinted.length ? "gone: " + unprinted.map(([p, f]) => JSON.stringify(p) + " in " + f).join(", ")
+    : guideQuotes.map(([p]) => JSON.stringify(p)).join(" · "));
+const gSteps = (guideSrc.match(/<li class="step">/g) || []).length;
+const gVerify = (guideSrc.match(/<p class="verify">/g) || []).length;
+const gPhases = (guideSrc.match(/<p class="checkpoint">/g) || []).length;
+check("docs: every step in the deploy guide carries its verify condition, inside a named phase",
+  gSteps >= 8 && gVerify === gSteps && gPhases >= 2,
+  gSteps + " steps · " + gVerify + " verify conditions · " + gPhases + " phase divider(s)");
+/* the page is served beside its siblings, so a link is a path in this tree, and an in-page anchor
+   is an id on the page - a guide that links to a document that moved is worse than no link */
+const guideUrl = new URL("./docs/DEPLOY_AND_VERIFY.html", import.meta.url);
+const guideLinks = [...guideSrc.matchAll(/href="([^"]+)"/g)].map((m) => m[1])
+  .filter((h) => !/^(?:https?:|mailto:|data:|javascript:)/.test(h));
+const deadLinks = guideLinks.filter((h) => h.startsWith("#")
+  ? !new RegExp("id=\"" + h.slice(1) + "\"").test(guideSrc)
+  : !existsSync(new URL(h, guideUrl)));
+check("docs: every link in the deploy guide resolves against this tree",
+  guideLinks.length >= 8 && !deadLinks.length,
+  guideLinks.length + " links · " + (deadLinks.length ? "broken: " + deadLinks.join(", ") : "all resolve"));
+check("docs: the deploy guide is linked from the runbook and the publishing guide, not orphaned",
+  /DEPLOY_AND_VERIFY\.html/.test(deploySrc) && /DEPLOY_AND_VERIFY\.html/.test(readW("./docs/PUBLISHING.html", "utf8")),
+  "linked from DEPLOY.md and docs/PUBLISHING.html");
 
 console.log("\n-- sample payload --");
 for (const card of ["auto", "ai", "fin"]) {
