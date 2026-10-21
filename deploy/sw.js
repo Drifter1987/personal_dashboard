@@ -19,7 +19,7 @@
  * The cache name carries the version, and activating a worker deletes every other
  * home-dashboard cache, so an old shell can never be served after an update.
  */
-const VERSION = "2.30.4";
+const VERSION = "2.30.5";
 /* The cache carries the shell's own revision as well as the release number. A deploy that
    changed the page without bumping VERSION used to leave every installed client on the cached
    shell for good: a browser only installs a new worker when this file's bytes change, and with
