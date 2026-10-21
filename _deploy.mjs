@@ -54,6 +54,8 @@ if (unknown.length) {
 
 let harnessPassed = false;
 let tagFailed = false;
+let guideFailed = false;
+let guideBroken = false;
 const fails = [];
 const check = (name, ok, detail) => {
   console.log((ok ? "PASS  " : "FAIL  ") + name + (detail === undefined ? "" : "  -> " + detail));
@@ -236,6 +238,44 @@ if (SYNC && fails.length) {
   }
 }
 
+/* ── the docs' numbers: read from this tree, not typed into it ─────────────────
+   docs/DEPLOY_AND_VERIFY.html and docs/PUBLISHING.html quote the page version, the Worker
+   version, the build tag, the bundle hash, how many files the bundle publishes, and the check
+   totals of the last recorded run - every one of them changes with a release or a new check.
+   Typed by hand they were stale within one, and a guide that says "today: bundle 1b21f8475219"
+   while the tree holds another bundle teaches the reader to skip the sentence. _guide.mjs reads
+   them out of the files and the record and writes them between markers; this is where a tree
+   that forgot to restamp its pages is refused, and --sync restamps them.
+
+   It runs after the bundle is settled rather than before the harness, because the bundle's hash
+   is one of the values: restamping first would write the hash of a bundle that is about to be
+   repaired. And it is a gate failure like any other, so a publish cannot carry a guide that
+   names the previous build. */
+{
+  const guide = (flag) => {
+    const r = spawnSync(process.execPath, [join(ROOT, "_guide.mjs")].concat(flag ? [flag] : []),
+      { cwd: ROOT, encoding: "utf8" });
+    const lines = String(r.stdout || r.stderr || "").trim().split(/\r?\n/).filter(Boolean);
+    return { ok: r.status === 0, status: r.status, lines };
+  };
+  let state = guide("--check");
+  if (!state.ok && SYNC) {
+    const stamped = guide(null);
+    if (stamped.ok) console.log("  " + stamped.lines[stamped.lines.length - 1]);
+    state = guide("--check");
+  }
+  guideFailed = !state.ok;
+  /* exit 2 is "the page or the record cannot be read", which is a different repair: nothing here
+     can restamp a marker that names a value nobody reads */
+  guideBroken = state.status === 2;
+  /* the child already speaks this project's PASS/FAIL and "-> detail" shape, so it is worth
+     quoting rather than wrapping twice. Its first line is the verdict and the stale values;
+     on a marker error it is the only line, and it names the marker. */
+  const first = state.lines[0] || "_guide.mjs produced no output";
+  check("docs: the stamped pages state this tree's versions, hashes and check totals",
+    state.ok, first.replace(/^(?:PASS|FAIL)\s+(?:guide|docs):\s*/, ""));
+}
+
 /* ── release identity: the tag has to name the version that ships ───────────────
    A release tag is the only thing the workflow will publish, and the publish step uploads
    deploy/ as it stands - the upload itself never says which version it holds. So a tag that
@@ -279,7 +319,11 @@ function releaseTags() {
 /* ── verdict ──────────────────────────────────────────────────────────────────── */
 if (fails.length) {
   console.log("\nFAILED (" + fails.length + "): " + fails.join("; "));
-  const reason = tagFailed
+  const reason = guideBroken
+    ? "the docs pages' numbers cannot be checked - the stamp is not usable on this tree (see the line above)"
+    : guideFailed
+    ? "the docs pages state numbers this tree no longer has (node _deploy.mjs --sync restamps them)"
+    : tagFailed
     ? "a release tag points at this commit but does not name the version the page ships"
     : ARTIFACTS_ONLY
       ? "the bundle is not the tested page (and this run did not execute the harness)"

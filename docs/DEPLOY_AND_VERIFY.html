@@ -215,7 +215,7 @@
       <h1>Ship it, then prove it <span>actually landed.</span></h1>
       <p class="lede">Two things publish here, to two different Cloudflare products: the Worker API and the static page. A green deploy command proves only that an upload was accepted. This procedure ends with a check that asks the live site which build it is serving — and fails if the answer is older than the tree you just shipped.</p>
       <div class="hero-meta">
-        <span class="pill">8 steps</span>
+        <span class="pill"><span data-live="steps">8</span> steps</span>
         <span class="pill">About 5 minutes</span>
         <span class="pill">wrangler 4.151.3 · Windows 11</span>
         <span class="pill preview">Two targets, one verification</span>
@@ -224,7 +224,7 @@
         <a class="button" href="#steps">Start at step 1</a>
         <a class="button secondary" href="#fast">Just the short version</a>
       </div>
-      <p class="fine">Run end to end on 2026-10-21 against page v2.30.4 and Worker 1.14.0. Every output quoted below was seen in that run. Rollback is documented in <a href="../DEPLOY.md">DEPLOY.md</a> §5 and was not exercised here.</p>
+      <p class="fine">Walked end to end on 2026-10-21, and every output quoted below was seen in that run. The numbers a release changes are not typed here: page v<span data-live="page">2.30.5</span>, Worker <span data-live="worker">1.14.0</span>, build <span data-live="tag">de3c4bd21b37e087</span>, bundle <span data-live="bundle">be2bbab4e756</span> and the <span data-live="files">8</span> files it publishes are read from this tree by <code>node _guide.mjs</code>, which the gate runs. Rollback is documented in <a href="../DEPLOY.md">DEPLOY.md</a> §5 and was not exercised here.</p>
     </div>
   </section>
 
@@ -260,7 +260,7 @@
       <div class="section-head">
         <div>
           <p class="eyebrow orange">The procedure</p>
-          <h2>Eight steps, in order.</h2>
+          <h2><span data-live="steps_word">Eight</span> steps, in order.</h2>
         </div>
         <p>Each step ends with something you can see. If a verify condition does not hold, stop there: every later step assumes the previous one is true.</p>
       </div>
@@ -292,9 +292,9 @@
           <label class="label-done"><input type="checkbox" data-step> Mark done</label>
           <p class="why">Nothing is published until this exits 0. It is the only step that runs the Worker and the page against the real sources before an upload exists.</p>
           <pre class="cmd"><code><span class="f">node</span> _deploy.mjs</code></pre>
-          <p class="verify"><b>You should see</b> a wall of <code>PASS</code> lines ending in <code>RELEASE READY: the page, the Worker and dashboard-site.zip agree, and the harness is green.</code> and an exit code of <code>0</code>. Today's run printed 307 passing checks.</p>
+          <p class="verify"><b>You should see</b> a wall of <code>PASS</code> lines ending in <code>RELEASE READY: the page, the Worker and dashboard-site.zip agree, and the harness is green.</code> and an exit code of <code>0</code>. The last recorded run of this harness, on <span data-live="recorded">2026-10-22</span>, printed <span data-live="checks">306</span> checks; the total grows with every release, so read it as what passed, not as a target.</p>
           <details class="fallback">
-            <summary>If exactly one <code>chart/live</code> check fails with an HTTP status</summary>
+            <summary><span>If exactly one <code>chart/live</code> check fails with an HTTP status</span></summary>
             <p>That is a third party, not your change. The harness reads CoinGecko, Yahoo and the ECB for real, and a throttled public API shows up as <code>no data returned (Yahoo HTTP 404)</code> or similar. Re-run the gate once before believing it — this exact failure appeared twice on 2026-10-21 and cleared on its own.</p>
           </details>
         </li>
@@ -305,7 +305,7 @@
           <label class="label-done"><input type="checkbox" data-step> Mark done</label>
           <p class="why">The hosted copy is not the source file: the gate pins the page's one inline script by hash, which is what lets the CSP drop <code>unsafe-inline</code>. A stale bundle is the single most common reason a correct edit never reaches the site.</p>
           <pre class="cmd"><code><span class="f">node</span> _deploy.mjs --sync</code></pre>
-          <p class="verify"><b>You should see</b> <code>wrote deploy\index.html - index.html with its script pinned (1 hash)</code>, then <code>bundle repaired</code> and a second green bundle pass. The page's script hash and the bundle's must match — today both were <code>3f3679585ca7</code>.</p>
+          <p class="verify"><b>You should see</b> <code>wrote deploy\index.html - index.html with its script pinned (1 hash)</code>, then <code>bundle repaired</code> and a second green bundle pass that names this tree's bundle, <code><span data-live="bundle">be2bbab4e756</span></code>, with <code>script … · no 'unsafe-inline'</code> beside it.</p>
         </li>
       </ol>
 
@@ -316,7 +316,7 @@
           <span class="when">20 sec</span>
           <h3>Deploy the Worker with its build tag</h3>
           <label class="label-done"><input type="checkbox" data-step> Mark done</label>
-          <p class="why">The version string cannot identify a build: <code>1.14.0</code> went out more than once with different code. The tag is the first 16 characters of the sha256 of <code>worker.js</code>, and <code>/api/health</code> reports it back so step 6 can tell an older Worker from this one.</p>
+          <p class="why">The version string cannot identify a build: <code><span data-live="worker">1.14.0</span></code> went out more than once with different code. The tag is the first 16 characters of the sha256 of <code>worker.js</code>, and <code>/api/health</code> reports it back so step 6 can tell an older Worker from this one.</p>
           <pre class="cmd"><code><span class="f">npx</span> --yes wrangler@4.151.3 deploy --tag <span class="c">"$(</span><span class="f">node</span> _smoke.mjs --worker-tag<span class="c">)"</span></code></pre>
           <p class="verify"><b>You should see</b> the binding table including <code>env.CF_VERSION_METADATA … Worker Version Metadata</code>, then <code>Uploaded home-dashboard-api</code> and <code>Current Version ID: …</code>. The id changes on every deploy; the tag is what step 6 compares.</p>
           <details class="fallback">
@@ -331,7 +331,7 @@
           <label class="label-done"><input type="checkbox" data-step> Mark done</label>
           <p class="why">The page is a separate Cloudflare product with its own upload. Deploying the Worker does not move it, and vice versa.</p>
           <pre class="cmd"><code><span class="f">npx</span> --yes wrangler@4.151.3 pages deploy deploy --project-name home-dashboard --branch main --commit-dirty=true</code></pre>
-          <p class="verify"><b>You should see</b> <code>Deployment complete! Take a peek over at https://&lt;hash&gt;.home-dashboard-5ma.pages.dev</code>. Note the hash: this run produced <code>62eff2dd…</code>.</p>
+          <p class="verify"><b>You should see</b> <code>Deployment complete! Take a peek over at https://&lt;hash&gt;.home-dashboard-5ma.pages.dev</code>. That hash is new on every upload — worth copying if you want to inspect that exact deployment, compared by nothing later.</p>
           <details class="fallback">
             <summary>If it uploads but the production URL does not change</summary>
             <p>Check the branch flag. The production branch is <code>main</code>; deploying to another branch publishes a preview URL and leaves <code>home-dashboard-5ma.pages.dev</code> exactly where it was.</p>
@@ -348,7 +348,7 @@
           <label class="label-done"><input type="checkbox" data-step> Mark done</label>
           <p class="why">This is the whole point of the guide. A successful upload is not a successful publish, and an edge can serve the previous deployment for a few seconds after one.</p>
           <pre class="cmd"><code><span class="f">node</span> _smoke.mjs</code></pre>
-          <p class="verify"><b>You should see</b> <code>SMOKE PASSED: … serves the tested bundle &lt;hash&gt; (v2.30.4), all 8 files match, and the Worker serves this tree's worker.js (build &lt;tag&gt;)</code>, exit code <code>0</code>. Today: bundle <code>1b21f8475219</code>, build <code>de3c4bd21b37e087</code>.</p>
+          <p class="verify"><b>You should see</b> <code>SMOKE PASSED: … serves the tested bundle &lt;hash&gt; (v<span data-live="page">2.30.5</span>), all <span data-live="files">8</span> files match, and the Worker serves this tree's worker.js (build &lt;tag&gt;)</code>, exit code <code>0</code> — for this tree, bundle <code><span data-live="bundle">be2bbab4e756</span></code> and build <code><span data-live="tag">de3c4bd21b37e087</span></code>.</p>
           <details class="fallback">
             <summary>If it fails, read which half failed</summary>
             <p><code>the live Worker reports no build tag</code> — the Worker went out without <code>--tag</code>; repeat step 4. <code>live tag … is not the source here</code> — an older or different Worker is live. <code>live v… is older than the shipped v…</code> — the page publish did not land on this origin. Each message prints the exact command that fixes it.</p>
@@ -361,7 +361,7 @@
           <label class="label-done"><input type="checkbox" data-step> Mark done</label>
           <p class="why">A deploy cannot reach inside a service worker. Clients keep the cached shell until they take the prompt — which is why a perfectly correct deploy can look like nothing happened.</p>
           <p class="action">Open the dashboard, wait for the bar reading <b>A new version is ready — reload to use it.</b>, and press <b>Reload</b>.</p>
-          <p class="verify"><b>You should see</b> the thing you just shipped — today, a chart button labelled <code>Clear Range</code> where the old page said <code>All</code> — and the bar gone after the reload.</p>
+          <p class="verify"><b>You should see</b> the browser tab read <code>Home Dashboard v<span data-live="page">2.30.5</span></code> — the shell this release ships — and the bar gone after the reload. A tab still showing a previous version number is the cached shell, not this build.</p>
           <details class="fallback">
             <summary>If no bar ever appears</summary>
             <p>The shell did not change, or the worker's cache name did not. <code>deploy/sw.js</code> keys its cache on <code>VERSION</code> plus <code>SHELL_REV</code>; an HTML-only change with neither bumped installs nothing. Bump <code>SHELL_REV</code>, re-sync, and publish the page again.</p>
@@ -427,7 +427,7 @@
             <tr><td><code>FAIL bundle: deploy/index.html is index.html with its script pinned</code></td><td>The bundle on disk predates your edit.</td><td><code>node _deploy.mjs --sync</code>, then re-read the hash it prints.</td></tr>
             <tr><td><code>FAIL worker: … reports no build tag</code></td><td>The Worker was deployed without <code>--tag</code>, so an older build cannot be ruled out.</td><td>Repeat step 4 with the tag. Do not delete the check to get green.</td></tr>
             <tr><td><code>FAIL worker: … live tag … is not the source here</code></td><td>An older or different Worker is answering.</td><td>Redeploy. If it still answers with the old tag, you are on another account — back to step 1.</td></tr>
-            <tr><td><code>live v2.30.3 is older than the shipped v2.30.4</code></td><td>The page publish did not land on this origin (wrong branch, or the edge has not turned over).</td><td>The smoke test already re-fetches twice, 4 s apart. Still old: check the deployment URL, then redeploy the page.</td></tr>
+            <tr><td><code>live v2.30.3 is older than the shipped v<span data-live="page">2.30.5</span></code></td><td>The page publish did not land on this origin (wrong branch, or the edge has not turned over).</td><td>The smoke test already re-fetches twice, 4 s apart. Still old: check the deployment URL, then redeploy the page.</td></tr>
             <tr><td>Smoke passes, the browser still shows the old UI</td><td>The service worker is serving its cached shell.</td><td>Step 7. If no prompt appears, <code>SHELL_REV</code> was not bumped.</td></tr>
             <tr><td><code>release: the release tag names the version the page ships</code></td><td>A <code>v*</code> tag points at this commit and disagrees with <code>CONFIG.VERSION</code>.</td><td>Tag the version the page actually carries, or bump the page to match. Never retag after publishing.</td></tr>
           </tbody>
@@ -487,7 +487,7 @@
       </div>
       <div class="note" style="margin-top: 16px">
         <b>How current is this?</b>
-        <p style="margin: 6px 0 0">Run 2026-10-21 with wrangler 4.151.3 on Windows 11, against page v2.30.4 and Worker 1.14.0. The counts and hashes quoted are from that run and will differ next time; the commands and the verify conditions will not. The gate reads live third parties, so its runtime depends on them.</p>
+        <p style="margin: 6px 0 0">Walked on 2026-10-21 with wrangler 4.151.3 on Windows 11. The versions, the build tag, the bundle hash, the file count and the step count are read from this tree by <code>node _guide.mjs</code>, so they describe the build these steps ship rather than the run they were written from; <code>node _deploy.mjs</code> re-reads them and refuses a tree whose page names a build the files have moved past. The commands and the verify conditions are held to the scripts by <code>node _check.mjs</code> in the same way, and the gate reads live third parties, so its runtime depends on them.</p>
       </div>
     </div>
   </section>

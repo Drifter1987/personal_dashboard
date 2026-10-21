@@ -70,6 +70,8 @@ jobs:
           node --check worker.js
           node --check _check.mjs
           node --check _deploy.mjs
+          node --check _guide.mjs
+          node --check _guide.test.mjs
           node --check _tasks.test.mjs
           node --check _smoke.mjs
           node --check _release.mjs

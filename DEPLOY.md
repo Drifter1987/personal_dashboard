@@ -59,7 +59,8 @@ run after touching a card's structure, the pager or the calendar:
 ```bash
 python _ui.test.py             # Chromium: scroll survives a rebuild, a hidden card moves nothing,
                                # a loading card holds its frame, a reload opens Home, Today
-                               # rests on the current month; 91 checks
+                               # rests on the current month; the run ends with N/N checks
+                               # passed (docs/PUBLISHING.html states the current total)
 python _ui.test.py -v          # same run, with every measurement printed
 ```
 
@@ -86,6 +87,34 @@ or when the array is out of order. The harness independently fails when the newe
 version or language text does not match the running `VERSION`, so a release that bumps the
 page but forgets its notes cannot get through the gate. Regenerate the markdown in the same
 commit as the version bump; `node _release.mjs` (section 3) does that as part of the release.
+
+### The docs' numbers
+
+[docs/DEPLOY_AND_VERIFY.html](docs/DEPLOY_AND_VERIFY.html) and
+[docs/PUBLISHING.html](docs/PUBLISHING.html) quote the numbers a release changes: the page
+version, the Worker version, the build tag the Worker is deployed with, the bundle's hash, how
+many files the bundle publishes, how many steps each guide has, and how many checks the harness
+and the browser contract printed. The file-backed ones are read out of the files themselves;
+the check totals are read out of one recorded run. Either way they are written into the pages
+between `data-live` markers, never typed:
+
+```bash
+node _guide.mjs           # stamp both pages from this tree and the record
+node _guide.mjs --check   # exit 1 if a page and the tree disagree (CI-ready)
+node _guide.mjs --record  # run both suites, write docs/last-run.json, then stamp
+```
+
+`--record` is the only way the totals move: it runs `node _check.mjs` and
+`python _ui.test.py`, refuses to write unless both pass, and stores what they printed with the
+date in `docs/last-run.json`. The pages therefore say "*n* checks when last recorded on *date*"
+— a dated fact rather than a claim about today. Re-record when checks are added; an old record
+is visibly old, not silently wrong.
+
+The gate runs `--check` and refuses a tree whose pages name a build the files have moved past;
+`--sync` restamps the pages along with the bundle, and `node _release.mjs` commits the pages and
+the record together, so a release cannot leave them describing the previous build. What the
+pages say *about* the procedure — their commands and verify conditions — is held to the scripts
+by `node _check.mjs` instead, which is the far stronger check of the two.
 
 ## 2. Publish the Worker
 

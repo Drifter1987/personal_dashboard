@@ -50,8 +50,14 @@ const BUNDLE_PAGE = "deploy/index.html";
 const HEADERS = "deploy/_headers";
 const NOTES = "CHANGELOG.md";
 const ZIP = "dashboard-site.zip";
+/* the docs pages quote this version, this bundle's hash, the Worker's build tag and the check
+   totals of the last recorded run, and _deploy.mjs restamps them during the gate below - so they
+   are written by this run and have to be restored with the rest when a gate fails */
+const GUIDE = "docs/DEPLOY_AND_VERIFY.html";
+const PUBLISHING = "docs/PUBLISHING.html";
+const RECORD = "docs/last-run.json";
 /* every path this run can write: snapshotted before step 2 so a red gate can restore them */
-const TOUCHED = [PAGE, SW, BUNDLE_PAGE, HEADERS, NOTES, ZIP];
+const TOUCHED = [PAGE, SW, BUNDLE_PAGE, HEADERS, NOTES, ZIP, GUIDE, PUBLISHING, RECORD];
 
 const MIN_NOTE = 81; /* the harness requires the decoded string to be longer than 80 chars */
 
@@ -335,7 +341,7 @@ export function main(argv) {
         HEAD - so gating first would fail on a correct bump. Committing first also means the
         subject and body are the ones that get tagged. The bundle in this commit is still the
         previous build; step 4 puts the rebuilt one in. */
-  const files = [PAGE, SW, BUNDLE_PAGE, HEADERS, NOTES, ZIP];
+  const files = [PAGE, SW, BUNDLE_PAGE, HEADERS, NOTES, ZIP, GUIDE, PUBLISHING, RECORD];
   const add = git(["add", "--"].concat(files));
   if (!add.ok) {
     console.error("_release.mjs: git add failed: " + add.err);
@@ -346,7 +352,7 @@ export function main(argv) {
   if (!commit.ok) {
     console.error("_release.mjs: git commit failed:\n" + (commit.err || commit.out)
       + "\n\nThe release files are staged and modified; no tag was created."
-      + " `git reset` unstages them, and all six paths can be restored with `git checkout --`.");
+      + " `git reset` unstages them, and all " + files.length + " paths can be restored with `git checkout --`.");
     return 1;
   }
   const undoCommit = () => git(["reset", "--mixed", "HEAD~1"]);

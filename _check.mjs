@@ -1,5 +1,6 @@
 import worker from "./worker.js";
-import { existsSync, readFileSync as readW } from "node:fs";
+import { DOCS } from "./_guide.mjs";
+import { existsSync, readdirSync, readFileSync as readW } from "node:fs";
 
 /* Map-backed stand-in for Cloudflare's caches.default */
 const store = new Map();
@@ -1727,6 +1728,21 @@ const releaseTail = String(releaseRun.stderr || releaseRun.stdout || "").trim().
 check("release: the version bump, the three edits and the note escaping, executed",
   releaseRun.status === 0,
   releaseRun.status === 0 ? ((releaseRun.stdout.match(/^\d+\/\d+ checks passed$/m) || ["passed"])[0]) : releaseTail);
+
+/* ── the deploy guide's numbers: stamped from the tree, executed ───────────────
+   docs/DEPLOY_AND_VERIFY.html quotes the page version, the Worker version, the build tag, the
+   bundle hash and the counts, and every one of them changes with a release - typed by hand they
+   were stale within one. _guide.test.mjs executes the stamper behind them: each value is read
+   from the file that owns it, the guide's build tag is the string `_smoke.mjs --worker-tag`
+   prints, a stale value is replaced without touching its neighbours, and a marker that no longer
+   matches a value the tool reads is an error rather than a number that quietly stops being
+   written. Whether the page is *current* is _deploy.mjs's check instead: that one runs after the
+   bundle is settled and can restamp the page, which a harness run must not do. */
+const guideTestRun = spawnSync(process.execPath, ["_guide.test.mjs"], { encoding: "utf8", cwd: ROOT });
+const guideTestTail = String(guideTestRun.stderr || guideTestRun.stdout || "").trim().split("\n").filter(Boolean).pop();
+check("docs: the pages' numbers are read from the tree and stamped, executed",
+  guideTestRun.status === 0,
+  guideTestRun.status === 0 ? ((guideTestRun.stdout.match(/^\d+\/\d+ checks passed$/m) || ["passed"])[0]) : guideTestTail);
 /* A repeated card and a carried one are the only places the user sees these rules holding, so
    they have to survive a refactor of the card and of the CSV export. */
 check("plan: a repeating card and a carried one still say so - a chip on the card, a repeat column in the CSV",
@@ -2246,6 +2262,18 @@ check("docs: every link in the deploy guide resolves against this tree",
 check("docs: the deploy guide is linked from the runbook and the publishing guide, not orphaned",
   /DEPLOY_AND_VERIFY\.html/.test(deploySrc) && /DEPLOY_AND_VERIFY\.html/.test(readW("./docs/PUBLISHING.html", "utf8")),
   "linked from DEPLOY.md and docs/PUBLISHING.html");
+/* A page that carries data-live markers is claiming its numbers come from the tree. If _guide.mjs
+   does not know the page, nothing writes them: they were typed once and will be typed again, in
+   the wrong year. So the set of marked pages and the set the stamper owns have to be the same. */
+const owned = new Set(DOCS.map((d) => d.path));
+const marked = readdirSync("./docs").filter((f) => f.endsWith(".html")).map((f) => "docs/" + f)
+  .filter((p) => readW("./" + p, "utf8").includes("data-live="));
+const unowned = marked.filter((p) => !owned.has(p));
+const unmarked = [...owned].filter((p) => !marked.includes(p));
+check("docs: every page that states a stamped number is a page _guide.mjs stamps",
+  !unowned.length && !unmarked.length,
+  marked.length + " page(s) with markers · " + (unowned.length ? "unowned: " + unowned.join(", ") : "all owned")
+    + (unmarked.length ? " · claimed but unmarked: " + unmarked.join(", ") : ""));
 
 console.log("\n-- sample payload --");
 for (const card of ["auto", "ai", "fin"]) {

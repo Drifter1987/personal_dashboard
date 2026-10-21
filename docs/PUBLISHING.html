@@ -163,7 +163,7 @@
 <header class="topbar">
   <div class="wrap topbar-inner">
     <a class="brand" href="../index.html"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Home Dashboard docs</a>
-    <span class="status preview">Guide · 2 credentials to add</span>
+    <span class="status preview">Guide · 2 credentials, set once</span>
     <nav class="topnav" aria-label="Guide sections">
       <a href="#before">Before</a>
       <a href="#steps">Steps</a>
@@ -179,9 +179,9 @@
     <div class="wrap">
       <p class="eyebrow">Guide · publishing the dashboard</p>
       <h1>One push, and the site <span>updates itself.</span></h1>
-      <p class="lede">The pipeline is already built: every push to <code>main</code> runs the tests. A release tag on <code>main</code> (for example <code>v2.28.0</code>) then uploads the page to Cloudflare and checks the live site really changed. A plain push publishes nothing. It is waiting on two credentials that only you can create. Add them once, and publishing becomes: commit, push, tag the release, wait a minute, refresh.</p>
+      <p class="lede">The pipeline is already built: every push to <code>main</code> runs the tests. A release tag on <code>main</code> (for example <code>v<span data-live="page">2.30.5</span></code>) then uploads the page to Cloudflare and checks the live site really changed. A plain push publishes nothing. It needs two credentials that only you can create. Add them once, and publishing becomes: commit, push, tag the release, wait a minute, refresh.</p>
       <div class="hero-meta">
-        <span class="pill">7 steps</span>
+        <span class="pill"><span data-live="steps">7</span> steps</span>
         <span class="pill">About 15 minutes, once</span>
         <span class="pill">Then ~2 minutes per change</span>
         <span class="pill preview">No new project, same address</span>
@@ -220,7 +220,7 @@
       <div class="section-head">
         <div>
           <p class="eyebrow orange">The procedure</p>
-          <h2>Seven steps, in order.</h2>
+          <h2><span data-live="steps_word">Seven</span> steps, in order.</h2>
         </div>
         <p>Steps 2 and 3 are the credentials — the only part only you can do. Step 4 proves the whole chain works. Steps 5 to 7 are what you will actually repeat.</p>
       </div>
@@ -279,9 +279,9 @@
         <li class="step" id="s4">
           <span class="when">3 min</span>
           <h3>Publish for the first time</h3>
-          <p class="why">Until now the pipeline has been running and deliberately skipping the upload, saying so each time. With the credentials in place it can do the real thing.</p>
+          <p class="why">While the secrets are missing the pipeline still runs, and deliberately skips the upload, saying so each time. With them in place it can do the real thing — this is the step that proves it.</p>
           <p class="action">On github.com open the <b>Actions</b> tab, pick the most recent run of <b>checks</b>, and click <b>Re-run all jobs</b> (top right). The run now sees the secrets.</p>
-          <p class="verify"><b>You should see</b> three jobs: <b>deploy gate</b> green, <b>release bundle</b> green, and <b>publish the page</b> green with five steps — the last one reading <code>Prove the live site serves the tested bundle</code>. Then open the site's 6th tab, <b>Settings</b>, and the <b>About</b> card shows the version that was just published, not the old one.</p>
+          <p class="verify"><b>You should see</b> every job green — <b>deploy gate</b>, <b>browser contract (real layout)</b>, <b>release bundle</b>, and <b>publish the page</b>, whose last step reads <code>Prove the live site serves the tested bundle</code>. The layout job runs the browser contract in Chromium: <span data-live="checks_browser">146</span> checks when this page was last recorded, <span data-live="recorded">2026-10-22</span>. Then open the site's 6th tab, <b>Settings</b>, and the <b>About</b> card shows the version that was just published, not the old one.</p>
           <details class="fallback">
             <summary>If the publish job says "Publishing skipped"</summary>
             <p>The secrets are missing or misnamed — go back to step 3 and check both names character by character. Nothing was published, and the live site is untouched and still working, so there is no rush.</p>
@@ -296,7 +296,7 @@
           <span class="when">2 min</span>
           <h3>Change something, and publish it</h3>
           <p class="why">This is the whole routine from now on. No Cloudflare dashboard, no commands, no credentials to type again.</p>
-          <p class="action">In <b>GitHub Desktop</b>: open the <b>Changes</b> tab, type a short summary, click <b>Commit to main</b>, then <b>Push origin</b>. That push runs the tests but does not publish. To release it, tag that commit as the new version (a terminal command: <code>git tag v2.28.0</code> then <code>git push origin v2.28.0</code>), wait a minute or two, then refresh the site.</p>
+          <p class="action">In <b>GitHub Desktop</b>: open the <b>Changes</b> tab, type a short summary, click <b>Commit to main</b>, then <b>Push origin</b>. That push runs the tests but does not publish. To release it, tag that commit as the new version (a terminal command: <code>git tag v<span data-live="page">2.30.5</span></code> then <code>git push origin v<span data-live="page">2.30.5</span></code>), wait a minute or two, then refresh the site.</p>
           <p class="verify"><b>You should see</b> a new run under <b>Actions</b> for your commit, finishing green in about two minutes, and the new version number in the dashboard's <b>Settings → About</b> card.</p>
           <details class="fallback">
             <summary>If the run is still going</summary>
