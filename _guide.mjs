@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /* The docs' numbers, read out of this tree (and out of one recorded run) instead of typed.
 
-     node _guide.mjs           stamp every page that states a number from this tree
-     node _guide.mjs --check   exit 1 if any page and the tree disagree (CI-ready)
-     node _guide.mjs --record  run both suites, write docs/last-run.json, then stamp
+     node _guide.mjs                 stamp every page that states a number from this tree
+     node _guide.mjs --check         exit 1 if any page and the tree disagree (CI-ready)
+     node _guide.mjs --record        run both suites, write docs/last-run.json, then stamp
+     node _guide.mjs --record --harness=N
+                                     the harness has just run and printed N (the deploy gate
+                                     does this, so a release measures it once, not twice)
      node _guide.mjs --help
 
    Two kinds of number go stale in a hand-written page, and they need different answers.
@@ -63,6 +66,9 @@ const HELP = `The docs' numbers, read from this tree and from the last recorded 
   node _guide.mjs --check   exit 1 if a page and the tree disagree (CI-ready)
   node _guide.mjs --record  run node _check.mjs and python _ui.test.py, write ${RECORD},
                             then stamp the pages with what they printed
+  node _guide.mjs --record --harness=N
+                            take the harness total from a run that has just passed (the deploy
+                            gate's own), measure only the browser contract, then write and stamp
 
 Exits 0 when the pages are current (or were just restamped); 1 when --check found a stale value
 or a suite failed during --record; 2 when a marker, a value or the record itself is unusable,
@@ -223,36 +229,62 @@ function findPython() {
 }
 const tail = (r) => String(r.stderr || r.stdout || "").trim().split(/\r?\n/).filter(Boolean).pop() || "no output";
 
-function record() {
-  const py = findPython();
-  if (!py) throw new RecordError("python 3 is needed for the browser contract, and neither python3 nor python runs it");
-
+function measureHarness() {
   console.log("record: node _check.mjs (the harness - the Worker and the page, against the real sources)");
   const h = spawnSync(process.execPath, ["_check.mjs"], { cwd: ROOT, encoding: "utf8", maxBuffer: 256 << 20 });
-  const hOut = String(h.stdout || "");
-  const harness = (hOut.match(/^PASS/mg) || []).length;
-  if (h.status !== 0 || !/ALL CHECKS PASSED/.test(hOut) || !harness) {
+  const out = String(h.stdout || "");
+  const checks = (out.match(/^PASS/mg) || []).length;
+  if (h.status !== 0 || !/ALL CHECKS PASSED/.test(out) || !checks) {
     console.log("  " + tail(h));
-    throw new RecordError("the harness did not pass (" + harness + " PASS line(s)), so nothing was recorded");
+    throw new RecordError("the harness did not pass (" + checks + " PASS line(s)), so nothing was recorded");
   }
-  console.log("  " + harness + " checks, all passing");
+  console.log("  " + checks + " checks, all passing");
+  return checks;
+}
 
+/* The browser contract is measured here and nowhere else: it needs Chromium, it takes minutes,
+   and its total is the one number no other command can supply. */
+export function runBrowser() {
+  const py = findPython();
+  if (!py) throw new RecordError("python 3 is needed for the browser contract, and neither python3 nor python runs it");
   console.log("record: " + py + " _ui.test.py (the browser contract, in Chromium - a few minutes)");
   const b = spawnSync(py, ["_ui.test.py"], { cwd: ROOT, encoding: "utf8", maxBuffer: 256 << 20 });
-  const bOut = String(b.stdout || "") + String(b.stderr || "");
-  const m = bOut.match(/(\d+)\/(\d+) checks passed/);
-  const browser = m ? Number(m[2]) : 0;
-  if (b.status !== 0 || !m || Number(m[1]) !== browser || !browser) {
+  const out = String(b.stdout || "") + String(b.stderr || "");
+  const m = out.match(/(\d+)\/(\d+) checks passed/);
+  const checks = m ? Number(m[2]) : 0;
+  if (b.status !== 0 || !m || Number(m[1]) !== checks || !checks) {
     console.log("  " + tail(b));
     throw new RecordError("the browser contract did not pass, so nothing was recorded");
   }
-  console.log("  " + browser + " checks, all passing");
+  console.log("  " + checks + " checks, all passing");
+  return checks;
+}
 
-  const rec = { recorded: localDate(), harness, browser };
-  writeFileSync(join(ROOT, RECORD), JSON.stringify(rec, null, 2) + "\n");
-  console.log("PASS  record: wrote " + RECORD + "  -> " + harness + " harness checks · "
-    + browser + " browser checks · " + rec.recorded);
+/* the record is only ever these two totals and the day they were taken, so a caller can hand in
+   totals it has already measured without the file format leaking into that caller */
+export function recordContent(harness, browser) {
+  for (const [name, n] of [["harness", harness], ["browser", browser]]) {
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new RecordError("a recorded " + name + " total must be a positive whole number, not " + n);
+    }
+  }
+  return JSON.stringify({ recorded: localDate(), harness, browser }, null, 2) + "\n";
+}
+
+export function writeRecord(harness, browser) {
+  const body = recordContent(harness, browser);
+  writeFileSync(join(ROOT, RECORD), body);
+  const rec = parseRecord(body);
+  console.log("PASS  record: wrote " + RECORD + "  -> " + rec.harness + " harness checks · "
+    + rec.browser + " browser checks · " + rec.recorded);
   return rec;
+}
+
+/* `given` is the harness total a caller has just measured itself - the deploy gate, so that a
+   release measures the harness once rather than twice and the number recorded is the number the
+   gate's verdict was based on */
+function record(given) {
+  return writeRecord(given || measureHarness(), runBrowser());
 }
 
 /* ── stamping the pages ──────────────────────────────────────────────────────── */
@@ -267,7 +299,8 @@ function main(argv) {
   }
   const CHECK = argv.includes("--check");
   const RECORD_NOW = argv.includes("--record");
-  const unknown = argv.filter((a) => a !== "--check" && a !== "--record");
+  const harnessArg = argv.find((a) => a.startsWith("--harness="));
+  const unknown = argv.filter((a) => a !== "--check" && a !== "--record" && !a.startsWith("--harness="));
   if (unknown.length) {
     console.error("_guide.mjs: unknown flag(s) " + unknown.join(" ") + "\n\n" + HELP);
     return 2;
@@ -276,9 +309,22 @@ function main(argv) {
     console.error("_guide.mjs: --record runs the suites and writes; --check only reads. Use one.");
     return 2;
   }
+  if (harnessArg && !RECORD_NOW) {
+    console.error("_guide.mjs: --harness= only means something with --record (it says a harness just ran).");
+    return 2;
+  }
+  let given = 0;
+  if (harnessArg) {
+    given = Number(harnessArg.slice("--harness=".length));
+    if (!Number.isInteger(given) || given <= 0) {
+      console.error("_guide.mjs: --harness= needs the number of PASS lines a green run printed, not \""
+        + harnessArg.slice("--harness=".length) + "\"");
+      return 2;
+    }
+  }
 
   try {
-    if (RECORD_NOW) record();
+    if (RECORD_NOW) record(given);
     return CHECK ? verify() : stampAll();
   } catch (e) {
     if (!(e instanceof MarkerError) && !(e instanceof RecordError)) throw e;

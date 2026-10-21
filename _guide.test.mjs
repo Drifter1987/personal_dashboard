@@ -32,7 +32,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  DOCS, fileValues, guideValues, parseRecord, readRecord, stamp, MarkerError, RecordError,
+  DOCS, fileValues, guideValues, parseRecord, readRecord, recordContent, stamp, MarkerError, RecordError,
 } from "./_guide.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -132,6 +132,18 @@ const fixtureValues = (doc) => Object.assign(fileValues(doc.path), {
   const accepted = bad.filter(([, raw]) => !(throws(() => parseRecord(raw)) instanceof RecordError));
   ok("record: a malformed record is refused, so a page cannot quote a half-written one",
     !accepted.length, accepted.map(([why]) => why).join(" · ") || bad.length + " shapes refused");
+
+  /* what the release writes is built from two counts it has just measured, so the writer refuses
+     anything but whole positive numbers - a 0 or a float would reach a page as a real total */
+  const body = recordContent(306, 146);
+  const round = parseRecord(body);
+  ok("record: two measured totals round-trip through the writer to a readable record",
+    round.harness === 306 && round.browser === 146 && /^\d{4}-\d{2}-\d{2}$/.test(round.recorded),
+    round.harness + " · " + round.browser + " · " + round.recorded);
+  const refused = [[0, 146], [306, 0], [-1, 146], [306, 1.5], ["306", 146], [null, 146]]
+    .filter(([h, b]) => !(throws(() => recordContent(h, b)) instanceof RecordError));
+  ok("record: a total that is not a positive whole number is refused before it can be written",
+    !refused.length, refused.map(([h, b]) => h + "/" + b).join(" · ") || "6 shapes refused");
 }
 
 /* ── every page's markers are well formed, and only state what it owns ──────── */

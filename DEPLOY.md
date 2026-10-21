@@ -41,6 +41,9 @@ Nothing is published until this exits 0:
 node _deploy.mjs                 # harness (node _check.mjs) + release bundle verification
 node _deploy.mjs --artifacts-only # fast re-check of the bundle only, no third-party calls
 node _deploy.mjs --sync          # after a green run, repair deploy/ from index.html
+node _deploy.mjs --record        # --sync, and re-record the docs' check totals: the harness
+                                 # count from this run plus the browser contract, measured now
+                                 # (Chromium needed; 74s on this machine)
 ```
 
 A green run proves three things: the shipped page and Worker pass the harness against the real
@@ -109,6 +112,11 @@ node _guide.mjs --record  # run both suites, write docs/last-run.json, then stam
 date in `docs/last-run.json`. The pages therefore say "*n* checks when last recorded on *date*"
 — a dated fact rather than a claim about today. Re-record when checks are added; an old record
 is visibly old, not silently wrong.
+
+`node _deploy.mjs --record` does the same from inside a gate run, and is what a release uses: it
+hands `_guide.mjs` the harness count the gate has just printed (`--harness=N`) and measures only
+the browser contract, so the harness is measured once — the run whose verdict decides the
+release. `node _release.mjs` passes `--record` to its gate for that reason.
 
 The gate runs `--check` and refuses a tree whose pages name a build the files have moved past;
 `--sync` restamps the pages along with the bundle, and `node _release.mjs` commits the pages and
@@ -334,8 +342,10 @@ node _release.mjs 2.31.0 --en "..." --ar "..." --title "cards pack into columns"
   then `node _changelog.mjs` regenerates `CHANGELOG.md`.
 - **Commit, then gate.** The gate has to run on the release commit: while the previous release
   tag still points at `HEAD`, its tag check would correctly refuse a page carrying the new
-  version. `node _deploy.mjs --sync` then runs the real harness and rebuilds `deploy/` from the
-  page it just proved.
+  version. `node _deploy.mjs --sync --record` then runs the real harness, rebuilds `deploy/` from
+  the page it just proved, and re-records the check totals the docs pages quote: the harness count
+  from that same run, the browser contract measured now. Nothing the pages state is older than the
+  release they ship with.
 - **Fold and tag.** The rebuilt bundle is amended into that same commit, so what is tagged is
   what was tested; the annotated tag `v<version>` is created on it, and a final
   `node _deploy.mjs --artifacts-only` proves the tag names the page's version.

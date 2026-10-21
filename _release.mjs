@@ -21,7 +21,7 @@
         page); then CHANGELOG.md is regenerated from that array by _changelog.mjs.
      3. commit, then gate - the gate must run on the release commit: while an older release tag
         still points at HEAD, the gate correctly refuses a page that carries the new version.
-        `node _deploy.mjs --sync` then runs the real harness and repairs the bundle from the
+        `node _deploy.mjs --sync --record` then runs the real harness, repairs the bundle from the
         page it just proved.
      4. fold the rebuilt bundle into that same commit with --amend, so what is tagged is the
         tested bundle and nothing else; then the annotated tag `v<version>`, and
@@ -297,7 +297,7 @@ export function main(argv) {
     console.log("  worker:   " + SW + " -> const VERSION = \"" + version + "\"");
     console.log("  notes:    " + NOTES + " regenerated from the array");
     console.log("  commit:   " + subject);
-    console.log("  gate:     node _deploy.mjs --sync on that commit, bundle repaired into it");
+    console.log("  gate:     node _deploy.mjs --sync --record on that commit - bundle repaired, docs' totals re-recorded");
     console.log("  tag:      " + tag + " (annotated) · node _deploy.mjs --artifacts-only after it");
     console.log("\n  " + entryLine(entry));
     return 0;
@@ -359,9 +359,11 @@ export function main(argv) {
   console.log("PASS  commit: " + git(["rev-parse", "--short", "HEAD"]).out + "  " + subject);
 
   /* 4. the gate, on the commit it will tag. --sync rebuilds deploy/ from the page the harness
-        just proved. */
-  console.log("\n── gate: node _deploy.mjs --sync ──");
-  const gate = node(["_deploy.mjs", "--sync"], { stdio: "inherit" });
+        just proved, and --record re-measures the check totals the docs pages quote - the harness
+        count from this same run, the browser contract measured now - so a release cannot ship
+        totals taken from some earlier tree. */
+  console.log("\n── gate: node _deploy.mjs --sync --record ──");
+  const gate = node(["_deploy.mjs", "--sync", "--record"], { stdio: "inherit" });
   if (gate.status !== 0) {
     console.error("\n_release.mjs: the gate refused the release; the commit and the version bump are undone.");
     if (!undoCommit().ok) {
@@ -372,7 +374,7 @@ export function main(argv) {
     restore();
     return 1;
   }
-  console.log("PASS  gate: harness + rebuilt bundle are green");
+  console.log("PASS  gate: harness + rebuilt bundle are green, and the docs' totals are this run's");
 
   /* 5. what gets tagged must be the tested bundle, so the repaired files are amended into the
         release commit rather than left as a dirty tree beside it. */

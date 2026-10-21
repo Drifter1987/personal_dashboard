@@ -20,7 +20,7 @@
    A failing check stops the run before anything is written, so a red gate can never leave a
    half-updated bundle behind. The same commands run in CI (.github/workflows/checks.yml).
 */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -36,26 +36,39 @@ const HELP = `The deploy gate: harness + release bundle.
   node _deploy.mjs                  run the harness, then verify the release bundle
   node _deploy.mjs --artifacts-only skip the harness (fast re-check of the bundle)
   node _deploy.mjs --sync           after a green run, repair the bundle from index.html
+  node _deploy.mjs --record         as --sync, and re-record the docs' check totals: the harness
+                                    count from this run, the browser contract measured now
 
-Exits 0 only when every check passed; 1 otherwise (and then writes nothing).`;
+Exits 0 only when every check passed; 1 otherwise (and then writes nothing beyond what a green
+run would have written - a repaired bundle, or a page restamped from the totals just recorded).`;
 
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
   console.log(HELP);
   process.exit(0);
 }
-const SYNC = argv.includes("--sync");
+/* --record writes the docs' check totals and restamps the pages, so it repairs like --sync does:
+   a tree whose page is stamped from a total the run just changed is the one thing it can fix */
+const RECORD = argv.includes("--record");
+const SYNC = argv.includes("--sync") || RECORD;
 const ARTIFACTS_ONLY = argv.includes("--artifacts-only");
-const unknown = argv.filter((a) => !["--sync", "--artifacts-only"].includes(a));
+const unknown = argv.filter((a) => !["--sync", "--artifacts-only", "--record"].includes(a));
 if (unknown.length) {
   console.error("_deploy.mjs: unknown flag(s) " + unknown.join(" ") + "\n\n" + HELP);
   process.exit(2);
 }
+if (RECORD && ARTIFACTS_ONLY) {
+  console.error("_deploy.mjs: --record needs the harness - it records the number of checks this run\n"
+    + "printed. Drop --artifacts-only (or record with `node _guide.mjs --record`, which runs both suites).");
+  process.exit(2);
+}
+const STEPS = RECORD ? 3 : 2;
 
 let harnessPassed = false;
 let tagFailed = false;
 let guideFailed = false;
 let guideBroken = false;
+let recordFailed = false;
 const fails = [];
 const check = (name, ok, detail) => {
   console.log((ok ? "PASS  " : "FAIL  ") + name + (detail === undefined ? "" : "  -> " + detail));
@@ -163,24 +176,50 @@ function verifyBundle(py, state) {
 /* ── 1/2  the harness ───────────────────────────────────────────────────────────
    _check.mjs runs the real Worker against the real sources, so its exit status is the
    verdict - this step only reports it. */
-if (!ARTIFACTS_ONLY) {
-  console.log("── 1/2  harness: node _check.mjs (the shipped Worker, against the live sources) ──");
+/* The harness's output is the reader's progress, so it is streamed through rather than captured -
+   but its PASS lines are counted on the way past, because this gate is the one command that knows
+   how many checks a green run printed. A release records that number instead of measuring the
+   harness a second time: one run, one figure, and the figure shipped is the one the verdict came
+   from. Lines are counted whole, since a chunk boundary can split the word PASS. */
+function runHarness() {
+  console.log("── 1/" + STEPS + "  harness: node _check.mjs (the shipped Worker, against the live sources) ──");
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [join(ROOT, "_check.mjs")], { stdio: "inherit", cwd: ROOT });
-  const secs = ((Date.now() - t0) / 1000).toFixed(1);
-  if (r.status !== 0) {
-    console.log("\nFAIL  harness: node _check.mjs exited " + r.status + " after " + secs + "s");
-    console.log("DEPLOY BLOCKED: " + PAGE + " or worker.js failed the harness. The bundle was not touched.");
-    process.exit(1);
-  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [join(ROOT, "_check.mjs")], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] });
+    child.stdout.setEncoding("utf8");
+    let passes = 0, pending = "";
+    child.stdout.on("data", (chunk) => {
+      process.stdout.write(chunk);
+      pending += chunk;
+      const lines = pending.split("\n");
+      pending = lines.pop();
+      for (const line of lines) if (line.startsWith("PASS")) passes++;
+    });
+    child.stdout.on("end", () => { if (pending.startsWith("PASS")) passes++; });
+    child.on("error", reject);
+    child.on("close", (status) => {
+      const secs = ((Date.now() - t0) / 1000).toFixed(1);
+      if (status !== 0) {
+        console.log("\nFAIL  harness: node _check.mjs exited " + status + " after " + secs + "s");
+        console.log("DEPLOY BLOCKED: " + PAGE + " or worker.js failed the harness. The bundle was not touched.");
+        process.exit(1);
+      }
+      console.log("\nPASS  harness: node _check.mjs exited 0 (" + secs + "s) · " + passes + " checks");
+      resolve(passes);
+    });
+  });
+}
+
+let harnessChecks = 0;
+if (!ARTIFACTS_ONLY) {
+  harnessChecks = await runHarness();
   harnessPassed = true;
-  console.log("\nPASS  harness: node _check.mjs exited 0 (" + secs + "s)");
 } else {
   console.log("── harness skipped (--artifacts-only): this run says nothing about the code ──");
 }
 
 /* ── 2/2  the release bundle ───────────────────────────────────────────────── */
-console.log("\n── 2/2  release bundle: " + DEPLOY + "/  →  " + ZIP + " ──");
+console.log("\n── 2/" + STEPS + "  release bundle: " + DEPLOY + "/  →  " + ZIP + " ──");
 const py = findPython();
 check("bundle: python 3 available for the zip bookkeeping", !!py,
   py || "neither python3 nor python found - the zip cannot be verified");
@@ -236,6 +275,24 @@ if (SYNC && fails.length) {
     verifyBundle(py, state);
     console.log("  (bundle repaired - " + repaired + " item" + (repaired === 1 ? "" : "s") + " rewritten)");
   }
+}
+
+/* ── the recorded totals: measured once, in the run that decides ────────────────
+   The docs pages quote how many checks the harness and the browser contract print, and a release
+   has to ship those as of its own tree. So they are re-recorded here: the harness figure is the
+   one this gate just printed, and the browser contract is measured now. Handing the harness count
+   in, rather than letting _guide.mjs run that suite again, keeps it to one measurement - the one
+   the verdict was based on. This runs before the docs check below, because a page stamped from the
+   old totals is the first thing a new record changes. */
+if (RECORD) {
+  console.log("\n── 3/" + STEPS + "  record: the check totals the docs pages state ──");
+  const r = spawnSync(process.execPath, [join(ROOT, "_guide.mjs"), "--record", "--harness=" + harnessChecks],
+    { cwd: ROOT, stdio: "inherit" });
+  recordFailed = r.status !== 0;
+  check("record: the docs' totals are this gate's harness run and a browser contract measured now",
+    !recordFailed, recordFailed
+      ? "the browser contract failed, or python 3 is missing - nothing was recorded"
+      : harnessChecks + " harness checks · the browser contract recorded just now");
 }
 
 /* ── the docs' numbers: read from this tree, not typed into it ─────────────────
@@ -319,7 +376,9 @@ function releaseTags() {
 /* ── verdict ──────────────────────────────────────────────────────────────────── */
 if (fails.length) {
   console.log("\nFAILED (" + fails.length + "): " + fails.join("; "));
-  const reason = guideBroken
+  const reason = recordFailed
+    ? "the release could not record the docs' check totals - the browser contract failed or python 3 is missing"
+    : guideBroken
     ? "the docs pages' numbers cannot be checked - the stamp is not usable on this tree (see the line above)"
     : guideFailed
     ? "the docs pages state numbers this tree no longer has (node _deploy.mjs --sync restamps them)"
